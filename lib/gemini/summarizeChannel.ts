@@ -1,0 +1,67 @@
+// Merangkum 10 hasil analisis video individual jadi satu kesimpulan level channel
+
+import { VideoAnalysis } from "./analyzeVideo";
+
+export interface ChannelSummary {
+  niche: string;
+  visual: string;
+  editing: string;
+  hookCta: string;
+}
+
+export async function summarizeChannel(
+  analyses: VideoAnalysis[],
+  apiKey: string
+): Promise<ChannelSummary> {
+  const combinedText = analyses
+    .map(
+      (a, i) =>
+        `Video ${i + 1}:\nNiche: ${a.niche}\nVisual: ${a.visual}\nEditing: ${a.editing}\nHook/CTA: ${a.hookCta}`
+    )
+    .join("\n\n");
+
+  const prompt = `Berikut adalah hasil analisis ${analyses.length} video terpopuler dari sebuah channel YouTube:
+
+${combinedText}
+
+Berdasarkan semua analisis di atas, buat SATU kesimpulan menyeluruh untuk channel ini secara keseluruhan (bukan per video, tapi pola yang konsisten muncul di semua/sebagian besar video). Balas dalam format JSON PERSIS seperti ini (tanpa markdown, tanpa backtick, hanya JSON murni):
+
+{
+  "niche": "kesimpulan niche dan sub-topik utama channel ini",
+  "visual": "kesimpulan konsep visual dan angle kamera yang konsisten dipakai channel ini",
+  "editing": "kesimpulan gaya editing khas channel ini: pacing, sound effect, gaya teks, keyframe, motion graphic",
+  "hookCta": "kesimpulan pola hook dan call-to-action yang berulang di channel ini"
+}`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${errText}`);
+  }
+
+  const data = await response.json();
+  const rawText: string = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const cleaned = rawText.replace(/```json|```/g, "").trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    return {
+      niche: parsed.niche || "",
+      visual: parsed.visual || "",
+      editing: parsed.editing || "",
+      hookCta: parsed.hookCta || "",
+    };
+  } catch (e) {
+    throw new Error(`Gagal parse hasil rangkuman Gemini: ${cleaned.slice(0, 200)}`);
+  }
+}
