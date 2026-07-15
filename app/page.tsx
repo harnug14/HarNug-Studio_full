@@ -1,13 +1,14 @@
-import { createSupabaseServerClient } from '@/lib/supabaseServer'
-import { redirect } from 'next/navigation'
-import LogoutButton from './components/LogoutButton'
+import Link from "next/link";
+import { createSupabaseServerClient } from "@/lib/supabaseServer";
+import { redirect } from "next/navigation";
+import LogoutButton from "./components/LogoutButton";
 
 export default async function Home() {
-  const supabase = await createSupabaseServerClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect('/login')
+    redirect("/login");
   }
 
   return (
@@ -19,13 +20,26 @@ export default async function Home() {
           <LogoutButton />
         </div>
       </div>
+
       <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-3">
-        {['Profile', 'Referensi', 'Topik', 'Naskah', 'Visual', 'AI Chat'].map((menu) => (
-          <div key={menu} className="rounded-lg border border-gray-800 p-6 text-center hover:border-gray-600">
-            {menu}
-          </div>
+        {[
+          { label: "Profile", href: "/profile" },
+          { label: "Referensi", href: "/referensi" },
+          { label: "Topik", href: "/topik" },
+          { label: "Naskah", href: "/naskah" },
+          { label: "Visual", href: "/visual" },
+          { label: "AI Chat", href: "/ai-chat" },
+          { label: "API Keys", href: "/settings/api-keys" },
+        ].map((menu) => (
+          <Link
+            key={menu.label}
+            href={menu.href}
+            className="rounded-lg border border-gray-800 p-6 text-center hover:border-gray-600 transition block"
+          >
+            {menu.label}
+          </Link>
         ))}
       </div>
     </div>
-  )
+  );
 }
