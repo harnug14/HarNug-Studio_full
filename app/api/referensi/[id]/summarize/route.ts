@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { summarizeChannel } from "@/lib/gemini/summarizeChannel";
+import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 
 export async function POST(
   req: NextRequest,
@@ -9,6 +10,9 @@ export async function POST(
   const { id } = await params;
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const selectedModel = body?.model || "gemini-2.5-flash";
+
     const supabase = await createSupabaseServerClient();
 
     const {
@@ -34,8 +38,6 @@ export async function POST(
     }
 
     const analyses = row.video_data?.analyses || [];
-
-    // Hanya pakai analisis yang sukses (tidak error) untuk dirangkum
     const validAnalyses = analyses.filter((a: any) => a && !a.error);
 
     if (validAnalyses.length === 0) {
@@ -50,23 +52,9 @@ export async function POST(
       );
     }
 
-    // Ambil API key Gemini yang aktif
-    const { data: keyRow, error: keyError } = await supabase
-      .from("api_keys")
-      .select("api_key")
-      .eq("provider", "gemini")
-      .eq("status", "active")
-      .limit(1)
-      .single();
-
-    if (keyError || !keyRow) {
-      return NextResponse.json(
-        { error: "Tidak ada API Key Gemini aktif" },
-        { status: 400 }
-      );
-    }
-
-    const summary = await summarizeChannel(validAnalyses, keyRow.api_key);
+    const summary = await callGeminiWithRotation(supabase, (apiKey) =>
+      summarizeChannel(validAnalyses, apiKey, selectedModel)
+    );
 
     const { error: updateError } = await supabase
       .from("referensi")
@@ -88,11 +76,13 @@ export async function POST(
 
     return NextResponse.json({ success: true, summary });
   } catch (err: any) {
+    console.error("SUMMARIZE ERROR:", err);
+
     try {
       const supabase = await createSupabaseServerClient();
       await supabase.from("referensi").update({ status: "error" }).eq("id", id);
     } catch {
-      // abaikan kalau update status error ini sendiri gagal
+      // abaikan
     }
 
     return NextResponse.json(

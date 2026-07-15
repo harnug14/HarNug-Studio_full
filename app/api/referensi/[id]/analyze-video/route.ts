@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { analyzeVideo } from "@/lib/gemini/analyzeVideo";
+import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 
 export async function POST(
   req: NextRequest,
@@ -8,7 +9,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { videoIndex } = await req.json();
+    const { videoIndex, model } = await req.json();
+    const selectedModel = model || "gemini-2.5-flash";
 
     const supabase = await createSupabaseServerClient();
 
@@ -20,7 +22,6 @@ export async function POST(
       return NextResponse.json({ error: "Belum login" }, { status: 401 });
     }
 
-    // Ambil row referensi ini
     const { data: row, error: rowError } = await supabase
       .from("referensi")
       .select("*")
@@ -45,32 +46,16 @@ export async function POST(
       );
     }
 
-    // Ambil API key Gemini yang aktif
-    const { data: keyRow, error: keyError } = await supabase
-      .from("api_keys")
-      .select("api_key")
-      .eq("provider", "gemini")
-      .eq("status", "active")
-      .limit(1)
-      .single();
-
-    if (keyError || !keyRow) {
-      return NextResponse.json(
-        { error: "Tidak ada API Key Gemini aktif. Cek halaman Settings > API Keys" },
-        { status: 400 }
-      );
-    }
-
-    // Analisis video ini via Gemini
     let analysisResult;
     let analysisError: string | null = null;
     try {
-      analysisResult = await analyzeVideo(video.url, keyRow.api_key);
+      analysisResult = await callGeminiWithRotation(supabase, (apiKey) =>
+        analyzeVideo(video.url, apiKey, selectedModel)
+      );
     } catch (err: any) {
       analysisError = err.message || "Gagal menganalisis video ini";
     }
 
-    // Update video_data.analyses dengan hasil (atau catat error, tapi tetap lanjut)
     const currentAnalyses = row.video_data?.analyses || [];
     currentAnalyses[videoIndex] = analysisResult
       ? { videoId: video.videoId, title: video.title, ...analysisResult }
@@ -96,6 +81,7 @@ export async function POST(
       videoIndex,
     });
   } catch (err: any) {
+    console.error("ANALYZE-VIDEO ERROR:", err);
     return NextResponse.json(
       { error: err.message || "Terjadi kesalahan" },
       { status: 500 }

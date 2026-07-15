@@ -1,6 +1,7 @@
 // Merangkum 10 hasil analisis video individual jadi satu kesimpulan level channel
 
 import { VideoAnalysis } from "./analyzeVideo";
+import { GeminiQuotaError } from "./keyRotation";
 
 export interface ChannelSummary {
   niche: string;
@@ -11,7 +12,8 @@ export interface ChannelSummary {
 
 export async function summarizeChannel(
   analyses: VideoAnalysis[],
-  apiKey: string
+  apiKey: string,
+  model: string = "gemini-2.5-flash"
 ): Promise<ChannelSummary> {
   const combinedText = analyses
     .map(
@@ -34,7 +36,7 @@ Berdasarkan semua analisis di atas, buat SATU kesimpulan menyeluruh untuk channe
 }`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -46,6 +48,13 @@ Berdasarkan semua analisis di atas, buat SATU kesimpulan menyeluruh untuk channe
 
   if (!response.ok) {
     const errText = await response.text();
+
+    if (response.status === 429) {
+      throw new GeminiQuotaError(
+        `Gemini API quota exceeded (429) - ${errText.slice(0, 200)}`
+      );
+    }
+
     throw new Error(`Gemini API error: ${response.status} - ${errText}`);
   }
 

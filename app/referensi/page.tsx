@@ -26,10 +26,18 @@ interface ReferensiRow {
   created_at: string;
 }
 
+const MODEL_OPTIONS = [
+  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview (rekomendasi)" },
+  { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
+  { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (lebih ringan)" },
+  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (lama)" },
+];
+
 export default function ReferensiPage() {
   const [list, setList] = useState<ReferensiRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [channelUrl, setChannelUrl] = useState("");
+  const [selectedModel, setSelectedModel] = useState(MODEL_OPTIONS[0].value);
   const [submitting, setSubmitting] = useState(false);
   const [progressText, setProgressText] = useState("");
   const [notifications, setNotifications] = useState<string[]>([]);
@@ -74,7 +82,6 @@ export default function ReferensiPage() {
     setProgressText("Mengambil daftar video channel...");
 
     try {
-      // 1. Start: ambil channel id + daftar video
       const startRes = await fetch("/api/referensi", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,17 +98,15 @@ export default function ReferensiPage() {
 
       const { id, totalVideos } = startData;
 
-      // Refresh list supaya row baru (status processing) langsung tampil
       await fetchList();
 
-      // 2. Analisis tiap video satu-satu
       for (let i = 0; i < totalVideos; i++) {
-        setProgressText(`Menganalisis video ${i + 1} dari ${totalVideos}...`);
+        setProgressText(`Menganalisis video ${i + 1} dari ${totalVideos} (${selectedModel})...`);
 
         const videoRes = await fetch(`/api/referensi/${id}/analyze-video`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ videoIndex: i }),
+          body: JSON.stringify({ videoIndex: i, model: selectedModel }),
         });
         const videoData = await videoRes.json();
 
@@ -114,10 +119,11 @@ export default function ReferensiPage() {
         }
       }
 
-      // 3. Rangkum jadi kesimpulan channel
       setProgressText("Merangkum kesimpulan channel...");
       const summaryRes = await fetch(`/api/referensi/${id}/summarize`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: selectedModel }),
       });
       const summaryData = await summaryRes.json();
 
@@ -153,7 +159,6 @@ export default function ReferensiPage() {
     <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
       <h1 style={{ fontSize: 24, marginBottom: 16 }}>Menu Referensi</h1>
 
-      {/* Notifikasi kecil untuk video yang gagal */}
       <div style={{ position: "fixed", top: 16, right: 16, zIndex: 50 }}>
         {notifications.map((msg, i) => (
           <div
@@ -173,7 +178,6 @@ export default function ReferensiPage() {
         ))}
       </div>
 
-      {/* Form input link channel */}
       <form
         onSubmit={handleSubmit}
         style={{
@@ -203,6 +207,30 @@ export default function ReferensiPage() {
           }}
         />
 
+        <label style={{ display: "block", marginBottom: 8, fontSize: 14 }}>
+          Model Gemini
+        </label>
+        <select
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+          disabled={submitting}
+          style={{
+            width: "100%",
+            padding: 8,
+            borderRadius: 6,
+            border: "1px solid #444",
+            background: "#111",
+            color: "#fff",
+            marginBottom: 12,
+          }}
+        >
+          {MODEL_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
         {formError && (
           <div style={{ color: "#f88", fontSize: 13, marginBottom: 12 }}>
             {formError}
@@ -231,7 +259,6 @@ export default function ReferensiPage() {
         )}
       </form>
 
-      {/* Daftar hasil referensi */}
       <h2 style={{ fontSize: 18, marginBottom: 12 }}>Riwayat Analisis</h2>
 
       {loadingList && <p style={{ color: "#888" }}>Memuat data...</p>}

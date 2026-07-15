@@ -1,6 +1,8 @@
 // Mengirim URL video YouTube langsung ke Gemini untuk dianalisis mendalam
 // Gemini "menonton" video (visual + audio) tanpa perlu transkrip terpisah
 
+import { GeminiQuotaError } from "./keyRotation";
+
 export interface VideoAnalysis {
   niche: string;
   visual: string;
@@ -10,7 +12,8 @@ export interface VideoAnalysis {
 
 export async function analyzeVideo(
   videoUrl: string,
-  apiKey: string
+  apiKey: string,
+  model: string = "gemini-2.5-flash"
 ): Promise<VideoAnalysis> {
   const prompt = `Analisis video YouTube Shorts ini secara mendalam. Tonton visual dan dengarkan audionya, lalu berikan hasil analisis dalam format JSON PERSIS seperti ini (tanpa markdown, tanpa backtick, hanya JSON murni):
 
@@ -24,7 +27,7 @@ export async function analyzeVideo(
 PENTING: Jawab berdasarkan apa yang BENAR-BENAR kamu lihat dan dengar di video ini secara spesifik dan konkret (warna, gerakan kamera, jenis teks overlay, momen tertentu, dsb). JANGAN memberi jawaban generik/template yang bisa berlaku untuk video Shorts manapun. Sebutkan detail konkret yang membuktikan kamu benar-benar menonton video ini.`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -48,13 +51,19 @@ PENTING: Jawab berdasarkan apa yang BENAR-BENAR kamu lihat dan dengar di video i
 
   if (!response.ok) {
     const errText = await response.text();
+
+    if (response.status === 429) {
+      throw new GeminiQuotaError(
+        `Gemini API quota exceeded (429) - ${errText.slice(0, 200)}`
+      );
+    }
+
     throw new Error(`Gemini API error: ${response.status} - ${errText}`);
   }
 
   const data = await response.json();
   const rawText: string = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-  // Bersihkan kalau Gemini tetap kasih markdown backtick
   const cleaned = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
 
   try {
