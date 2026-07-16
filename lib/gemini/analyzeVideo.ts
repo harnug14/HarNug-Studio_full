@@ -10,6 +10,10 @@ export interface VideoAnalysis {
   hookCta: string;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function analyzeVideo(
   videoUrl: string,
   apiKey: string,
@@ -26,30 +30,60 @@ export async function analyzeVideo(
 
 PENTING: Jawab berdasarkan apa yang BENAR-BENAR kamu lihat dan dengar di video ini secara spesifik dan konkret (warna, gerakan kamera, jenis teks overlay, momen tertentu, dsb). JANGAN memberi jawaban generik/template yang bisa berlaku untuk video Shorts manapun. Sebutkan detail konkret yang membuktikan kamu benar-benar menonton video ini.`;
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              {
-                file_data: {
-                  mime_type: "video/*",
-                  file_uri: videoUrl,
-                },
-              },
-            ],
-          },
-        ],
-      }),
-    }
-  );
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY_MS = 5000;
 
-  if (!response.ok) {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: prompt },
+                {
+                  file_data: {
+                    mime_type: "video/*",
+                    file_uri: videoUrl,
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      const rawText: string =
+        data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      const cleaned = rawText
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      try {
+        const parsed = JSON.parse(cleaned);
+        return {
+          niche: parsed.niche || "",
+          visual: parsed.visual || "",
+          editing: parsed.editing || "",
+          hookCta: parsed.hookCta || "",
+        };
+      } catch (e) {
+        throw new Error(
+          `Gagal parse hasil analisis Gemini: ${cleaned.slice(0, 200)}`
+        );
+      }
+    }
+
     const errText = await response.text();
 
     if (response.status === 429) {
@@ -58,23 +92,16 @@ PENTING: Jawab berdasarkan apa yang BENAR-BENAR kamu lihat dan dengar di video i
       );
     }
 
+    if (response.status === 503 && attempt < MAX_RETRIES) {
+      lastError = new Error(
+        `Gemini API 503 (percobaan ${attempt + 1}/${MAX_RETRIES + 1}) - server sibuk, mencoba lagi...`
+      );
+      await sleep(RETRY_DELAY_MS);
+      continue;
+    }
+
     throw new Error(`Gemini API error: ${response.status} - ${errText}`);
   }
 
-  const data = await response.json();
-  const rawText: string = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-  const cleaned = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
-
-  try {
-    const parsed = JSON.parse(cleaned);
-    return {
-      niche: parsed.niche || "",
-      visual: parsed.visual || "",
-      editing: parsed.editing || "",
-      hookCta: parsed.hookCta || "",
-    };
-  } catch (e) {
-    throw new Error(`Gagal parse hasil analisis Gemini: ${cleaned.slice(0, 200)}`);
-  }
+  throw lastError || new Error("Gagal menganalisis video setelah beberapa percobaan");
 }
