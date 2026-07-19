@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Topik = {
   id: string;
@@ -11,6 +12,7 @@ type Topik = {
 };
 
 export default function TopikPage() {
+  const router = useRouter();
   const [items, setItems] = useState<Topik[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -18,6 +20,10 @@ export default function TopikPage() {
   const [catatan, setCatatan] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editJudul, setEditJudul] = useState("");
+  const [editCatatan, setEditCatatan] = useState("");
 
   async function fetchTopik() {
     setLoading(true);
@@ -62,8 +68,30 @@ export default function TopikPage() {
     fetchTopik();
   }
 
-  function handleBuatNaskah(judul: string) {
-    alert(`Fitur "Buat Naskah dari: ${judul}" akan terhubung ke AI Chat di Fase 6.`);
+  function startEdit(item: Topik) {
+    setEditingId(item.id);
+    setEditJudul(item.judul);
+    setEditCatatan(item.catatan || "");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditJudul("");
+    setEditCatatan("");
+  }
+
+  async function handleSaveEdit(id: string) {
+    await fetch(`/api/topik/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ judul: editJudul, catatan: editCatatan }),
+    });
+    cancelEdit();
+    fetchTopik();
+  }
+
+  function handleBuatNaskah(id: string) {
+    router.push(`/ai-chat?fromTopik=${id}`);
   }
 
   return (
@@ -98,6 +126,9 @@ export default function TopikPage() {
       </form>
 
       <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>Daftar Topik</h2>
+      <p style={{ fontSize: 13, opacity: 0.6, marginBottom: 12 }}>
+        Klik judul topik untuk membuat naskah dari topik itu di AI Chat.
+      </p>
 
       {loading ? (
         <p>Memuat...</p>
@@ -105,40 +136,83 @@ export default function TopikPage() {
         <p>Belum ada topik tersimpan.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {items.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                border: "1px solid #333",
-                borderRadius: 8,
-                padding: 12,
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>{item.judul}</div>
-              {item.catatan && (
-                <div style={{ fontSize: 14, opacity: 0.8, marginTop: 4 }}>
-                  {item.catatan}
-                </div>
-              )}
-              <div style={{ fontSize: 12, opacity: 0.5, marginTop: 4 }}>
-                Status: {item.status}
+          {items.map((item) => {
+            const isEditing = editingId === item.id;
+
+            return (
+              <div
+                key={item.id}
+                style={{
+                  border: "1px solid #333",
+                  borderRadius: 8,
+                  padding: 12,
+                }}
+              >
+                {isEditing ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <input
+                      type="text"
+                      value={editJudul}
+                      onChange={(e) => setEditJudul(e.target.value)}
+                      style={{ padding: 8 }}
+                    />
+                    <textarea
+                      value={editCatatan}
+                      onChange={(e) => setEditCatatan(e.target.value)}
+                      rows={3}
+                      style={{ padding: 8 }}
+                    />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={() => handleSaveEdit(item.id)}
+                        style={{ padding: "6px 12px", cursor: "pointer" }}
+                      >
+                        Simpan
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        style={{ padding: "6px 12px", cursor: "pointer" }}
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      onClick={() => handleBuatNaskah(item.id)}
+                      style={{ fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}
+                      title="Klik untuk buat naskah dari topik ini"
+                    >
+                      {item.judul}
+                    </div>
+                    {item.catatan && (
+                      <div style={{ fontSize: 14, opacity: 0.8, marginTop: 4 }}>
+                        {item.catatan}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, opacity: 0.5, marginTop: 4 }}>
+                      Status: {item.status}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <button
+                        onClick={() => startEdit(item)}
+                        style={{ padding: "6px 12px", cursor: "pointer" }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        style={{ padding: "6px 12px", cursor: "pointer" }}
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <button
-                  onClick={() => handleBuatNaskah(item.judul)}
-                  style={{ padding: "6px 12px", cursor: "pointer" }}
-                >
-                  Buat Naskah dari Topik Ini
-                </button>
-                <button
-                  onClick={() => handleDelete(item.id)}
-                  style={{ padding: "6px 12px", cursor: "pointer" }}
-                >
-                  Hapus
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </main>

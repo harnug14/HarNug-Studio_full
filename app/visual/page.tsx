@@ -72,9 +72,14 @@ export default function VisualPage() {
     if (!confirm("Hapus panduan visual ini?")) return;
     try {
       const res = await fetch(`/api/visual/${id}`, { method: "DELETE" });
-      if (res.ok) setList((prev) => prev.filter((v) => v.id !== id));
-    } catch (e) {
-      // diamkan
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setList((prev) => prev.filter((v) => v.id !== id));
+      } else {
+        alert("Gagal menghapus: " + (data.error || `Status ${res.status}`));
+      }
+    } catch (err: any) {
+      alert("Gagal menghapus: " + (err.message || "Terjadi kesalahan jaringan"));
     }
   }
 
@@ -101,20 +106,6 @@ export default function VisualPage() {
         setEditingId(null);
         await fetchList();
       }
-    } catch (e) {
-      // diamkan
-    }
-  }
-
-  async function toggleStatus(v: VisualRow) {
-    const newStatus = v.status === "draft" ? "siap_produksi" : "draft";
-    try {
-      const res = await fetch(`/api/visual/${v.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      if (res.ok) await fetchList();
     } catch (e) {
       // diamkan
     }
@@ -298,10 +289,6 @@ export default function VisualPage() {
                       {v.isi_visual}
                     </div>
                   )}
-                  <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
-                    Status:{" "}
-                    {v.status === "siap_produksi" ? "Siap Produksi" : "Draft"}
-                  </div>
                 </div>
                 <button
                   onClick={() => handleDelete(v.id)}
@@ -335,20 +322,6 @@ export default function VisualPage() {
                   }}
                 >
                   Edit
-                </button>
-                <button
-                  onClick={() => toggleStatus(v)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 6,
-                    border: "1px solid #fc6",
-                    background: "none",
-                    color: "#fc6",
-                    cursor: "pointer",
-                    fontSize: 13,
-                  }}
-                >
-                  Tandai {v.status === "draft" ? "Siap Produksi" : "Draft"}
                 </button>
               </div>
             </>
