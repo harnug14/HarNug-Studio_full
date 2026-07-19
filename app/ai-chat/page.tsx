@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 interface ChatMessageItem {
@@ -77,7 +77,6 @@ function parseTopikCards(content: string): { cards: TopikCard[]; sisaTeks: strin
 }
 
 // Deteksi penanda [DRAFT_NASKAH] atau [DRAFT_VISUAL] di awal balasan.
-// Mengembalikan { isDraft, cleanContent } — cleanContent adalah teks tanpa penanda itu (untuk ditampilkan/disimpan).
 function parseDraftMarker(content: string): { isDraft: boolean; cleanContent: string } {
   const trimmed = content.trim();
   if (trimmed.startsWith("[DRAFT_NASKAH]") || trimmed.startsWith("[DRAFT_VISUAL]")) {
@@ -90,7 +89,8 @@ function parseDraftMarker(content: string): { isDraft: boolean; cleanContent: st
   return { isDraft: false, cleanContent: content };
 }
 
-export default function AiChatPage() {
+// Komponen utama yang memakai useSearchParams() — dibungkus Suspense dari komponen luar (AiChatPage)
+function AiChatContent() {
   const searchParams = useSearchParams();
   const fromReferensi = searchParams.get("fromReferensi");
   const fromTopik = searchParams.get("fromTopik");
@@ -554,7 +554,6 @@ export default function AiChatPage() {
             const { isDraft, cleanContent } =
               m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
 
-            // Tentukan apakah pesan ini berhak dapat ikon simpan (untuk saveTarget naskah/visual)
             const isSavableDraft =
               m.role === "assistant" &&
               saveTarget &&
@@ -635,7 +634,6 @@ export default function AiChatPage() {
                   </div>
                 </div>
 
-                {/* Ikon simpan untuk naskah/visual: HANYA muncul kalau AI menandai balasan ini sebagai draft (isDraft true) */}
                 {isSavableDraft && cards.length === 0 && (
                   <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 4 }}>
                     <button
@@ -785,5 +783,14 @@ export default function AiChatPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Komponen luar wajib ada supaya useSearchParams() di dalamnya tidak bikin build gagal (aturan Next.js)
+export default function AiChatPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24, color: "#888" }}>Memuat...</div>}>
+      <AiChatContent />
+    </Suspense>
   );
 }
