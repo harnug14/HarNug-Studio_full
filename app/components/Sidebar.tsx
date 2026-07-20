@@ -8,19 +8,17 @@ import { useState, useEffect } from "react";
 
 const NAV_ITEMS = [
   {
-    label: "Dashboard",
+    label: "Profile",
     href: "/",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+        <circle cx="12" cy="7" r="4" />
       </svg>
     ),
   },
   {
-    label: "Referensi",
+    label: "Reference",
     href: "/referensi",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -30,7 +28,7 @@ const NAV_ITEMS = [
     ),
   },
   {
-    label: "Topik",
+    label: "Topic",
     href: "/topik",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -39,7 +37,7 @@ const NAV_ITEMS = [
     ),
   },
   {
-    label: "Naskah",
+    label: "Script",
     href: "/naskah",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -68,7 +66,7 @@ const NAV_ITEMS = [
     ),
   },
   {
-    label: "AI Chat",
+    label: "Chat",
     href: "/ai-chat",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -76,23 +74,12 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
-  { type: "divider" as const },
   {
-    label: "API Keys",
+    label: "Api Key",
     href: "/settings/api-keys",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-      </svg>
-    ),
-  },
-  {
-    label: "Profile",
-    href: "/profile",
-    icon: (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
       </svg>
     ),
   },
@@ -102,15 +89,56 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState<{
+    email: string;
+    created_at: string;
+    last_sign_in_at: string | null;
+  } | null>(null);
+  const [loadingReset, setLoadingReset] = useState(false);
+  const [resetMessage, setResetMessage] = useState("");
 
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    async function loadProfile() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserProfile({
+          email: user.email || "",
+          created_at: user.created_at,
+          last_sign_in_at: user.last_sign_in_at || null,
+        });
+      }
+    }
+    loadProfile();
+  }, []);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
+  };
+
+  const handleResetPassword = async () => {
+    if (!userProfile?.email) return;
+    setLoadingReset(true);
+    setResetMessage("");
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(userProfile.email, {
+        redirectTo: window.location.origin + "/login",
+      });
+      if (error) {
+        setResetMessage(`error:${error.message}`);
+      } else {
+        setResetMessage("success:Email reset password telah dikirim ke kotak masuk Anda.");
+      }
+    } catch (e: any) {
+      setResetMessage(`error:${e.message}`);
+    }
+    setLoadingReset(false);
   };
 
   const isActive = (href: string) => {
@@ -165,6 +193,174 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
             zIndex: 39,
           }}
         />
+      )}
+
+      {/* Account Modal Overlay */}
+      {accountOpen && (
+        <div
+          onClick={() => { setAccountOpen(false); setResetMessage(""); }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            backdropFilter: "blur(4px)",
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              margin: "0 16px",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--glass-border)",
+              background: "rgba(12, 12, 12, 0.98)",
+              backdropFilter: "blur(24px)",
+              padding: 0,
+              overflow: "hidden",
+              animation: "fadeIn 0.2s ease",
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{
+              padding: "24px 24px 20px",
+              borderBottom: "1px solid var(--glass-border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+                Account Settings
+              </h3>
+              <button
+                onClick={() => { setAccountOpen(false); setResetMessage(""); }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-tertiary)",
+                  cursor: "pointer",
+                  padding: 4,
+                  display: "flex",
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: 24 }}>
+              {/* User Info */}
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24 }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: "50%", background: "var(--accent-gradient)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 20, fontWeight: 700, color: "#fff", flexShrink: 0,
+                }}>
+                  {userProfile?.email?.charAt(0).toUpperCase() || "?"}
+                </div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+                    {userProfile?.email || userEmail || "—"}
+                  </div>
+                  <span className="badge badge-success" style={{ fontSize: 10 }}>Active Account</span>
+                </div>
+              </div>
+
+              {/* Details */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 16,
+                padding: 16,
+                borderRadius: "var(--radius-md)",
+                background: "rgba(255,255,255,0.02)",
+                border: "1px solid var(--glass-border)",
+                marginBottom: 20,
+              }}>
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Joined</div>
+                  <div style={{ fontSize: 13, color: "var(--text-primary)" }}>
+                    {userProfile ? new Date(userProfile.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Last Login</div>
+                  <div style={{ fontSize: 13, color: "var(--text-primary)" }}>
+                    {userProfile?.last_sign_in_at ? new Date(userProfile.last_sign_in_at).toLocaleString("id-ID") : "—"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Password Reset */}
+              <button
+                onClick={handleResetPassword}
+                disabled={loadingReset}
+                className="btn btn-secondary"
+                style={{ width: "100%", marginBottom: resetMessage ? 12 : 16 }}
+              >
+                {loadingReset ? (
+                  <><span className="spinner"/> Sending...</>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    Reset Password
+                  </>
+                )}
+              </button>
+              {resetMessage && (
+                <div style={{
+                  padding: "10px 14px",
+                  borderRadius: "var(--radius-md)",
+                  fontSize: 13,
+                  marginBottom: 16,
+                  background: resetMessage.startsWith("error:") ? "rgba(239, 68, 68, 0.1)" : "rgba(34, 197, 94, 0.1)",
+                  border: `1px solid ${resetMessage.startsWith("error:") ? "rgba(239, 68, 68, 0.2)" : "rgba(34, 197, 94, 0.2)"}`,
+                  color: resetMessage.startsWith("error:") ? "#fca5a5" : "#86efac",
+                }}>
+                  {resetMessage.replace(/^(error:|success:)/, "")}
+                </div>
+              )}
+
+              {/* Logout */}
+              <button
+                onClick={handleLogout}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid rgba(239, 68, 68, 0.2)",
+                  background: "rgba(239, 68, 68, 0.06)",
+                  color: "#f87171",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  transition: "all var(--transition-fast)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(239, 68, 68, 0.15)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(239, 68, 68, 0.06)";
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Sidebar */}
@@ -240,21 +436,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {NAV_ITEMS.map((item, idx) => {
-              if ("type" in item && item.type === "divider") {
-                return (
-                  <div
-                    key={`divider-${idx}`}
-                    style={{
-                      height: 1,
-                      background: "var(--glass-border)",
-                      margin: "8px 10px",
-                    }}
-                  />
-                );
-              }
-
-              const navItem = item as { label: string; href: string; icon: React.ReactNode };
+            {NAV_ITEMS.map((navItem) => {
               const active = isActive(navItem.href);
 
               return (
@@ -317,55 +499,15 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           </div>
         </nav>
 
-        {/* User section */}
+        {/* User section — clickable avatar */}
         <div
           style={{
             padding: "16px 16px 20px",
             borderTop: "1px solid var(--glass-border)",
           }}
         >
-          {userEmail && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                marginBottom: 12,
-              }}
-            >
-              <div
-                style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: "var(--radius-full)",
-                  background: "var(--accent-gradient)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "#fff",
-                  flexShrink: 0,
-                }}
-              >
-                {userEmail.charAt(0).toUpperCase()}
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-secondary)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  flex: 1,
-                }}
-              >
-                {userEmail}
-              </div>
-            </div>
-          )}
           <button
-            onClick={handleLogout}
+            onClick={() => setAccountOpen(true)}
             style={{
               width: "100%",
               padding: "8px 12px",
@@ -373,31 +515,54 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
               border: "1px solid var(--glass-border)",
               background: "transparent",
               color: "var(--text-secondary)",
-              fontSize: 13,
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
+              gap: 10,
               transition: "all var(--transition-fast)",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
-              e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.2)";
-              e.currentTarget.style.color = "var(--status-error)";
+              e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
+              e.currentTarget.style.borderColor = "rgba(168, 85, 247, 0.3)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = "transparent";
               e.currentTarget.style.borderColor = "var(--glass-border)";
-              e.currentTarget.style.color = "var(--text-secondary)";
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: "var(--radius-full)",
+                background: "var(--accent-gradient)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 11,
+                fontWeight: 600,
+                color: "#fff",
+                flexShrink: 0,
+              }}
+            >
+              {(userEmail || "?").charAt(0).toUpperCase()}
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                flex: 1,
+                textAlign: "left",
+              }}
+            >
+              {userEmail || "Account"}
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.4, flexShrink: 0 }}>
+              <path d="M12 15l-3-3h6l-3 3z" fill="currentColor" stroke="none" />
+              <path d="M12 9l3 3H9l3-3z" fill="currentColor" stroke="none" />
             </svg>
-            Logout
           </button>
         </div>
       </aside>
@@ -413,6 +578,10 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           .sidebar-open {
             transform: translateX(0) !important;
           }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </>

@@ -121,6 +121,8 @@ function AiChatContent() {
 
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [dropdownOpenId, setDropdownOpenId] = useState<string | null>(null);
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(true); // For chat sessions sidebar
 
@@ -529,12 +531,15 @@ function AiChatContent() {
                     alignItems: "center",
                     gap: 8,
                     transition: "all var(--transition-fast)",
+                    position: "relative",
                   }}
                   className="chat-session-item"
                   onMouseEnter={(e) => {
+                    setHoveredSessionId(s.id);
                     if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.03)";
                   }}
                   onMouseLeave={(e) => {
+                    setHoveredSessionId(null);
                     if (!isActive) e.currentTarget.style.background = "transparent";
                   }}
                 >
@@ -565,23 +570,68 @@ function AiChatContent() {
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, fontSize: 13, fontWeight: isActive ? 500 : 400 }}>
                         {s.judul}
                       </span>
-                      <div className="session-actions" style={{ display: "flex", opacity: isActive ? 1 : 0 }}>
+                      <div className="session-actions" style={{ display: "flex", opacity: (dropdownOpenId === s.id || hoveredSessionId === s.id) ? 1 : 0 }} >
                         <button
-                          onClick={(e) => { e.stopPropagation(); startRename(s); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDropdownOpenId(dropdownOpenId === s.id ? null : s.id);
+                          }}
                           className="btn-ghost btn-icon"
                           style={{ width: 24, height: 24, padding: 0 }}
-                          title="Ganti nama"
+                          title="Opsi"
                         >
-                          <EditIcon />
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
                         </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDeleteSession(s.id); }}
-                          className="btn-ghost btn-icon"
-                          style={{ width: 24, height: 24, padding: 0, color: "var(--status-error)" }}
-                          title="Hapus"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                        </button>
+
+                        {dropdownOpenId === s.id && (
+                          <div style={{
+                            position: "absolute",
+                            right: 12,
+                            top: "100%",
+                            marginTop: 4,
+                            background: "var(--bg-secondary)",
+                            border: "1px solid var(--glass-border)",
+                            borderRadius: "var(--radius-md)",
+                            padding: 4,
+                            zIndex: 20,
+                            minWidth: 120,
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.5)"
+                          }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDropdownOpenId(null);
+                                startRename(s);
+                              }}
+                              style={{
+                                width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
+                                background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 13,
+                                textAlign: "left", cursor: "pointer", borderRadius: "var(--radius-sm)"
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                            >
+                              <EditIcon /> Rename
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDropdownOpenId(null);
+                                handleDeleteSession(s.id);
+                              }}
+                              style={{
+                                width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
+                                background: "transparent", border: "none", color: "var(--status-error)", fontSize: 13,
+                                textAlign: "left", cursor: "pointer", borderRadius: "var(--radius-sm)"
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)"}
+                              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                              Hapus
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </>
                   )}

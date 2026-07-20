@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("api_keys")
-    .insert({ provider, key_label, api_key, user_id: user.id })
+    .insert({ provider, key_label, api_key, user_id: user.id, status: "active" })
     .select()
     .single();
 
