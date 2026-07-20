@@ -68,13 +68,13 @@ export default function ApiKeysPage() {
   function getStatusStyle(status: string) {
     switch (status) {
       case "active":
-        return { dot: "status-dot-success", bg: "rgba(34, 197, 94, 0.1)", text: "var(--status-success)" };
+        return { dot: "status-dot-success", bg: "var(--glass-bg)", text: "var(--status-success)" };
       case "limited":
-        return { dot: "status-dot-warning", bg: "rgba(245, 158, 11, 0.1)", text: "var(--status-warning)" };
+        return { dot: "status-dot-warning", bg: "var(--glass-bg)", text: "var(--status-warning)" };
       case "error":
-        return { dot: "status-dot-error", bg: "rgba(239, 68, 68, 0.1)", text: "var(--status-error)" };
+        return { dot: "status-dot-error", bg: "var(--glass-bg)", text: "var(--status-error)" };
       default:
-        return { dot: "", bg: "rgba(255, 255, 255, 0.05)", text: "var(--text-secondary)" };
+        return { dot: "", bg: "var(--glass-bg)", text: "var(--text-secondary)" };
     }
   }
 
@@ -153,9 +153,9 @@ export default function ApiKeysPage() {
                 padding: "10px 14px",
                 borderRadius: "var(--radius-md)",
                 fontSize: 13,
-                background: message.startsWith("error:") ? "rgba(239, 68, 68, 0.1)" : "rgba(34, 197, 94, 0.1)",
-                border: `1px solid ${message.startsWith("error:") ? "rgba(239, 68, 68, 0.2)" : "rgba(34, 197, 94, 0.2)"}`,
-                color: message.startsWith("error:") ? "#fca5a5" : "#86efac",
+                background: "var(--glass-bg)",
+                border: `1px solid ${message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)"}`,
+                color: message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)",
               }}>
                 {message.replace(/^(error:|success:)/, "")}
               </div>
@@ -167,13 +167,13 @@ export default function ApiKeysPage() {
         <div style={{
           padding: 16,
           borderRadius: "var(--radius-md)",
-          background: "rgba(6, 182, 212, 0.05)",
-          border: "1px solid rgba(6, 182, 212, 0.15)",
+          background: "var(--glass-bg)",
+          border: "1px solid var(--accent-primary)",
           marginBottom: 24,
           display: "flex",
           gap: 12,
         }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}>
             <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
           </svg>
           <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
@@ -219,7 +219,7 @@ export default function ApiKeysPage() {
                       width: 40,
                       height: 40,
                       borderRadius: "var(--radius-sm)",
-                      background: k.provider === "youtube" ? "rgba(239, 68, 68, 0.1)" : k.provider === "groq" ? "rgba(249, 115, 22, 0.1)" : "rgba(168, 85, 247, 0.1)",
+                      background: "var(--glass-bg-hover)",
                       color: k.provider === "youtube" ? "#ef4444" : k.provider === "groq" ? "#f97316" : "#a855f7",
                       display: "flex",
                       alignItems: "center",

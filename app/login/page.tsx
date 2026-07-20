@@ -102,7 +102,7 @@ export default function LoginPage() {
               fontWeight: 800,
               color: "#fff",
               marginBottom: 16,
-              boxShadow: "var(--shadow-glow-purple)",
+              boxShadow: "var(--shadow-glow-accent)",
             }}
           >
             H
@@ -161,9 +161,9 @@ export default function LoginPage() {
                 style={{
                   padding: "10px 14px",
                   borderRadius: "var(--radius-md)",
-                  background: "rgba(239, 68, 68, 0.1)",
-                  border: "1px solid rgba(239, 68, 68, 0.2)",
-                  color: "#fca5a5",
+                  background: "var(--glass-bg)",
+                  border: "1px solid var(--status-error)",
+                  color: "var(--status-error)",
                   fontSize: 13,
                   marginBottom: 20,
                 }}

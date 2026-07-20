@@ -108,8 +108,8 @@ export default function NaskahPage() {
   return (
     <DashboardLayout>
       <div className="animate-fade-in">
-        <div className="page-header">
-          <h1 className="page-title">Naskah</h1>
+        <div className="page-header" style={{ marginBottom: 24 }}>
+          <h1 className="page-title">Script</h1>
           <p className="page-subtitle">
             Tulis dan kelola naskah video YouTube Shorts. Klik judul untuk membuat panduan visual via AI.
           </p>
@@ -158,9 +158,9 @@ export default function NaskahPage() {
                 padding: "10px 14px",
                 borderRadius: "var(--radius-md)",
                 fontSize: 13,
-                background: message.startsWith("error:") ? "rgba(239, 68, 68, 0.1)" : "rgba(34, 197, 94, 0.1)",
-                border: `1px solid ${message.startsWith("error:") ? "rgba(239, 68, 68, 0.2)" : "rgba(34, 197, 94, 0.2)"}`,
-                color: message.startsWith("error:") ? "#fca5a5" : "#86efac",
+                background: "var(--glass-bg)",
+                border: `1px solid ${message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)"}`,
+                color: message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)",
               }}>
                 {message.replace(/^(error:|success:)/, "")}
               </div>
@@ -226,7 +226,7 @@ export default function NaskahPage() {
                               transition: "color var(--transition-fast)",
                             }}
                             title="Klik untuk buat panduan visual dari naskah ini"
-                            onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent-teal)"}
+                            onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent-primary)"}
                             onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-primary)"}
                           >
                             {item.judul}
@@ -252,7 +252,7 @@ export default function NaskahPage() {
                                   left: 0,
                                   right: 0,
                                   height: 40,
-                                  background: "linear-gradient(transparent, rgba(5,5,5,0.95))",
+                                  background: "linear-gradient(var(--bg-elevated-transparent), var(--bg-elevated))",
                                 }} />
                               )}
                             </div>
@@ -261,7 +261,7 @@ export default function NaskahPage() {
                             <button
                               onClick={() => setExpandedId(isExpanded ? null : item.id)}
                               className="btn btn-ghost btn-sm"
-                              style={{ marginTop: 4, padding: "4px 0", color: "var(--accent-cyan)", fontSize: 12 }}
+                              style={{ marginTop: 4, padding: "4px 0", color: "var(--accent-primary)", fontSize: 12 }}
                             >
                               {isExpanded ? "Sembunyikan" : "Lihat selengkapnya"}
                             </button>
@@ -273,7 +273,7 @@ export default function NaskahPage() {
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
                           Edit
                         </button>
-                        <button onClick={() => handleBuatVisual(item.id)} className="btn btn-ghost btn-sm" style={{ color: "var(--accent-teal)" }}>
+                        <button onClick={() => handleBuatVisual(item.id)} className="btn btn-ghost btn-sm" style={{ color: "var(--accent-primary)" }}>
                           ✨ Buat Visual
                         </button>
                         <button onClick={() => handleDelete(item.id)} className="btn btn-danger btn-sm">Hapus</button>

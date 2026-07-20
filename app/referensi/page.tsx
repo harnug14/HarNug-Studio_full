@@ -171,8 +171,8 @@ export default function ReferensiPage() {
   return (
     <DashboardLayout>
       <div className="animate-fade-in">
-        <div className="page-header">
-          <h1 className="page-title">Referensi</h1>
+        <div className="page-header" style={{ marginBottom: 24 }}>
+          <h1 className="page-title">Reference</h1>
           <p className="page-subtitle">Analisis channel YouTube untuk riset gaya konten, niche, visual, dan editing.</p>
         </div>
 
@@ -218,9 +218,9 @@ export default function ReferensiPage() {
               <div style={{
                 padding: "10px 14px",
                 borderRadius: "var(--radius-md)",
-                background: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.2)",
-                color: "#fca5a5",
+                background: "var(--glass-bg)",
+                border: "1px solid var(--status-error)",
+                color: "var(--status-error)",
                 fontSize: 13,
                 marginBottom: 16,
               }}>
@@ -315,8 +315,8 @@ export default function ReferensiPage() {
                         <div key={item.label} style={{
                           padding: 12,
                           borderRadius: "var(--radius-md)",
-                          background: "rgba(255,255,255,0.02)",
-                          border: "1px solid rgba(255,255,255,0.04)",
+                          background: "var(--glass-bg)",
+                          border: "1px solid var(--glass-border)",
                         }}>
                           <div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4, fontWeight: 500 }}>
                             {item.label}
@@ -332,7 +332,7 @@ export default function ReferensiPage() {
                       <button
                         onClick={() => setExpandedId(isExpanded ? null : row.id)}
                         className="btn btn-ghost btn-sm"
-                        style={{ color: "var(--accent-cyan)" }}
+                        style={{ color: "var(--accent-primary)" }}
                       >
                         {isExpanded ? "Sembunyikan detail" : `Lihat detail ${analyses.length} video`}
                       </button>
@@ -350,8 +350,8 @@ export default function ReferensiPage() {
                           <div key={i} style={{
                             padding: 14,
                             borderRadius: "var(--radius-md)",
-                            background: "rgba(255,255,255,0.02)",
-                            border: "1px solid rgba(255,255,255,0.04)",
+                            background: "var(--glass-bg)",
+                            border: "1px solid var(--glass-border)",
                           }} className="animate-fade-in">
                             <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 14 }}>
                               {i + 1}. {a.title}

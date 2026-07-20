@@ -96,8 +96,8 @@ export default function TopikPage() {
   return (
     <DashboardLayout>
       <div className="animate-fade-in">
-        <div className="page-header">
-          <h1 className="page-title">Topik</h1>
+        <div className="page-header" style={{ marginBottom: 24 }}>
+          <h1 className="page-title">Topic</h1>
           <p className="page-subtitle">
             Kelola ide topik video YouTube Shorts Anda. Klik judul topik untuk membuat naskah via AI.
           </p>
@@ -146,9 +146,9 @@ export default function TopikPage() {
                 padding: "10px 14px",
                 borderRadius: "var(--radius-md)",
                 fontSize: 13,
-                background: message.startsWith("error:") ? "rgba(239, 68, 68, 0.1)" : "rgba(34, 197, 94, 0.1)",
-                border: `1px solid ${message.startsWith("error:") ? "rgba(239, 68, 68, 0.2)" : "rgba(34, 197, 94, 0.2)"}`,
-                color: message.startsWith("error:") ? "#fca5a5" : "#86efac",
+                background: "var(--glass-bg)",
+                border: `1px solid ${message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)"}`,
+                color: message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)",
               }}>
                 {message.replace(/^(error:|success:)/, "")}
               </div>
@@ -212,7 +212,7 @@ export default function TopikPage() {
                               transition: "color var(--transition-fast)",
                             }}
                             title="Klik untuk buat naskah dari topik ini"
-                            onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent-cyan)"}
+                            onMouseEnter={(e) => e.currentTarget.style.color = "var(--accent-primary)"}
                             onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-primary)"}
                           >
                             {item.judul}
@@ -232,7 +232,7 @@ export default function TopikPage() {
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
                           Edit
                         </button>
-                        <button onClick={() => handleBuatNaskah(item.id)} className="btn btn-ghost btn-sm" style={{ color: "var(--accent-cyan)" }}>
+                        <button onClick={() => handleBuatNaskah(item.id)} className="btn btn-ghost btn-sm" style={{ color: "var(--accent-primary)" }}>
                           ✨ Buat Naskah
                         </button>
                         <button onClick={() => handleDelete(item.id)} className="btn btn-danger btn-sm">Hapus</button>

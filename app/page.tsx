@@ -129,9 +129,9 @@ export default function ProfilePage() {
       background: "rgba(255,255,255,0.02)", border: "1px solid var(--glass-border)", 
       position: "relative"
     }}>
-      <div style={{ position: "relative", width: 160, flexShrink: 0, borderRadius: 8, overflow: "hidden", aspectRatio: "16/9", background: "#111" }}>
+      <div style={{ position: "relative", width: 160, flexShrink: 0, borderRadius: 8, overflow: "hidden", aspectRatio: "16/9", background: "var(--bg-secondary)" }}>
         <img src={video.thumbnail} alt={video.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        <div style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,0.8)", color: "#fff", fontSize: 11, padding: "2px 6px", borderRadius: 4, fontWeight: 500 }}>
+        <div style={{ position: "absolute", bottom: 6, right: 6, background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 11, padding: "2px 6px", borderRadius: 4, fontWeight: 500 }}>
           {parseISO8601Duration(video.duration)}
         </div>
       </div>
@@ -154,7 +154,7 @@ export default function ProfilePage() {
           </span>
         </div>
       </div>
-      <div style={{ position: "absolute", top: -8, left: -8, background: "var(--accent-gradient)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.5)" }}>
+      <div style={{ position: "absolute", top: -8, left: -8, background: "var(--accent-primary)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 12, boxShadow: "var(--shadow-sm)" }}>
         {badge}
       </div>
     </div>
@@ -165,10 +165,10 @@ export default function ProfilePage() {
     : "0";
 
   const progressCards = [
-    { label: "Reference", value: stats.referensi, color: "#a855f7", icon: "🔍" },
-    { label: "Topic", value: stats.topik, color: "#06b6d4", icon: "💡" },
-    { label: "Script", value: stats.naskah, color: "#14b8a6", icon: "📝" },
-    { label: "Visual", value: stats.visual, color: "#f59e0b", icon: "🎬" },
+    { label: "Reference", value: stats.referensi, color: "var(--accent-primary)", icon: "🔍" },
+    { label: "Topic", value: stats.topik, color: "var(--accent-primary)", icon: "💡" },
+    { label: "Script", value: stats.naskah, color: "var(--accent-primary)", icon: "📝" },
+    { label: "Visual", value: stats.visual, color: "var(--accent-primary)", icon: "🎬" },
   ];
 
   return (
@@ -178,7 +178,7 @@ export default function ProfilePage() {
         <div className="page-header">
           <h1 className="page-title">Profile</h1>
           <p className="page-subtitle">
-            YouTube channel overview and your content creation progress.
+            Ringkasan channel YouTube dan progres pembuatan konten Anda.
           </p>
         </div>
 
@@ -197,13 +197,13 @@ export default function ProfilePage() {
               {/* Channel Banner */}
               <div style={{
                 height: 140,
-                background: channelData.bannerUrl ? `url(${channelData.bannerUrl}) center/cover no-repeat` : "linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(6, 182, 212, 0.15), rgba(245, 158, 11, 0.1))",
+                background: channelData.bannerUrl ? `url(${channelData.bannerUrl}) center/cover no-repeat` : "var(--accent-muted)",
                 position: "relative",
               }}>
                 <div style={{
                   position: "absolute",
                   bottom: 0, left: 0, right: 0, height: "100%",
-                  background: "linear-gradient(to top, rgba(12,12,12,0.95) 0%, rgba(12,12,12,0.4) 50%, transparent 100%)",
+                  background: "linear-gradient(to top, var(--bg-elevated) 0%, var(--bg-elevated-transparent) 100%)",
                 }} />
               </div>
 
@@ -217,10 +217,10 @@ export default function ProfilePage() {
                       width: 88,
                       height: 88,
                       borderRadius: "50%",
-                      border: "4px solid rgba(12,12,12,1)",
+                      border: "4px solid var(--bg-elevated)",
                       objectFit: "cover",
-                      background: "#111",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+                      background: "var(--bg-secondary)",
+                      boxShadow: "var(--shadow-md)",
                     }}
                   />
                   <div style={{ flex: 1, minWidth: 200, paddingBottom: 4 }}>
@@ -257,7 +257,7 @@ export default function ProfilePage() {
                 </div>
 
                 {channelData.description && (
-                  <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 24, lineHeight: 1.6, background: "rgba(255,255,255,0.02)", padding: 16, borderRadius: "var(--radius-md)", border: "1px solid var(--glass-border)" }}>
+                  <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 24, lineHeight: 1.6, background: "var(--glass-bg)", padding: 16, borderRadius: "var(--radius-md)", border: "1px solid var(--glass-border)" }}>
                     {channelData.description}
                   </div>
                 )}
@@ -265,14 +265,14 @@ export default function ProfilePage() {
                 {/* Stats row */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
                   {[
-                    { label: "Subscribers", value: formatCount(channelData.subscriberCount), color: "#ef4444" },
-                    { label: "Total Views", value: formatCount(channelData.viewCount), color: "#06b6d4" },
-                    { label: "Total Videos", value: formatCount(channelData.videoCount), color: "#a855f7" },
-                    { label: "Avg Views / Video", value: formatCount(avgViews), color: "#10b981" },
+                    { label: "Subscribers", value: formatCount(channelData.subscriberCount), color: "var(--accent-primary)" },
+                    { label: "Total Views", value: formatCount(channelData.viewCount), color: "var(--accent-primary)" },
+                    { label: "Total Videos", value: formatCount(channelData.videoCount), color: "var(--accent-primary)" },
+                    { label: "Avg Views / Video", value: formatCount(avgViews), color: "var(--accent-primary)" },
                   ].map((s) => (
                     <div key={s.label} style={{
                       padding: "16px", borderRadius: "var(--radius-md)",
-                      background: "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)",
+                      background: "var(--glass-bg)",
                       border: "1px solid var(--glass-border)",
                     }}>
                       <div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 500 }}>
@@ -291,7 +291,7 @@ export default function ProfilePage() {
               {/* Top Videos */}
               <div className="glass-card-static" style={{ padding: 24 }}>
                 <div className="section-title" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                   Top Videos (Most Viewed)
                 </div>
                 {channelData.topVideos && channelData.topVideos.length > 0 ? (
@@ -308,7 +308,7 @@ export default function ProfilePage() {
               {/* Latest Videos */}
               <div className="glass-card-static" style={{ padding: 24 }}>
                 <div className="section-title" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   Latest Videos
                 </div>
                 {channelData.latestVideos && channelData.latestVideos.length > 0 ? (

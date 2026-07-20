@@ -154,9 +154,9 @@ export default function VisualPage() {
               <div style={{
                 padding: "10px 14px",
                 borderRadius: "var(--radius-md)",
-                background: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.2)",
-                color: "#fca5a5",
+                background: "var(--glass-bg)",
+                border: "1px solid var(--status-error)",
+                color: "var(--status-error)",
                 fontSize: 13,
                 marginBottom: 16,
               }}>
@@ -251,7 +251,7 @@ export default function VisualPage() {
                                   left: 0,
                                   right: 0,
                                   height: 40,
-                                  background: "linear-gradient(transparent, rgba(5,5,5,0.95))",
+                                  background: "linear-gradient(var(--bg-elevated-transparent), var(--bg-elevated))",
                                 }} />
                               )}
                             </div>
@@ -260,7 +260,7 @@ export default function VisualPage() {
                             <button
                               onClick={() => setExpandedId(isExpanded ? null : v.id)}
                               className="btn btn-ghost btn-sm"
-                              style={{ marginTop: 4, padding: "4px 0", color: "var(--accent-orange)", fontSize: 12 }}
+                              style={{ marginTop: 4, padding: "4px 0", color: "var(--accent-primary)", fontSize: 12 }}
                             >
                               {isExpanded ? "Sembunyikan" : "Lihat selengkapnya"}
                             </button>

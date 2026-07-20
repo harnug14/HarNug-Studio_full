@@ -124,6 +124,22 @@ function AiChatContent() {
   const [dropdownOpenId, setDropdownOpenId] = useState<string | null>(null);
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
 
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpenId(null);
+      }
+    }
+    if (dropdownOpenId) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [dropdownOpenId]);
+
   const [sidebarOpen, setSidebarOpen] = useState(true); // For chat sessions sidebar
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -215,7 +231,7 @@ function AiChatContent() {
       const data = await res.json();
       const topik = (data.data || []).find((t: any) => t.id === topikId);
       if (topik) {
-        setContextLabel(`Topik: ${topik.judul}`);
+        setContextLabel(`Topic: ${topik.judul}`);
         setSaveTarget("naskah");
         setContextText(
           `Judul topik: ${topik.judul}${topik.catatan ? `\nCatatan: ${topik.catatan}` : ""}\n\nTolong buatkan naskah video YouTube Shorts berdasarkan topik ini.`
@@ -232,7 +248,7 @@ function AiChatContent() {
       const data = await res.json();
       const naskah = (data.data || []).find((n: any) => n.id === naskahId);
       if (naskah) {
-        setContextLabel(`Naskah: ${naskah.judul}`);
+        setContextLabel(`Script: ${naskah.judul}`);
         setSaveTarget("visual");
         setContextText(
           `Judul naskah: ${naskah.judul}\nIsi naskah:\n${naskah.isi_naskah || ""}\n\nTolong buatkan panduan visual/storyboard berdasarkan naskah ini.`
@@ -484,7 +500,7 @@ function AiChatContent() {
           className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}
           style={{
             width: 280,
-            background: "rgba(10, 10, 10, 0.95)",
+            background: "var(--bg-elevated)",
             borderRight: "1px solid var(--glass-border)",
             display: "flex",
             flexDirection: "column",
@@ -524,8 +540,8 @@ function AiChatContent() {
                     borderRadius: "var(--radius-md)",
                     marginBottom: 4,
                     cursor: isRenaming ? "default" : "pointer",
-                    background: isActive ? "rgba(168, 85, 247, 0.1)" : "transparent",
-                    border: `1px solid ${isActive ? "rgba(168, 85, 247, 0.2)" : "transparent"}`,
+                    background: isActive ? "var(--accent-muted)" : "transparent",
+                    border: `1px solid ${isActive ? "var(--accent-muted)" : "transparent"}`,
                     color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
                     display: "flex",
                     alignItems: "center",
@@ -536,7 +552,7 @@ function AiChatContent() {
                   className="chat-session-item"
                   onMouseEnter={(e) => {
                     setHoveredSessionId(s.id);
-                    if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                    if (!isActive) e.currentTarget.style.background = "var(--glass-bg-hover)";
                   }}
                   onMouseLeave={(e) => {
                     setHoveredSessionId(null);
@@ -564,7 +580,7 @@ function AiChatContent() {
                     />
                   ) : (
                     <>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? "var(--accent-purple)" : "currentColor"} strokeWidth="2" style={{ flexShrink: 0 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? "var(--accent-primary)" : "currentColor"} strokeWidth="2" style={{ flexShrink: 0 }}>
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                       </svg>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, fontSize: 13, fontWeight: isActive ? 500 : 400 }}>
@@ -577,14 +593,16 @@ function AiChatContent() {
                             setDropdownOpenId(dropdownOpenId === s.id ? null : s.id);
                           }}
                           className="btn-ghost btn-icon"
-                          style={{ width: 24, height: 24, padding: 0 }}
+                          style={{ width: 24, height: 24, padding: 0, color: "var(--text-secondary)" }}
                           title="Opsi"
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
                         </button>
 
                         {dropdownOpenId === s.id && (
-                          <div style={{
+                          <div 
+                            ref={dropdownRef}
+                            style={{
                             position: "absolute",
                             right: 12,
                             top: "100%",
@@ -595,7 +613,7 @@ function AiChatContent() {
                             padding: 4,
                             zIndex: 20,
                             minWidth: 120,
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.5)"
+                            boxShadow: "var(--shadow-md)"
                           }}>
                             <button
                               onClick={(e) => {
@@ -628,7 +646,7 @@ function AiChatContent() {
                               onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                              Hapus
+                              Delete
                             </button>
                           </div>
                         )}
@@ -648,7 +666,7 @@ function AiChatContent() {
           <div style={{
             padding: "16px 24px",
             borderBottom: "1px solid var(--glass-border)",
-            background: "rgba(5, 5, 5, 0.8)",
+            background: "var(--bg-elevated)",
             backdropFilter: "blur(12px)",
             display: "flex",
             alignItems: "center",
@@ -669,7 +687,7 @@ function AiChatContent() {
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   className="select-field"
-                  style={{ width: 200, padding: "8px 32px 8px 12px", background: "rgba(255,255,255,0.03)" }}
+                  style={{ width: 200, padding: "8px 32px 8px 12px" }}
                 >
                   {MODEL_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
@@ -679,7 +697,7 @@ function AiChatContent() {
                   value={mode}
                   onChange={(e) => setMode(e.target.value)}
                   className="select-field"
-                  style={{ width: 150, padding: "8px 32px 8px 12px", background: "rgba(255,255,255,0.03)" }}
+                  style={{ width: 150, padding: "8px 32px 8px 12px" }}
                 >
                   {MODE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
@@ -726,7 +744,7 @@ function AiChatContent() {
                 <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8, color: "var(--text-primary)" }}>Mulai Chat Baru</h2>
                 <p style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
                   {!contextLabel 
-                    ? "Tanyakan apapun, generate naskah, ide topik, atau riset konten YouTube Shorts Anda di sini."
+                    ? "Tanyakan apapun, generate script, ide topic, atau riset konten YouTube Shorts Anda di sini."
                     : `Tekan Kirim untuk meminta AI memproses konteks dari ${contextLabel}.`
                   }
                 </p>
@@ -749,8 +767,8 @@ function AiChatContent() {
                   <div style={{
                     width: 36, height: 36, borderRadius: "var(--radius-full)", flexShrink: 0,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    background: m.role === "user" ? "rgba(255,255,255,0.1)" : "var(--accent-gradient)",
-                    color: "#fff", border: `1px solid ${m.role === "user" ? "rgba(255,255,255,0.2)" : "transparent"}`,
+                    background: m.role === "user" ? "var(--glass-bg-hover)" : "var(--accent-primary)",
+                    color: m.role === "user" ? "var(--text-primary)" : "#fff", border: `1px solid ${m.role === "user" ? "var(--glass-border)" : "transparent"}`,
                   }}>
                     {m.role === "user" ? (
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -769,13 +787,13 @@ function AiChatContent() {
                       borderRadius: "var(--radius-lg)",
                       borderTopLeftRadius: m.role === "assistant" ? 4 : "var(--radius-lg)",
                       borderTopRightRadius: m.role === "user" ? 4 : "var(--radius-lg)",
-                      background: m.role === "user" ? "rgba(255,255,255,0.08)" : "var(--glass-bg)",
-                      border: `1px solid ${m.role === "user" ? "rgba(255,255,255,0.1)" : "var(--glass-border)"}`,
+                      background: m.role === "user" ? "var(--bg-elevated)" : "var(--glass-bg)",
+                      border: `1px solid ${m.role === "user" ? "var(--glass-border-hover)" : "var(--glass-border)"}`,
                       fontSize: 14,
                       lineHeight: 1.6,
                       color: "var(--text-primary)",
                       whiteSpace: "pre-wrap",
-                      boxShadow: m.role === "assistant" ? "0 4px 20px rgba(0,0,0,0.2)" : "none",
+                      boxShadow: m.role === "assistant" ? "var(--shadow-sm)" : "none",
                     }}>
                       {m.role === "assistant" && cards.length > 0 ? (
                         <>
@@ -789,58 +807,69 @@ function AiChatContent() {
                                   border: "1px solid var(--glass-border)",
                                   borderRadius: "var(--radius-md)",
                                   padding: 16,
-                                  background: "rgba(0,0,0,0.2)",
+                                  background: "var(--glass-bg)",
                                   transition: "all var(--transition-fast)",
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.borderColor = "var(--accent-purple)";
-                                  e.currentTarget.style.boxShadow = "var(--shadow-glow-purple)";
+                                  e.currentTarget.style.borderColor = "var(--accent-primary)";
+                                  e.currentTarget.style.boxShadow = "var(--shadow-glow-accent)";
                                 }}
                                 onMouseLeave={(e) => {
                                   e.currentTarget.style.borderColor = "var(--glass-border)";
                                   e.currentTarget.style.boxShadow = "none";
                                 }}>
-                                  <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6, paddingRight: 40, color: "var(--accent-cyan)" }}>{card.judul}</div>
+                                  <div style={{ position: "sticky", top: 12, float: "right", marginLeft: 12, zIndex: 10 }}>
+                                    <button
+                                      onClick={() => handleSaveCard(i, ci, card)}
+                                      disabled={savingCardKey === cardKey}
+                                      title="Simpan ke Topic"
+                                      className="btn btn-ghost"
+                                      style={{
+                                        width: 28, height: 28, borderRadius: "var(--radius-sm)",
+                                        padding: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                                        color: "var(--text-tertiary)", cursor: savingCardKey === cardKey ? "not-allowed" : "pointer",
+                                      }}
+                                      onMouseEnter={(e) => { if (savingCardKey !== cardKey) e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "var(--glass-bg-hover)"; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "transparent"; }}
+                                    >
+                                      <SaveIcon />
+                                    </button>
+                                  </div>
+                                  <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6, color: "var(--accent-primary)" }}>{card.judul}</div>
                                   <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>{card.deskripsi}</div>
-                                  <button
-                                    onClick={() => handleSaveCard(i, ci, card)}
-                                    disabled={savingCardKey === cardKey}
-                                    title="Simpan ke Topik"
-                                    style={{
-                                      position: "absolute", top: 12, right: 12, width: 32, height: 32, borderRadius: "var(--radius-full)",
-                                      background: "rgba(168, 85, 247, 0.15)", border: "1px solid rgba(168, 85, 247, 0.3)",
-                                      color: "var(--accent-purple)", cursor: savingCardKey === cardKey ? "not-allowed" : "pointer",
-                                      display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
-                                      transition: "all 0.2s"
-                                    }}
-                                  >
-                                    <SaveIcon />
-                                  </button>
                                 </div>
                               );
                             })}
                           </div>
                         </>
-                      ) : m.role === "assistant" ? cleanContent : m.content}
+                      ) : m.role === "assistant" ? (
+                        <>
+                          {isSavableDraft && cards.length === 0 && (
+                            <div style={{ position: "sticky", top: 0, float: "right", marginLeft: 16, marginBottom: 8, zIndex: 10 }}>
+                              <button
+                                onClick={() => openSaveForm(i, cleanContent)}
+                                className="btn btn-ghost"
+                                title={`Simpan ke ${saveTarget === "naskah" ? "Script" : "Visual"}`}
+                                style={{
+                                  width: 28, height: 28, borderRadius: "var(--radius-sm)",
+                                  padding: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                                  color: "var(--text-tertiary)",
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-primary)"; e.currentTarget.style.background = "var(--glass-bg-hover)"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-tertiary)"; e.currentTarget.style.background = "transparent"; }}
+                              >
+                                <SaveIcon />
+                              </button>
+                            </div>
+                          )}
+                          {cleanContent}
+                        </>
+                      ) : m.content}
                     </div>
-
-                    {/* Quick Action Below Bubble */}
-                    {isSavableDraft && cards.length === 0 && (
-                      <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 8 }} className="animate-fade-in">
-                        <button
-                          onClick={() => openSaveForm(i, cleanContent)}
-                          className="btn btn-secondary btn-sm"
-                          style={{ gap: 6, color: "var(--accent-teal)" }}
-                        >
-                          <SaveIcon />
-                          Simpan ke Menu {saveTarget === "naskah" ? "Naskah" : "Visual"}
-                        </button>
-                      </div>
-                    )}
 
                     {/* Inline Save Form */}
                     {savingMessageIndex === i && (
-                      <div className="glass-card animate-fade-in-up" style={{ marginTop: 12, padding: 16, border: "1px solid var(--accent-teal)" }}>
+                      <div className="glass-card animate-fade-in-up" style={{ marginTop: 12, padding: 16, border: "1px solid var(--accent-primary)" }}>
                         <div style={{ marginBottom: 12 }}>
                           <label className="form-label">Judul</label>
                           <input
@@ -879,9 +908,9 @@ function AiChatContent() {
                 </div>
                 <div style={{ padding: "16px 20px", borderRadius: "var(--radius-lg)", borderTopLeftRadius: 4, background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>
                   <div style={{ display: "flex", gap: 6 }}>
-                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-purple)", animation: "typing-bounce 1s infinite 0s" }} />
-                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-cyan)", animation: "typing-bounce 1s infinite 0.2s" }} />
-                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-teal)", animation: "typing-bounce 1s infinite 0.4s" }} />
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-primary)", animation: "typing-bounce 1s infinite 0s", opacity: 0.6 }} />
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-primary)", animation: "typing-bounce 1s infinite 0.2s", opacity: 0.8 }} />
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-primary)", animation: "typing-bounce 1s infinite 0.4s", opacity: 1 }} />
                   </div>
                 </div>
               </div>
@@ -891,7 +920,7 @@ function AiChatContent() {
           </div>
 
           {/* Input Area */}
-          <div style={{ padding: "16px 24px 24px", background: "linear-gradient(transparent, var(--bg-primary) 20%)" }}>
+          <div style={{ padding: "16px 24px 24px", background: "linear-gradient(var(--bg-primary-transparent), var(--bg-primary) 20%)" }}>
             <div style={{
               display: "flex",
               alignItems: "flex-end",
@@ -902,7 +931,7 @@ function AiChatContent() {
               boxShadow: "var(--shadow-lg)",
               transition: "border-color var(--transition-fast)",
             }}
-            onFocus={(e) => e.currentTarget.style.borderColor = "var(--accent-purple)"}
+            onFocus={(e) => e.currentTarget.style.borderColor = "var(--accent-primary)"}
             onBlur={(e) => e.currentTarget.style.borderColor = "var(--glass-border)"}
             >
               <textarea

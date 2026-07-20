@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useTheme } from "./ThemeProvider";
 
 const NAV_ITEMS = [
   {
@@ -88,6 +89,7 @@ const NAV_ITEMS = [
 export default function Sidebar({ userEmail }: { userEmail?: string }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<{
@@ -163,7 +165,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           height: 40,
           borderRadius: "var(--radius-md)",
           border: "1px solid var(--glass-border)",
-          background: "rgba(5, 5, 5, 0.9)",
+          background: "var(--bg-elevated)",
           backdropFilter: "blur(12px)",
           color: "var(--text-primary)",
           cursor: "pointer",
@@ -218,7 +220,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
               margin: "0 16px",
               borderRadius: "var(--radius-lg)",
               border: "1px solid var(--glass-border)",
-              background: "rgba(12, 12, 12, 0.98)",
+              background: "var(--bg-elevated)",
               backdropFilter: "blur(24px)",
               padding: 0,
               overflow: "hidden",
@@ -371,7 +373,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           left: 0,
           bottom: 0,
           width: "var(--sidebar-width)",
-          background: "rgba(8, 8, 8, 0.95)",
+          background: "var(--bg-primary)",
           borderRight: "1px solid var(--glass-border)",
           backdropFilter: "blur(16px)",
           display: "flex",
@@ -396,7 +398,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
                   width: 32,
                   height: 32,
                   borderRadius: "var(--radius-md)",
-                  background: "var(--accent-gradient)",
+                  background: "var(--accent-primary)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -454,10 +456,10 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
                     fontWeight: active ? 500 : 400,
                     color: active ? "var(--text-primary)" : "var(--text-secondary)",
                     background: active
-                      ? "rgba(168, 85, 247, 0.08)"
+                      ? "var(--accent-muted)"
                       : "transparent",
                     borderLeft: active
-                      ? "2px solid var(--accent-purple)"
+                      ? "2px solid var(--accent-primary)"
                       : "2px solid transparent",
                     transition: "all var(--transition-fast)",
                     position: "relative",
@@ -488,7 +490,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
                         transform: "translateY(-50%)",
                         width: 2,
                         height: 20,
-                        background: "var(--accent-gradient)",
+                        background: "var(--accent-primary)",
                         borderRadius: 1,
                       }}
                     />
@@ -504,12 +506,14 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           style={{
             padding: "16px 16px 20px",
             borderTop: "1px solid var(--glass-border)",
+            display: "flex",
+            gap: 8,
           }}
         >
           <button
             onClick={() => setAccountOpen(true)}
             style={{
-              width: "100%",
+              flex: 1,
               padding: "8px 12px",
               borderRadius: "var(--radius-md)",
               border: "1px solid var(--glass-border)",
@@ -522,8 +526,8 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
               transition: "all var(--transition-fast)",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
-              e.currentTarget.style.borderColor = "rgba(168, 85, 247, 0.3)";
+              e.currentTarget.style.background = "var(--glass-bg-hover)";
+              e.currentTarget.style.borderColor = "var(--accent-primary)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = "transparent";
@@ -535,7 +539,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
                 width: 28,
                 height: 28,
                 borderRadius: "var(--radius-full)",
-                background: "var(--accent-gradient)",
+                background: "var(--accent-primary)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -563,6 +567,51 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
               <path d="M12 15l-3-3h6l-3 3z" fill="currentColor" stroke="none" />
               <path d="M12 9l3 3H9l3-3z" fill="currentColor" stroke="none" />
             </svg>
+          </button>
+          
+          <button
+            onClick={toggleTheme}
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--glass-border)",
+              background: "transparent",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all var(--transition-fast)",
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--glass-bg-hover)";
+              e.currentTarget.style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            {theme === "dark" ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
           </button>
         </div>
       </aside>
