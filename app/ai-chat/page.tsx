@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+import Sidebar from "../components/Sidebar";
 
+// (Keep all the interfaces and options same as before)
 interface ChatMessageItem {
   id?: string;
   role: "user" | "assistant";
@@ -25,43 +28,40 @@ interface TopikCard {
 }
 
 const MODEL_OPTIONS = [
-  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview (rekomendasi)" },
+  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" },
   { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
-  { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (lama)" },
+  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  { value: "groq-llama-3.3-70b-versatile", label: "Groq Llama 3.3 70B" },
+  { value: "groq-mixtral-8x7b-32768", label: "Groq Mixtral 8x7B" },
 ];
 
 const MODE_OPTIONS = [
   { value: "biasa", label: "Biasa" },
-  { value: "mendalam", label: "Mendalam (Deep Dive)" },
-  { value: "berpikir", label: "Berpikir (Thinking)" },
-  { value: "search", label: "Website/Search" },
+  { value: "mendalam", label: "Deep Dive" },
+  { value: "berpikir", label: "Thinking" },
+  { value: "search", label: "Web Search" },
 ];
 
-// Ikon bookmark kecil untuk tombol simpan
 function SaveIcon() {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
 
-// Deteksi baris berformat "[TOPIK] Judul | Deskripsi" di dalam sebuah teks.
+function EditIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+    </svg>
+  );
+}
+
 function parseTopikCards(content: string): { cards: TopikCard[]; sisaTeks: string } {
   const lines = content.split("\n");
   const cards: TopikCard[] = [];
   const sisaBaris: string[] = [];
-
   const pattern = /^\[TOPIK\]\s*(.+?)\s*\|\s*(.+)$/;
 
   for (const line of lines) {
@@ -76,7 +76,6 @@ function parseTopikCards(content: string): { cards: TopikCard[]; sisaTeks: strin
   return { cards, sisaTeks: sisaBaris.join("\n") };
 }
 
-// Deteksi penanda [DRAFT_NASKAH] atau [DRAFT_VISUAL] di awal balasan.
 function parseDraftMarker(content: string): { isDraft: boolean; cleanContent: string } {
   const trimmed = content.trim();
   if (trimmed.startsWith("[DRAFT_NASKAH]") || trimmed.startsWith("[DRAFT_VISUAL]")) {
@@ -89,12 +88,15 @@ function parseDraftMarker(content: string): { isDraft: boolean; cleanContent: st
   return { isDraft: false, cleanContent: content };
 }
 
-// Komponen utama yang memakai useSearchParams() — dibungkus Suspense dari komponen luar (AiChatPage)
 function AiChatContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const fromReferensi = searchParams.get("fromReferensi");
   const fromTopik = searchParams.get("fromTopik");
   const fromNaskah = searchParams.get("fromNaskah");
+
+  const [userEmail, setUserEmail] = useState<string | undefined>();
+  const [authLoading, setAuthLoading] = useState(true);
 
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -117,9 +119,30 @@ function AiChatContent() {
 
   const [savingCardKey, setSavingCardKey] = useState<string | null>(null);
 
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const [sidebarOpen, setSidebarOpen] = useState(true); // For chat sessions sidebar
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    async function checkAuth() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+      setUserEmail(user.email || undefined);
+      setAuthLoading(false);
+    }
+    checkAuth();
+  }, [router]);
+
+  useEffect(() => {
+    if (authLoading) return;
     fetchSessions();
 
     if (fromReferensi) {
@@ -130,11 +153,30 @@ function AiChatContent() {
       loadContextFromNaskah(fromNaskah);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authLoading]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, loading]);
+
+  useEffect(() => {
+    if (renamingSessionId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingSessionId]);
+
+  const adjustTextareaHeight = () => {
+    const el = inputRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 150) + "px";
+    }
+  };
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [input]);
 
   async function fetchSessions() {
     setLoadingSessions(true);
@@ -142,8 +184,8 @@ function AiChatContent() {
       const res = await fetch("/api/chat");
       const data = await res.json();
       if (res.ok) setSessions(data.data || []);
-    } catch (e) {
-      // diamkan
+    } catch {
+      // silent
     }
     setLoadingSessions(false);
   }
@@ -154,19 +196,14 @@ function AiChatContent() {
       const data = await res.json();
       const ref = (data.data || []).find((r: any) => r.id === referensiId);
       if (ref) {
-        setContextLabel(`Referensi: ${ref.channel_url}`);
+        setContextLabel(`Referensi: ${ref.channel_title || ref.channel_url}`);
         setSaveTarget("topik");
         setContextText(
-          `Berikut hasil analisis channel YouTube "${ref.channel_url}":\n\n` +
-            `Niche: ${ref.analysis_niche || "-"}\n` +
-            `Visual: ${ref.analysis_visual || "-"}\n` +
-            `Editing: ${ref.analysis_editing || "-"}\n` +
-            `Hook & CTA: ${ref.analysis_hook_cta || "-"}\n\n` +
-            `Tolong buatkan 5 ide topik video YouTube Shorts yang terinspirasi dari gaya channel ini, tapi dengan sudut pandang yang unik/berbeda. Untuk tiap ide, beri judul singkat dan 1-2 kalimat penjelasan.`
+          `Berikut data analisis channel referensi "${ref.channel_url}":\n\n- Niche/Topik Utama: ${ref.analysis_niche || "-"}\n- Gaya Visual: ${ref.analysis_visual || "-"}\n- Gaya Editing: ${ref.analysis_editing || "-"}\n- Hook & CTA: ${ref.analysis_hook_cta || "-"}\n\nBerdasarkan data di atas, tolong buatkan 5 ide topik video YouTube Shorts yang SANGAT RELEVAN dan BENAR-BENAR DITURUNKAN dari niche referensi tersebut. JANGAN berikan ide yang terlalu acak atau melenceng jauh. Topik ini harus terasa seperti video yang mungkin diunggah oleh channel referensi itu sendiri, namun dengan angle (sudut pandang) orisinal yang baru.\n\nUntuk tiap ide, berikan judul singkat yang sangat memikat (klik-bait positif) dan 1-2 kalimat penjelasan konkret tentang visual atau isi videonya.`
         );
       }
-    } catch (e) {
-      // diamkan
+    } catch {
+      // silent
     }
   }
 
@@ -182,8 +219,8 @@ function AiChatContent() {
           `Judul topik: ${topik.judul}${topik.catatan ? `\nCatatan: ${topik.catatan}` : ""}\n\nTolong buatkan naskah video YouTube Shorts berdasarkan topik ini.`
         );
       }
-    } catch (e) {
-      // diamkan
+    } catch {
+      // silent
     }
   }
 
@@ -199,8 +236,8 @@ function AiChatContent() {
           `Judul naskah: ${naskah.judul}\nIsi naskah:\n${naskah.isi_naskah || ""}\n\nTolong buatkan panduan visual/storyboard berdasarkan naskah ini.`
         );
       }
-    } catch (e) {
-      // diamkan
+    } catch {
+      // silent
     }
   }
 
@@ -216,8 +253,8 @@ function AiChatContent() {
         setMode(data.session.mode);
         setSaveTarget(data.session.content_target || null);
       }
-    } catch (e) {
-      // diamkan
+    } catch {
+      // silent
     }
     setLoading(false);
   }
@@ -231,16 +268,17 @@ function AiChatContent() {
     setSaveTarget(null);
     setSavingMessageIndex(null);
     setSavingCardKey(null);
+    setInput("");
   }
 
   async function handleSend() {
     if (loading) return;
 
     const pesanDikirim = input.trim() || (!contextSent && contextText ? contextText : "");
-
     if (!pesanDikirim) return;
 
     setInput("");
+    if (inputRef.current) inputRef.current.style.height = "auto";
     setLoading(true);
     if (contextText) setContextSent(true);
 
@@ -264,10 +302,7 @@ function AiChatContent() {
         const data = await res.json();
 
         if (!res.ok) {
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: `Error: ${data.error || "Gagal mendapat jawaban"}` },
-          ]);
+          setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${data.error || "Gagal mendapat jawaban"}` }]);
         } else {
           setActiveSessionId(data.sessionId);
           setMessages((prev) => [...prev, { role: "assistant", content: data.jawaban }]);
@@ -282,19 +317,13 @@ function AiChatContent() {
         const data = await res.json();
 
         if (!res.ok) {
-          setMessages((prev) => [
-            ...prev,
-            { role: "assistant", content: `Error: ${data.error || "Gagal mendapat jawaban"}` },
-          ]);
+          setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${data.error || "Gagal mendapat jawaban"}` }]);
         } else {
           setMessages((prev) => [...prev, { role: "assistant", content: data.jawaban }]);
         }
       }
     } catch (err: any) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Error: ${err.message || "Terjadi kesalahan"}` },
-      ]);
+      setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message || "Terjadi kesalahan"}` }]);
     }
 
     setLoading(false);
@@ -308,9 +337,40 @@ function AiChatContent() {
         setSessions((prev) => prev.filter((s) => s.id !== sessionId));
         if (activeSessionId === sessionId) startNewChat();
       }
-    } catch (e) {
-      // diamkan
+    } catch {
+      // silent
     }
+  }
+
+  function startRename(session: SessionItem) {
+    setRenamingSessionId(session.id);
+    setRenameValue(session.judul);
+  }
+
+  function cancelRename() {
+    setRenamingSessionId(null);
+    setRenameValue("");
+  }
+
+  async function confirmRename(sessionId: string) {
+    const judulBaru = renameValue.trim();
+    if (!judulBaru) {
+      cancelRename();
+      return;
+    }
+    try {
+      const res = await fetch(`/api/chat/${sessionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ judul: judulBaru }),
+      });
+      if (res.ok) {
+        setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, judul: judulBaru } : s)));
+      }
+    } catch {
+      // silent
+    }
+    cancelRename();
   }
 
   async function handleSaveCard(msgIndex: number, cardIndex: number, card: TopikCard) {
@@ -326,7 +386,7 @@ function AiChatContent() {
       if (!res.ok) {
         alert("Gagal menyimpan: " + (data.error || "Terjadi kesalahan"));
       } else {
-        alert(`Topik "${card.judul}" berhasil disimpan ke Menu Topik!`);
+        // Show temporary toast or visual feedback instead of alert if possible, but alert is okay for now
       }
     } catch (err: any) {
       alert("Gagal menyimpan: " + (err.message || "Terjadi kesalahan"));
@@ -384,9 +444,6 @@ function AiChatContent() {
       if (!res.ok) {
         alert("Gagal menyimpan: " + (data.error || "Terjadi kesalahan"));
       } else {
-        const namaMenu =
-          saveTarget === "topik" ? "Menu Topik" : saveTarget === "naskah" ? "Menu Naskah" : "Menu Visual";
-        alert(`Berhasil disimpan ke ${namaMenu}!`);
         cancelSaveForm();
       }
     } catch (err: any) {
@@ -396,400 +453,497 @@ function AiChatContent() {
     setSaveSubmitting(false);
   }
 
-  function saveButtonLabel() {
-    if (saveTarget === "topik") return "Simpan sebagai Topik";
-    if (saveTarget === "naskah") return "Simpan sebagai Naskah";
-    if (saveTarget === "visual") return "Simpan sebagai Visual";
-    return "";
-  }
-
-  function contextHintText() {
-    if (!contextLabel) return "Mulai obrolan baru dengan mengetik pesan di bawah.";
-    if (saveTarget === "topik")
-      return `Context dimuat dari ${contextLabel}. Tekan Kirim untuk minta AI buatkan ide topik.`;
-    if (saveTarget === "naskah")
-      return `Context dimuat dari ${contextLabel}. Tekan Kirim untuk minta AI buatkan naskah.`;
-    if (saveTarget === "visual")
-      return `Context dimuat dari ${contextLabel}. Tekan Kirim untuk minta AI buatkan panduan visual.`;
-    return `Context dimuat dari ${contextLabel}.`;
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="spinner" style={{ width: 28, height: 28 }} />
+      </div>
+    );
   }
 
   return (
-    <div style={{ display: "flex", height: "100vh", color: "#fff" }}>
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+      {/* Global Navigation Sidebar */}
+      <Sidebar userEmail={userEmail} />
+
+      {/* Chat Application Area */}
       <div
+        className="chat-container"
         style={{
-          width: 240,
-          borderRight: "1px solid #333",
-          padding: 16,
-          overflowY: "auto",
-          flexShrink: 0,
+          flex: 1,
+          marginLeft: "var(--sidebar-width)",
+          display: "flex",
+          height: "100vh",
+          background: "var(--bg-primary)",
         }}
       >
-        <button
-          onClick={startNewChat}
+        {/* Chat Sessions Sidebar */}
+        <div
+          className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}
           style={{
-            width: "100%",
-            padding: "8px 12px",
-            borderRadius: 6,
-            border: "1px solid #666",
-            background: "#1a1a1a",
-            color: "#fff",
-            cursor: "pointer",
-            marginBottom: 16,
+            width: 280,
+            background: "rgba(10, 10, 10, 0.95)",
+            borderRight: "1px solid var(--glass-border)",
+            display: "flex",
+            flexDirection: "column",
+            transition: "all var(--transition-base)",
+            flexShrink: 0,
+            zIndex: 10,
           }}
         >
-          + Chat Baru
-        </button>
-
-        <h3 style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>Riwayat</h3>
-
-        {loadingSessions && <p style={{ color: "#666", fontSize: 12 }}>Memuat...</p>}
-
-        {sessions.map((s) => (
-          <div
-            key={s.id}
-            onClick={() => openSession(s.id)}
-            style={{
-              padding: 8,
-              borderRadius: 6,
-              marginBottom: 4,
-              cursor: "pointer",
-              background: activeSessionId === s.id ? "#222" : "transparent",
-              fontSize: 13,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {s.judul}
-            </span>
+          <div style={{ padding: 16 }}>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteSession(s.id);
-              }}
-              style={{
-                background: "none",
-                border: "none",
-                color: "#f88",
-                cursor: "pointer",
-                fontSize: 11,
-                flexShrink: 0,
-                marginLeft: 4,
-              }}
+              onClick={startNewChat}
+              className="btn btn-primary"
+              style={{ width: "100%", justifyContent: "center", fontWeight: 600 }}
             >
-              hapus
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Chat Baru
             </button>
           </div>
-        ))}
-      </div>
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <div
-          style={{
-            padding: 16,
-            borderBottom: "1px solid #333",
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <select
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            style={{
-              padding: 6,
-              borderRadius: 6,
-              border: "1px solid #444",
-              background: "#111",
-              color: "#fff",
-              fontSize: 13,
-            }}
-          >
-            {MODEL_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <div style={{ padding: "0 16px 8px", fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Riwayat Chat
+          </div>
 
-          <select
-            value={mode}
-            onChange={(e) => setMode(e.target.value)}
-            style={{
-              padding: 6,
-              borderRadius: 6,
-              border: "1px solid #444",
-              background: "#111",
-              color: "#fff",
-              fontSize: 13,
-            }}
-          >
-            {MODE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 16px" }}>
+            {loadingSessions && <div className="skeleton" style={{ height: 40, marginBottom: 8 }} />}
 
-          {contextLabel && (
-            <span style={{ fontSize: 12, color: "#6cf" }}>Context: {contextLabel}</span>
-          )}
-          {saveTarget === "naskah" && (
-            <span style={{ fontSize: 11, color: "#6dc" }}>🔍 Pencarian web otomatis aktif (untuk sumber naskah)</span>
-          )}
-        </div>
+            {sessions.map((s) => {
+              const isRenaming = renamingSessionId === s.id;
+              const isActive = activeSessionId === s.id;
 
-        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-          {messages.length === 0 && (
-            <p style={{ color: "#666", fontSize: 14 }}>{contextHintText()}</p>
-          )}
-
-          {messages.map((m, i) => {
-            const { cards, sisaTeks } =
-              m.role === "assistant" ? parseTopikCards(m.content) : { cards: [], sisaTeks: m.content };
-
-            const { isDraft, cleanContent } =
-              m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
-
-            const isSavableDraft =
-              m.role === "assistant" &&
-              saveTarget &&
-              (saveTarget === "naskah" || saveTarget === "visual") &&
-              isDraft;
-
-            return (
-              <div key={i} style={{ marginBottom: 8 }}>
+              return (
                 <div
+                  key={s.id}
+                  onClick={() => !isRenaming && openSession(s.id)}
                   style={{
+                    padding: "10px 12px",
+                    borderRadius: "var(--radius-md)",
+                    marginBottom: 4,
+                    cursor: isRenaming ? "default" : "pointer",
+                    background: isActive ? "rgba(168, 85, 247, 0.1)" : "transparent",
+                    border: `1px solid ${isActive ? "rgba(168, 85, 247, 0.2)" : "transparent"}`,
+                    color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
                     display: "flex",
-                    justifyContent: m.role === "user" ? "flex-end" : "flex-start",
+                    alignItems: "center",
+                    gap: 8,
+                    transition: "all var(--transition-fast)",
+                  }}
+                  className="chat-session-item"
+                  onMouseEnter={(e) => {
+                    if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) e.currentTarget.style.background = "transparent";
                   }}
                 >
-                  <div
-                    style={{
-                      maxWidth: "70%",
-                      padding: "10px 14px",
-                      borderRadius: 10,
-                      background: m.role === "user" ? "#1a4d7a" : "#222",
-                      fontSize: 14,
-                      lineHeight: 1.5,
-                      whiteSpace: "pre-wrap",
-                    }}
-                  >
-                    {m.role === "assistant" && cards.length > 0 ? (
-                      <>
-                        {sisaTeks && <div style={{ marginBottom: 10 }}>{sisaTeks}</div>}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {cards.map((card, ci) => {
-                            const cardKey = `${i}-${ci}`;
-                            return (
-                              <div
-                                key={ci}
-                                style={{
-                                  position: "relative",
-                                  border: "1px solid #444",
-                                  borderRadius: 8,
-                                  padding: "8px 34px 8px 10px",
-                                  background: "#1a1a1a",
-                                }}
-                              >
-                                <div style={{ fontWeight: 600, marginBottom: 4 }}>{card.judul}</div>
-                                <div style={{ fontSize: 13, opacity: 0.85 }}>{card.deskripsi}</div>
-                                <button
-                                  onClick={() => handleSaveCard(i, ci, card)}
-                                  disabled={savingCardKey === cardKey}
-                                  title="Simpan sebagai Topik"
-                                  style={{
-                                    position: "absolute",
-                                    top: 8,
-                                    right: 8,
-                                    width: 24,
-                                    height: 24,
-                                    borderRadius: "50%",
-                                    border: "1px solid #4a8",
-                                    background: savingCardKey === cardKey ? "#234" : "transparent",
-                                    color: "#6dc",
-                                    cursor: savingCardKey === cardKey ? "not-allowed" : "pointer",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    padding: 0,
-                                  }}
-                                >
-                                  <SaveIcon />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </>
-                    ) : m.role === "assistant" ? (
-                      cleanContent
+                  {isRenaming ? (
+                    <input
+                      ref={renameInputRef}
+                      type="text"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          confirmRename(s.id);
+                        } else if (e.key === "Escape") {
+                          cancelRename();
+                        }
+                      }}
+                      onBlur={() => confirmRename(s.id)}
+                      className="input-field"
+                      style={{ padding: "4px 8px", fontSize: 13 }}
+                    />
+                  ) : (
+                    <>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isActive ? "var(--accent-purple)" : "currentColor"} strokeWidth="2" style={{ flexShrink: 0 }}>
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                      </svg>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, fontSize: 13, fontWeight: isActive ? 500 : 400 }}>
+                        {s.judul}
+                      </span>
+                      <div className="session-actions" style={{ display: "flex", opacity: isActive ? 1 : 0 }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); startRename(s); }}
+                          className="btn-ghost btn-icon"
+                          style={{ width: 24, height: 24, padding: 0 }}
+                          title="Ganti nama"
+                        >
+                          <EditIcon />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteSession(s.id); }}
+                          className="btn-ghost btn-icon"
+                          style={{ width: 24, height: 24, padding: 0, color: "var(--status-error)" }}
+                          title="Hapus"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Chat Main Area */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative" }}>
+          
+          {/* Header */}
+          <div style={{
+            padding: "16px 24px",
+            borderBottom: "1px solid var(--glass-border)",
+            background: "rgba(5, 5, 5, 0.8)",
+            backdropFilter: "blur(12px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            zIndex: 5,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button
+                className="btn-ghost btn-icon toggle-sidebar-btn"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                style={{ width: 36, height: 36 }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+              </button>
+              
+              <div style={{ display: "flex", gap: 12 }}>
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="select-field"
+                  style={{ width: 200, padding: "8px 32px 8px 12px", background: "rgba(255,255,255,0.03)" }}
+                >
+                  {MODEL_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value)}
+                  className="select-field"
+                  style={{ width: 150, padding: "8px 32px 8px 12px", background: "rgba(255,255,255,0.03)" }}
+                >
+                  {MODE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Context Banner */}
+          {contextLabel && (
+            <div style={{
+              background: "linear-gradient(90deg, rgba(168, 85, 247, 0.1), rgba(6, 182, 212, 0.1))",
+              borderBottom: "1px solid rgba(168, 85, 247, 0.2)",
+              padding: "10px 24px",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              fontSize: 13,
+            }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: "50%", background: "var(--accent-gradient)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff"
+              }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <span style={{ color: "var(--text-secondary)" }}>Konteks termuat dari </span>
+                <strong style={{ color: "var(--text-primary)" }}>{contextLabel}</strong>
+                {saveTarget === "naskah" && <span style={{ marginLeft: 8, color: "var(--accent-cyan)", fontSize: 12 }}>— Pencarian web otomatis aktif</span>}
+              </div>
+            </div>
+          )}
+
+          {/* Messages Area */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: 24 }}>
+            {messages.length === 0 && (
+              <div style={{ margin: "auto", textAlign: "center", maxWidth: 400 }}>
+                <div style={{
+                  width: 64, height: 64, borderRadius: "var(--radius-2xl)", background: "var(--glass-bg)", border: "1px solid var(--glass-border)",
+                  display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", color: "var(--accent-purple)"
+                }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                </div>
+                <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8, color: "var(--text-primary)" }}>Mulai Chat Baru</h2>
+                <p style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                  {!contextLabel 
+                    ? "Tanyakan apapun, generate naskah, ide topik, atau riset konten YouTube Shorts Anda di sini."
+                    : `Tekan Kirim untuk meminta AI memproses konteks dari ${contextLabel}.`
+                  }
+                </p>
+              </div>
+            )}
+
+            {messages.map((m, i) => {
+              const { cards, sisaTeks } = m.role === "assistant" ? parseTopikCards(m.content) : { cards: [], sisaTeks: m.content };
+              const { isDraft, cleanContent } = m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
+              const isSavableDraft = m.role === "assistant" && saveTarget && (saveTarget === "naskah" || saveTarget === "visual") && isDraft;
+
+              return (
+                <div key={i} className="animate-fade-in-up" style={{
+                  display: "flex",
+                  flexDirection: m.role === "user" ? "row-reverse" : "row",
+                  gap: 16,
+                  alignItems: "flex-start",
+                }}>
+                  {/* Avatar */}
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "var(--radius-full)", flexShrink: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: m.role === "user" ? "rgba(255,255,255,0.1)" : "var(--accent-gradient)",
+                    color: "#fff", border: `1px solid ${m.role === "user" ? "rgba(255,255,255,0.2)" : "transparent"}`,
+                  }}>
+                    {m.role === "user" ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                     ) : (
-                      m.content
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    )}
+                  </div>
+
+                  {/* Bubble */}
+                  <div style={{
+                    maxWidth: "75%",
+                    minWidth: 0,
+                  }}>
+                    <div style={{
+                      padding: "14px 18px",
+                      borderRadius: "var(--radius-lg)",
+                      borderTopLeftRadius: m.role === "assistant" ? 4 : "var(--radius-lg)",
+                      borderTopRightRadius: m.role === "user" ? 4 : "var(--radius-lg)",
+                      background: m.role === "user" ? "rgba(255,255,255,0.08)" : "var(--glass-bg)",
+                      border: `1px solid ${m.role === "user" ? "rgba(255,255,255,0.1)" : "var(--glass-border)"}`,
+                      fontSize: 14,
+                      lineHeight: 1.6,
+                      color: "var(--text-primary)",
+                      whiteSpace: "pre-wrap",
+                      boxShadow: m.role === "assistant" ? "0 4px 20px rgba(0,0,0,0.2)" : "none",
+                    }}>
+                      {m.role === "assistant" && cards.length > 0 ? (
+                        <>
+                          {sisaTeks && <div style={{ marginBottom: 16 }}>{sisaTeks}</div>}
+                          <div style={{ display: "grid", gap: 12 }}>
+                            {cards.map((card, ci) => {
+                              const cardKey = `${i}-${ci}`;
+                              return (
+                                <div key={ci} style={{
+                                  position: "relative",
+                                  border: "1px solid var(--glass-border)",
+                                  borderRadius: "var(--radius-md)",
+                                  padding: 16,
+                                  background: "rgba(0,0,0,0.2)",
+                                  transition: "all var(--transition-fast)",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.borderColor = "var(--accent-purple)";
+                                  e.currentTarget.style.boxShadow = "var(--shadow-glow-purple)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.borderColor = "var(--glass-border)";
+                                  e.currentTarget.style.boxShadow = "none";
+                                }}>
+                                  <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6, paddingRight: 40, color: "var(--accent-cyan)" }}>{card.judul}</div>
+                                  <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>{card.deskripsi}</div>
+                                  <button
+                                    onClick={() => handleSaveCard(i, ci, card)}
+                                    disabled={savingCardKey === cardKey}
+                                    title="Simpan ke Topik"
+                                    style={{
+                                      position: "absolute", top: 12, right: 12, width: 32, height: 32, borderRadius: "var(--radius-full)",
+                                      background: "rgba(168, 85, 247, 0.15)", border: "1px solid rgba(168, 85, 247, 0.3)",
+                                      color: "var(--accent-purple)", cursor: savingCardKey === cardKey ? "not-allowed" : "pointer",
+                                      display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+                                      transition: "all 0.2s"
+                                    }}
+                                  >
+                                    <SaveIcon />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
+                      ) : m.role === "assistant" ? cleanContent : m.content}
+                    </div>
+
+                    {/* Quick Action Below Bubble */}
+                    {isSavableDraft && cards.length === 0 && (
+                      <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 8 }} className="animate-fade-in">
+                        <button
+                          onClick={() => openSaveForm(i, cleanContent)}
+                          className="btn btn-secondary btn-sm"
+                          style={{ gap: 6, color: "var(--accent-teal)" }}
+                        >
+                          <SaveIcon />
+                          Simpan ke Menu {saveTarget === "naskah" ? "Naskah" : "Visual"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Inline Save Form */}
+                    {savingMessageIndex === i && (
+                      <div className="glass-card animate-fade-in-up" style={{ marginTop: 12, padding: 16, border: "1px solid var(--accent-teal)" }}>
+                        <div style={{ marginBottom: 12 }}>
+                          <label className="form-label">Judul</label>
+                          <input
+                            type="text"
+                            value={saveJudul}
+                            onChange={(e) => setSaveJudul(e.target.value)}
+                            className="input-field"
+                          />
+                        </div>
+                        <div style={{ marginBottom: 16 }}>
+                          <label className="form-label">Isi</label>
+                          <textarea
+                            value={saveCatatan}
+                            onChange={(e) => setSaveCatatan(e.target.value)}
+                            rows={4}
+                            className="textarea-field"
+                          />
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button onClick={handleConfirmSave} disabled={saveSubmitting || !saveJudul.trim()} className="btn btn-primary btn-sm">
+                            {saveSubmitting ? "Menyimpan..." : "Konfirmasi Simpan"}
+                          </button>
+                          <button onClick={cancelSaveForm} className="btn btn-ghost btn-sm">Batal</button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
+              );
+            })}
 
-                {isSavableDraft && cards.length === 0 && (
-                  <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 4 }}>
-                    <button
-                      onClick={() => openSaveForm(i, cleanContent)}
-                      title={saveButtonLabel()}
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: "50%",
-                        border: "1px solid #4a8",
-                        background: "transparent",
-                        color: "#6dc",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 0,
-                      }}
-                    >
-                      <SaveIcon />
-                    </button>
+            {loading && (
+              <div className="animate-fade-in-up" style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                <div style={{ width: 36, height: 36, borderRadius: "var(--radius-full)", background: "var(--accent-gradient)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                </div>
+                <div style={{ padding: "16px 20px", borderRadius: "var(--radius-lg)", borderTopLeftRadius: 4, background: "var(--glass-bg)", border: "1px solid var(--glass-border)" }}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-purple)", animation: "typing-bounce 1s infinite 0s" }} />
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-cyan)", animation: "typing-bounce 1s infinite 0.2s" }} />
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent-teal)", animation: "typing-bounce 1s infinite 0.4s" }} />
                   </div>
-                )}
-
-                {savingMessageIndex === i && (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      padding: 12,
-                      border: "1px solid #4a8",
-                      borderRadius: 8,
-                      background: "#0f1f18",
-                    }}
-                  >
-                    <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "#aaa" }}>
-                      Judul
-                    </label>
-                    <input
-                      type="text"
-                      value={saveJudul}
-                      onChange={(e) => setSaveJudul(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: 8,
-                        borderRadius: 6,
-                        border: "1px solid #444",
-                        background: "#111",
-                        color: "#fff",
-                        marginBottom: 8,
-                      }}
-                    />
-                    <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "#aaa" }}>
-                      Isi
-                    </label>
-                    <textarea
-                      value={saveCatatan}
-                      onChange={(e) => setSaveCatatan(e.target.value)}
-                      rows={6}
-                      style={{
-                        width: "100%",
-                        padding: 8,
-                        borderRadius: 6,
-                        border: "1px solid #444",
-                        background: "#111",
-                        color: "#fff",
-                        marginBottom: 8,
-                      }}
-                    />
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={handleConfirmSave}
-                        disabled={saveSubmitting || !saveJudul.trim()}
-                        style={{
-                          padding: "6px 14px",
-                          borderRadius: 6,
-                          border: "1px solid #4a8",
-                          background: "#1a3a2a",
-                          color: "#fff",
-                          cursor: "pointer",
-                        }}
-                      >
-                        {saveSubmitting ? "Menyimpan..." : "Konfirmasi Simpan"}
-                      </button>
-                      <button
-                        onClick={cancelSaveForm}
-                        style={{
-                          padding: "6px 14px",
-                          borderRadius: 6,
-                          border: "1px solid #666",
-                          background: "transparent",
-                          color: "#fff",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Batal
-                      </button>
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
-            );
-          })}
+            )}
+            
+            <div ref={messagesEndRef} style={{ height: 20 }} />
+          </div>
 
-          {loading && <div style={{ color: "#888", fontSize: 13 }}>AI sedang mengetik...</div>}
-
-          <div ref={messagesEndRef} />
-        </div>
-
-        <div style={{ padding: 16, borderTop: "1px solid #333", display: "flex", gap: 8 }}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
+          {/* Input Area */}
+          <div style={{ padding: "16px 24px 24px", background: "linear-gradient(transparent, var(--bg-primary) 20%)" }}>
+            <div style={{
+              display: "flex",
+              alignItems: "flex-end",
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--glass-border)",
+              borderRadius: "var(--radius-xl)",
+              padding: "8px 12px",
+              boxShadow: "var(--shadow-lg)",
+              transition: "border-color var(--transition-fast)",
             }}
-            placeholder={
-              contextText && !contextSent ? "Ketik pesan tambahan (opsional), atau langsung tekan Kirim..." : "Ketik pesan..."
-            }
-            disabled={loading}
-            style={{
-              flex: 1,
-              padding: 10,
-              borderRadius: 6,
-              border: "1px solid #444",
-              background: "#111",
-              color: "#fff",
-            }}
-          />
-          <button
-            onClick={handleSend}
-            disabled={loading || (!input.trim() && (contextSent || !contextText))}
-            style={{
-              padding: "10px 20px",
-              borderRadius: 6,
-              border: "1px solid #666",
-              background: loading ? "#333" : "#1a1a1a",
-              color: "#fff",
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
-          >
-            Kirim
-          </button>
+            onFocus={(e) => e.currentTarget.style.borderColor = "var(--accent-purple)"}
+            onBlur={(e) => e.currentTarget.style.borderColor = "var(--glass-border)"}
+            >
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder={contextText && !contextSent ? "Ketik pesan tambahan atau langsung Enter..." : "Pesan ke HarNug AI..."}
+                disabled={loading}
+                rows={1}
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--text-primary)",
+                  padding: "10px",
+                  fontSize: 15,
+                  resize: "none",
+                  outline: "none",
+                  maxHeight: 150,
+                  fontFamily: "inherit",
+                }}
+              />
+              <button
+                onClick={handleSend}
+                disabled={loading || (!input.trim() && (contextSent || !contextText))}
+                style={{
+                  width: 44, height: 44, borderRadius: "50%",
+                  background: loading || (!input.trim() && (contextSent || !contextText)) ? "rgba(255,255,255,0.1)" : "var(--accent-gradient)",
+                  color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                  border: "none", cursor: loading || (!input.trim() && (contextSent || !contextText)) ? "not-allowed" : "pointer",
+                  margin: 2, flexShrink: 0,
+                  transition: "all var(--transition-fast)",
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: "translateX(2px)" }}><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              </button>
+            </div>
+            <div style={{ textAlign: "center", fontSize: 11, color: "var(--text-tertiary)", marginTop: 12 }}>
+              AI dapat melakukan kesalahan. Harap verifikasi info penting.
+            </div>
+          </div>
+          
         </div>
       </div>
+
+      <style jsx>{`
+        .chat-session-item .session-actions {
+          opacity: 0;
+        }
+        .chat-session-item:hover .session-actions {
+          opacity: 1;
+        }
+        @media (max-width: 900px) {
+          .chat-sidebar {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            z-index: 20;
+            transform: translateX(-100%);
+          }
+          .chat-sidebar.open {
+            transform: translateX(0);
+          }
+          .toggle-sidebar-btn {
+            display: flex !important;
+          }
+        }
+        @media (max-width: 768px) {
+          .chat-container {
+            margin-left: 0 !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
 
-// Komponen luar wajib ada supaya useSearchParams() di dalamnya tidak bikin build gagal (aturan Next.js)
 export default function AiChatPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 24, color: "#888" }}>Memuat...</div>}>
+    <Suspense fallback={
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#050505" }}>
+        <div className="spinner" style={{ width: 28, height: 28 }} />
+      </div>
+    }>
       <AiChatContent />
     </Suspense>
   );

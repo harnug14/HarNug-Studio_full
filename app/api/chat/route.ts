@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { chatWithGemini, ChatMode, ContentTarget } from "@/lib/gemini/chatWithGemini";
 import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
+import { chatWithGroq } from "@/lib/groq/chatWithGroq";
+import { callGroqWithRotation } from "@/lib/groq/keyRotation";
 
 export async function GET() {
   const supabase = await createSupabaseServerClient();
@@ -80,16 +82,29 @@ export async function POST(req: NextRequest) {
 
   let jawaban: string;
   try {
-    jawaban = await callGeminiWithRotation(supabase, (apiKey) =>
-      chatWithGemini(
-        [{ role: "user", content: pesanPertama }],
-        apiKey,
-        model,
-        mode,
-        contextText,
-        contentTarget
-      )
-    );
+    if (model.startsWith("groq-")) {
+      jawaban = await callGroqWithRotation(supabase, (apiKey) =>
+        chatWithGroq(
+          [{ role: "user", content: pesanPertama }],
+          apiKey,
+          model,
+          mode,
+          contextText,
+          contentTarget
+        )
+      );
+    } else {
+      jawaban = await callGeminiWithRotation(supabase, (apiKey) =>
+        chatWithGemini(
+          [{ role: "user", content: pesanPertama }],
+          apiKey,
+          model,
+          mode,
+          contextText,
+          contentTarget
+        )
+      );
+    }
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Gagal mendapat jawaban dari AI", sessionId: session.id },

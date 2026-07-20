@@ -87,9 +87,19 @@ PENTING: Jawab berdasarkan apa yang BENAR-BENAR kamu lihat dan dengar di video i
     const errText = await response.text();
 
     if (response.status === 429) {
-      throw new GeminiQuotaError(
-        `Gemini API quota exceeded (429) - ${errText.slice(0, 200)}`
-      );
+      if (errText.toLowerCase().includes("quota")) {
+        throw new GeminiQuotaError(
+          `Gemini API quota exceeded (429) - ${errText.slice(0, 200)}`
+        );
+      } else {
+        if (attempt < MAX_RETRIES) {
+          lastError = new Error(`Gemini API Rate Limit (429) - mencoba lagi...`);
+          await sleep(20000); // 20 detik
+          continue;
+        } else {
+          throw new Error(`Terlalu sering request (Rate Limit 429). Mohon tunggu beberapa saat.`);
+        }
+      }
     }
 
     if (response.status === 503 && attempt < MAX_RETRIES) {

@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/cron/reset-gemini-keys",
+      "path": "/api/cron/reset-keys",
       "schedule": "0 9 * * *"
     }
   ]

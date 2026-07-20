@@ -14,7 +14,7 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildStyleInstruction(mode: ChatMode): string {
+export function buildStyleInstruction(mode: ChatMode): string {
   const baseStyle =
     "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku.";
 
@@ -34,7 +34,7 @@ function buildStyleInstruction(mode: ChatMode): string {
 const VERIFICATION_HONESTY_INSTRUCTION =
   "\n\nATURAN WAJIB SAAT USER BERTANYA VERIFIKASI/KEBENARAN (misalnya 'emang bener itu?', 'beneran akurat?', 'coba cek lagi'): kamu WAJIB benar-benar mengecek ulang dengan jujur, BUKAN otomatis membenarkan/mempertahankan apa yang sudah kamu tulis sebelumnya. Kalau setelah dicek ulang kamu menemukan bagian yang meragukan, mengada-ada, atau kamu sebenarnya tidak yakin — WAJIB akui itu secara eksplisit dan jelaskan bagian mana yang meragukan. JANGAN PERNAH menjawab 'ya, itu 100% akurat' hanya untuk menyenangkan atau menghindari terlihat salah. DILARANG KERAS menambahkan detail/angka BARU yang belum pernah disebutkan sebelumnya sebagai 'bukti' saat menjawab pertanyaan verifikasi — itu sama saja mengarang lagi.";
 
-function buildContentInstruction(contentTarget: ContentTarget): string {
+export function buildContentInstruction(contentTarget: ContentTarget): string {
   switch (contentTarget) {
     case "topik":
       return "Kamu sedang membantu ideasi TOPIK video YouTube Shorts. Fokus HANYA pada ide/judul topik dan penjelasan singkat kenapa topik itu menarik. JANGAN membuat naskah lengkap, JANGAN membahas visual, B-roll, atau teknik editing di tahap ini — itu bukan bagian dari tahap ini.\n\nFORMAT WAJIB: setiap kali kamu memberikan satu atau beberapa ide/opsi topik video (baik diminta satu maupun banyak sekaligus), tulis SETIAP ide dalam satu baris terpisah dengan format PERSIS seperti ini, tanpa markdown tambahan (tanpa bold/asterisk) di dalam baris itu:\n[TOPIK] Judul singkat topik | Penjelasan singkat 1-2 kalimat kenapa topik ini menarik\n\nContoh (untuk 3 ide):\n[TOPIK] Misteri Kota yang Menghilang | Membahas legenda kota yang lenyap dalam semalam, menarik karena menimbulkan teori konspirasi dan sejarah.\n[TOPIK] Hewan dengan Kemampuan Tersembunyi | Fokus pada satu spesies dengan kemampuan biologis unik yang jarang diketahui orang.\n[TOPIK] Fenomena Alam yang Menyerupai Fiksi | Membahas kejadian nyata di alam yang terdengar seperti fiksi ilmiah.\n\nKamu BOLEH menulis kalimat pembuka atau penutup di luar format itu (misalnya \"Berikut beberapa ide topik:\" di awal, atau pertanyaan follow-up di akhir), tapi SETIAP baris ide topik itu sendiri WAJIB persis mengikuti format `[TOPIK] Judul | Penjelasan` itu.\n\nJika kamu sedang TIDAK memberikan ide/opsi topik baru (misalnya sedang menjawab pertanyaan, mendiskusikan/merevisi satu topik yang sudah ada dalam bentuk paragraf, atau membahas hal lain), JANGAN gunakan format itu — jawab secara natural seperti biasa." + VERIFICATION_HONESTY_INSTRUCTION;
@@ -83,9 +83,8 @@ export async function chatWithGemini(
     },
   };
 
-  // Search grounding otomatis aktif untuk mode "search" ATAU untuk contentTarget "naskah"
-  // (naskah wajib pakai sumber link asli, jadi wajib bisa browsing web meski mode chat-nya "biasa")
-  if (mode === "search" || contentTarget === "naskah") {
+  // Search grounding aktif hanya jika mode === "search" (Manual)
+  if (mode === "search") {
     body.tools = [{ google_search: {} }];
   }
 
@@ -113,9 +112,19 @@ export async function chatWithGemini(
     const errText = await response.text();
 
     if (response.status === 429) {
-      throw new GeminiQuotaError(
-        `Gemini API quota exceeded (429) - ${errText.slice(0, 200)}`
-      );
+      if (errText.toLowerCase().includes("quota")) {
+        throw new GeminiQuotaError(
+          `Gemini API quota exceeded (429) - ${errText.slice(0, 200)}`
+        );
+      } else {
+        if (attempt < MAX_RETRIES) {
+          lastError = new Error(`Gemini API Rate Limit (429) - mencoba lagi...`);
+          await sleep(20000); // 20 detik
+          continue;
+        } else {
+          throw new Error(`Terlalu sering request (Rate Limit 429). Mohon tunggu beberapa saat.`);
+        }
+      }
     }
 
     if (response.status === 503 && attempt < MAX_RETRIES) {

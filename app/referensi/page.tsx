@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import DashboardLayout from "../components/DashboardLayout";
 
 interface VideoAnalysisItem {
   videoId: string;
@@ -34,12 +36,14 @@ const MODEL_OPTIONS = [
 ];
 
 export default function ReferensiPage() {
+  const router = useRouter();
   const [list, setList] = useState<ReferensiRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [channelUrl, setChannelUrl] = useState("");
   const [selectedModel, setSelectedModel] = useState(MODEL_OPTIONS[0].value);
   const [submitting, setSubmitting] = useState(false);
   const [progressText, setProgressText] = useState("");
+  const [progressPercent, setProgressPercent] = useState(0);
   const [notifications, setNotifications] = useState<string[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [formError, setFormError] = useState("");
@@ -53,11 +57,9 @@ export default function ReferensiPage() {
     try {
       const res = await fetch("/api/referensi");
       const data = await res.json();
-      if (res.ok) {
-        setList(data.data || []);
-      }
-    } catch (e) {
-      // diamkan, list tetap kosong
+      if (res.ok) setList(data.data || []);
+    } catch {
+      // keep empty
     }
     setLoadingList(false);
   }
@@ -80,6 +82,7 @@ export default function ReferensiPage() {
 
     setSubmitting(true);
     setProgressText("Mengambil daftar video channel...");
+    setProgressPercent(5);
 
     try {
       const startRes = await fetch("/api/referensi", {
@@ -93,15 +96,16 @@ export default function ReferensiPage() {
         setFormError(startData.error || "Gagal memulai analisis");
         setSubmitting(false);
         setProgressText("");
+        setProgressPercent(0);
         return;
       }
 
       const { id, totalVideos } = startData;
-
       await fetchList();
 
       for (let i = 0; i < totalVideos; i++) {
-        setProgressText(`Menganalisis video ${i + 1} dari ${totalVideos} (${selectedModel})...`);
+        setProgressText(`Menganalisis video ${i + 1} dari ${totalVideos}...`);
+        setProgressPercent(10 + Math.round(((i + 1) / totalVideos) * 80));
 
         const videoRes = await fetch(`/api/referensi/${id}/analyze-video`, {
           method: "POST",
@@ -111,15 +115,13 @@ export default function ReferensiPage() {
         const videoData = await videoRes.json();
 
         if (!videoRes.ok || !videoData.success) {
-          pushNotification(
-            `Video ${i + 1} gagal dianalisis${
-              videoData.error ? `: ${videoData.error}` : ""
-            }`
-          );
+          pushNotification(`Video ${i + 1} gagal dianalisis${videoData.error ? `: ${videoData.error}` : ""}`);
         }
       }
 
       setProgressText("Merangkum kesimpulan channel...");
+      setProgressPercent(95);
+
       const summaryRes = await fetch(`/api/referensi/${id}/summarize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -132,6 +134,7 @@ export default function ReferensiPage() {
       }
 
       setChannelUrl("");
+      setProgressPercent(100);
       await fetchList();
     } catch (err: any) {
       setFormError(err.message || "Terjadi kesalahan");
@@ -139,264 +142,258 @@ export default function ReferensiPage() {
 
     setSubmitting(false);
     setProgressText("");
+    setProgressPercent(0);
   }
 
   async function handleDelete(id: string) {
     if (!confirm("Hapus data referensi ini?")) return;
-
     try {
       const res = await fetch(`/api/referensi/${id}`, { method: "DELETE" });
       if (res.ok) {
         setList((prev) => prev.filter((r) => r.id !== id));
         if (expandedId === id) setExpandedId(null);
       }
-    } catch (e) {
-      // diamkan
+    } catch {
+      // silent
     }
   }
 
+  function handleBuatTopik(id: string) {
+    router.push(`/ai-chat?fromReferensi=${id}`);
+  }
+
+  function statusBadge(status: string) {
+    if (status === "done") return <span className="badge badge-success"><span className="status-dot status-dot-success" />Selesai</span>;
+    if (status === "processing") return <span className="badge badge-processing"><span className="status-dot status-dot-processing" />Memproses</span>;
+    return <span className="badge badge-error"><span className="status-dot status-dot-error" />Gagal</span>;
+  }
+
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
-      <h1 style={{ fontSize: 24, marginBottom: 16 }}>Menu Referensi</h1>
+    <DashboardLayout>
+      <div className="animate-fade-in">
+        <div className="page-header">
+          <h1 className="page-title">Referensi</h1>
+          <p className="page-subtitle">Analisis channel YouTube untuk riset gaya konten, niche, visual, dan editing.</p>
+        </div>
 
-      <div style={{ position: "fixed", top: 16, right: 16, zIndex: 50 }}>
-        {notifications.map((msg, i) => (
-          <div
-            key={i}
-            style={{
-              background: "#7a1f1f",
-              color: "#fff",
-              padding: "8px 12px",
-              borderRadius: 6,
-              marginBottom: 8,
-              fontSize: 13,
-              maxWidth: 300,
-            }}
-          >
-            {msg}
-          </div>
-        ))}
-      </div>
-
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          border: "1px solid #333",
-          borderRadius: 8,
-          padding: 16,
-          marginBottom: 24,
-        }}
-      >
-        <label style={{ display: "block", marginBottom: 8, fontSize: 14 }}>
-          Link channel YouTube
-        </label>
-        <input
-          type="text"
-          value={channelUrl}
-          onChange={(e) => setChannelUrl(e.target.value)}
-          placeholder="https://www.youtube.com/@namachannel"
-          disabled={submitting}
-          style={{
-            width: "100%",
-            padding: 8,
-            borderRadius: 6,
-            border: "1px solid #444",
-            background: "#111",
-            color: "#fff",
-            marginBottom: 12,
-          }}
-        />
-
-        <label style={{ display: "block", marginBottom: 8, fontSize: 14 }}>
-          Model Gemini
-        </label>
-        <select
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          disabled={submitting}
-          style={{
-            width: "100%",
-            padding: 8,
-            borderRadius: 6,
-            border: "1px solid #444",
-            background: "#111",
-            color: "#fff",
-            marginBottom: 12,
-          }}
-        >
-          {MODEL_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-
-        {formError && (
-          <div style={{ color: "#f88", fontSize: 13, marginBottom: 12 }}>
-            {formError}
+        {/* Toast notifications */}
+        {notifications.length > 0 && (
+          <div className="toast-container">
+            {notifications.map((msg, i) => (
+              <div key={i} className="toast toast-error">{msg}</div>
+            ))}
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 6,
-            border: "1px solid #666",
-            background: submitting ? "#333" : "#1a1a1a",
-            color: "#fff",
-            cursor: submitting ? "not-allowed" : "pointer",
-          }}
-        >
-          {submitting ? "Memproses..." : "Analisis Channel"}
-        </button>
-
-        {submitting && progressText && (
-          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>
-            {progressText}
-          </div>
-        )}
-      </form>
-
-      <h2 style={{ fontSize: 18, marginBottom: 12 }}>Riwayat Analisis</h2>
-
-      {loadingList && <p style={{ color: "#888" }}>Memuat data...</p>}
-
-      {!loadingList && list.length === 0 && (
-        <p style={{ color: "#888" }}>Belum ada channel yang dianalisis.</p>
-      )}
-
-      {list.map((row) => {
-        const isExpanded = expandedId === row.id;
-        const analyses = row.video_data?.analyses || [];
-
-        return (
-          <div
-            key={row.id}
-            style={{
-              border: "1px solid #333",
-              borderRadius: 8,
-              padding: 16,
-              marginBottom: 12,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>
-                  {row.channel_url}
-                </div>
-                <div style={{ fontSize: 12, color: "#888" }}>
-                  Status:{" "}
-                  {row.status === "processing"
-                    ? "Sedang diproses"
-                    : row.status === "done"
-                    ? "Selesai"
-                    : "Gagal"}
-                </div>
-              </div>
-              <button
-                onClick={() => handleDelete(row.id)}
-                style={{
-                  background: "none",
-                  border: "1px solid #555",
-                  borderRadius: 6,
-                  color: "#f88",
-                  padding: "4px 10px",
-                  cursor: "pointer",
-                  fontSize: 12,
-                }}
-              >
-                Hapus
-              </button>
+        {/* Form */}
+        <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 16 }}>
+              <label className="form-label">Link channel YouTube</label>
+              <input
+                type="text"
+                value={channelUrl}
+                onChange={(e) => setChannelUrl(e.target.value)}
+                placeholder="https://www.youtube.com/@namachannel"
+                disabled={submitting}
+                className="input-field"
+              />
             </div>
 
-            {row.status === "done" && (
-              <>
-                <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6 }}>
-                  <div>
-                    <strong>Niche:</strong> {row.analysis_niche}
+            <div style={{ marginBottom: 20 }}>
+              <label className="form-label">Model Gemini</label>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={submitting}
+                className="select-field"
+              >
+                {MODEL_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {formError && (
+              <div style={{
+                padding: "10px 14px",
+                borderRadius: "var(--radius-md)",
+                background: "rgba(239, 68, 68, 0.1)",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+                color: "#fca5a5",
+                fontSize: 13,
+                marginBottom: 16,
+              }}>
+                {formError}
+              </div>
+            )}
+
+            <button type="submit" disabled={submitting} className="btn btn-primary">
+              {submitting ? (
+                <><span className="spinner" />Memproses...</>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
+                  Analisis Channel
+                </>
+              )}
+            </button>
+
+            {submitting && progressText && (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 8 }}>
+                  {progressText}
+                </div>
+                <div className="progress-bar-track">
+                  <div className="progress-bar-fill" style={{ width: `${progressPercent}%` }} />
+                </div>
+              </div>
+            )}
+          </form>
+        </div>
+
+        {/* List */}
+        <div className="section-title">Riwayat Analisis</div>
+
+        {loadingList && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[1, 2].map((i) => (
+              <div key={i} className="skeleton" style={{ height: 100 }} />
+            ))}
+          </div>
+        )}
+
+        {!loadingList && list.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+              </svg>
+            </div>
+            <div className="empty-state-text">Belum ada channel yang dianalisis.</div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {list.map((row) => {
+            const isExpanded = expandedId === row.id;
+            const analyses = row.video_data?.analyses || [];
+
+            return (
+              <div key={row.id} className="glass-card-static" style={{ padding: 20 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, wordBreak: "break-all" }}>
+                      {row.channel_title || row.channel_url}
+                    </div>
+                    {row.channel_title && (
+                      <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 8 }}>
+                        {row.channel_url}
+                      </div>
+                    )}
+                    {statusBadge(row.status)}
                   </div>
-                  <div>
-                    <strong>Visual:</strong> {row.analysis_visual}
-                  </div>
-                  <div>
-                    <strong>Editing:</strong> {row.analysis_editing}
-                  </div>
-                  <div>
-                    <strong>Hook & CTA:</strong> {row.analysis_hook_cta}
-                  </div>
+                  <button onClick={() => handleDelete(row.id)} className="btn btn-danger btn-sm">
+                    Hapus
+                  </button>
                 </div>
 
-                <button
-                  onClick={() => setExpandedId(isExpanded ? null : row.id)}
-                  style={{
-                    marginTop: 10,
-                    background: "none",
-                    border: "none",
-                    color: "#6cf",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    padding: 0,
-                  }}
-                >
-                  {isExpanded
-                    ? "Sembunyikan detail per video"
-                    : `Lihat detail ${analyses.length} video`}
-                </button>
-
-                {isExpanded && (
-                  <div style={{ marginTop: 12 }}>
-                    {analyses.map((a, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          borderTop: "1px solid #333",
-                          paddingTop: 10,
-                          marginTop: 10,
-                          fontSize: 12,
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                          {i + 1}. {a.title}
-                        </div>
-                        {a.error ? (
-                          <div style={{ color: "#f88" }}>Gagal: {a.error}</div>
-                        ) : (
-                          <div style={{ color: "#ccc", lineHeight: 1.5 }}>
-                            <div>Niche: {a.niche}</div>
-                            <div>Visual: {a.visual}</div>
-                            <div>Editing: {a.editing}</div>
-                            <div>Hook/CTA: {a.hookCta}</div>
+                {row.status === "done" && (
+                  <>
+                    <div style={{
+                      marginTop: 16,
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                      gap: 12,
+                    }}>
+                      {[
+                        { label: "Niche", value: row.analysis_niche },
+                        { label: "Visual", value: row.analysis_visual },
+                        { label: "Editing", value: row.analysis_editing },
+                        { label: "Hook & CTA", value: row.analysis_hook_cta },
+                      ].map((item) => (
+                        <div key={item.label} style={{
+                          padding: 12,
+                          borderRadius: "var(--radius-md)",
+                          background: "rgba(255,255,255,0.02)",
+                          border: "1px solid rgba(255,255,255,0.04)",
+                        }}>
+                          <div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4, fontWeight: 500 }}>
+                            {item.label}
                           </div>
-                        )}
+                          <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                            {item.value || "-"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : row.id)}
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: "var(--accent-cyan)" }}
+                      >
+                        {isExpanded ? "Sembunyikan detail" : `Lihat detail ${analyses.length} video`}
+                      </button>
+                      <button
+                        onClick={() => handleBuatTopik(row.id)}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        ✨ Buat Ide Topik dari Referensi Ini
+                      </button>
+                    </div>
+
+                    {isExpanded && (
+                      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+                        {analyses.map((a, i) => (
+                          <div key={i} style={{
+                            padding: 14,
+                            borderRadius: "var(--radius-md)",
+                            background: "rgba(255,255,255,0.02)",
+                            border: "1px solid rgba(255,255,255,0.04)",
+                          }} className="animate-fade-in">
+                            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 14 }}>
+                              {i + 1}. {a.title}
+                            </div>
+                            {a.error ? (
+                              <div style={{ color: "var(--status-error)", fontSize: 13 }}>Gagal: {a.error}</div>
+                            ) : (
+                              <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                                <div><strong style={{ color: "var(--text-tertiary)" }}>Niche:</strong> {a.niche}</div>
+                                <div><strong style={{ color: "var(--text-tertiary)" }}>Visual:</strong> {a.visual}</div>
+                                <div><strong style={{ color: "var(--text-tertiary)" }}>Editing:</strong> {a.editing}</div>
+                                <div><strong style={{ color: "var(--text-tertiary)" }}>Hook/CTA:</strong> {a.hookCta}</div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                  </>
+                )}
+
+                {row.status === "processing" && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="progress-bar-track">
+                      <div className="progress-bar-fill progress-bar-indeterminate" />
+                    </div>
+                    <div style={{ fontSize: 13, color: "var(--text-tertiary)", marginTop: 8 }}>
+                      Analisis sedang berjalan...
+                    </div>
                   </div>
                 )}
-              </>
-            )}
 
-            {row.status === "processing" && (
-              <div style={{ marginTop: 8, fontSize: 13, color: "#aaa" }}>
-                Analisis sedang berjalan atau tertunda...
+                {row.status === "error" && (
+                  <div style={{ marginTop: 12, fontSize: 13, color: "var(--status-error)" }}>
+                    Analisis gagal untuk channel ini.
+                  </div>
+                )}
               </div>
-            )}
-
-            {row.status === "error" && (
-              <div style={{ marginTop: 8, fontSize: 13, color: "#f88" }}>
-                Analisis gagal untuk channel ini.
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+            );
+          })}
+        </div>
+      </div>
+    </DashboardLayout>
   );
 }

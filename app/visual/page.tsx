@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import DashboardLayout from "../components/DashboardLayout";
 
 interface VisualRow {
   id: string;
@@ -20,6 +21,7 @@ export default function VisualPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editJudul, setEditJudul] = useState("");
   const [editIsi, setEditIsi] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchList();
@@ -112,222 +114,177 @@ export default function VisualPage() {
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 24 }}>
-      <h1 style={{ fontSize: 24, marginBottom: 16 }}>Menu Visual</h1>
+    <DashboardLayout>
+      <div className="animate-fade-in">
+        <div className="page-header">
+          <h1 className="page-title">Visual</h1>
+          <p className="page-subtitle">
+            Buat dan kelola panduan visual, storyboard, serta instruksi editing untuk video Anda.
+          </p>
+        </div>
 
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          border: "1px solid #333",
-          borderRadius: 8,
-          padding: 16,
-          marginBottom: 24,
-        }}
-      >
-        <label style={{ display: "block", marginBottom: 8, fontSize: 14 }}>
-          Judul panduan visual
-        </label>
-        <input
-          type="text"
-          value={judul}
-          onChange={(e) => setJudul(e.target.value)}
-          placeholder="Misal: Storyboard - Knocker-Up abad 19"
-          disabled={submitting}
-          style={{
-            width: "100%",
-            padding: 8,
-            borderRadius: 6,
-            border: "1px solid #444",
-            background: "#111",
-            color: "#fff",
-            marginBottom: 12,
-          }}
-        />
-
-        <label style={{ display: "block", marginBottom: 8, fontSize: 14 }}>
-          Panduan visual / storyboard
-        </label>
-        <textarea
-          value={isiVisual}
-          onChange={(e) => setIsiVisual(e.target.value)}
-          placeholder="Deskripsi visual, instruksi editing, storyboard..."
-          disabled={submitting}
-          rows={5}
-          style={{
-            width: "100%",
-            padding: 8,
-            borderRadius: 6,
-            border: "1px solid #444",
-            background: "#111",
-            color: "#fff",
-            marginBottom: 12,
-            fontFamily: "inherit",
-          }}
-        />
-
-        {formError && (
-          <div style={{ color: "#f88", fontSize: 13, marginBottom: 12 }}>
-            {formError}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={submitting}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 6,
-            border: "1px solid #666",
-            background: submitting ? "#333" : "#1a1a1a",
-            color: "#fff",
-            cursor: submitting ? "not-allowed" : "pointer",
-          }}
-        >
-          {submitting ? "Menyimpan..." : "Tambah Panduan Visual"}
-        </button>
-      </form>
-
-      <h2 style={{ fontSize: 18, marginBottom: 12 }}>Daftar Panduan Visual</h2>
-
-      {loading && <p style={{ color: "#888" }}>Memuat data...</p>}
-
-      {!loading && list.length === 0 && (
-        <p style={{ color: "#888" }}>Belum ada panduan visual tersimpan.</p>
-      )}
-
-      {list.map((v) => (
-        <div
-          key={v.id}
-          style={{
-            border: "1px solid #333",
-            borderRadius: 8,
-            padding: 16,
-            marginBottom: 12,
-          }}
-        >
-          {editingId === v.id ? (
-            <div>
+        {/* Add Form */}
+        <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 16 }}>
+              <label className="form-label">Judul panduan visual</label>
               <input
                 type="text"
-                value={editJudul}
-                onChange={(e) => setEditJudul(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: 8,
-                  borderRadius: 6,
-                  border: "1px solid #444",
-                  background: "#111",
-                  color: "#fff",
-                  marginBottom: 8,
-                }}
+                value={judul}
+                onChange={(e) => setJudul(e.target.value)}
+                placeholder="Misal: Storyboard - Knocker-Up abad 19"
+                disabled={submitting}
+                className="input-field"
               />
-              <textarea
-                value={editIsi}
-                onChange={(e) => setEditIsi(e.target.value)}
-                rows={4}
-                style={{
-                  width: "100%",
-                  padding: 8,
-                  borderRadius: 6,
-                  border: "1px solid #444",
-                  background: "#111",
-                  color: "#fff",
-                  marginBottom: 8,
-                  fontFamily: "inherit",
-                }}
-              />
-              <button
-                onClick={() => saveEdit(v.id)}
-                style={{
-                  marginRight: 8,
-                  padding: "6px 12px",
-                  borderRadius: 6,
-                  border: "1px solid #6f6",
-                  background: "none",
-                  color: "#6f6",
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-              >
-                Simpan
-              </button>
-              <button
-                onClick={cancelEdit}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 6,
-                  border: "1px solid #666",
-                  background: "none",
-                  color: "#aaa",
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-              >
-                Batal
-              </button>
             </div>
-          ) : (
-            <>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 600 }}>{v.judul}</div>
-                  {v.isi_visual && (
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: "#aaa",
-                        marginTop: 4,
-                        whiteSpace: "pre-wrap",
-                      }}
-                    >
-                      {v.isi_visual}
+
+            <div style={{ marginBottom: 20 }}>
+              <label className="form-label">Panduan visual / storyboard</label>
+              <textarea
+                value={isiVisual}
+                onChange={(e) => setIsiVisual(e.target.value)}
+                placeholder="Deskripsi visual, instruksi editing, storyboard..."
+                disabled={submitting}
+                rows={5}
+                className="textarea-field"
+              />
+            </div>
+
+            {formError && (
+              <div style={{
+                padding: "10px 14px",
+                borderRadius: "var(--radius-md)",
+                background: "rgba(239, 68, 68, 0.1)",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+                color: "#fca5a5",
+                fontSize: 13,
+                marginBottom: 16,
+              }}>
+                {formError}
+              </div>
+            )}
+
+            <button type="submit" disabled={submitting} className="btn btn-primary">
+              {submitting ? (
+                <><span className="spinner" />Menyimpan...</>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                  Tambah Panduan Visual
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+
+        {/* List */}
+        <div className="section-title">Daftar Panduan Visual</div>
+
+        {loading ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 100 }} />)}
+          </div>
+        ) : list.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
+                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                <line x1="7" y1="2" x2="7" y2="22" />
+                <line x1="17" y1="2" x2="17" y2="22" />
+                <line x1="2" y1="12" x2="22" y2="12" />
+              </svg>
+            </div>
+            <div className="empty-state-text">Belum ada panduan visual tersimpan.</div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {list.map((v) => {
+              const isEditing = editingId === v.id;
+              const isExpanded = expandedId === v.id;
+
+              return (
+                <div key={v.id} className="glass-card-static" style={{ padding: 20 }}>
+                  {isEditing ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <input
+                        type="text"
+                        value={editJudul}
+                        onChange={(e) => setEditJudul(e.target.value)}
+                        className="input-field"
+                      />
+                      <textarea
+                        value={editIsi}
+                        onChange={(e) => setEditIsi(e.target.value)}
+                        rows={6}
+                        className="textarea-field"
+                      />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => saveEdit(v.id)} className="btn btn-primary btn-sm">Simpan</button>
+                        <button onClick={cancelEdit} className="btn btn-ghost btn-sm">Batal</button>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>
+                            {v.judul}
+                          </div>
+                          {v.isi_visual && (
+                            <div
+                              style={{
+                                fontSize: 13,
+                                color: "var(--text-secondary)",
+                                marginTop: 8,
+                                lineHeight: 1.6,
+                                whiteSpace: "pre-wrap",
+                                maxHeight: isExpanded ? "none" : 100,
+                                overflow: "hidden",
+                                position: "relative",
+                              }}
+                            >
+                              {v.isi_visual}
+                              {!isExpanded && v.isi_visual.length > 250 && (
+                                <div style={{
+                                  position: "absolute",
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  height: 40,
+                                  background: "linear-gradient(transparent, rgba(5,5,5,0.95))",
+                                }} />
+                              )}
+                            </div>
+                          )}
+                          {v.isi_visual && v.isi_visual.length > 250 && (
+                            <button
+                              onClick={() => setExpandedId(isExpanded ? null : v.id)}
+                              className="btn btn-ghost btn-sm"
+                              style={{ marginTop: 4, padding: "4px 0", color: "var(--accent-orange)", fontSize: 12 }}
+                            >
+                              {isExpanded ? "Sembunyikan" : "Lihat selengkapnya"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                        <button onClick={() => startEdit(v)} className="btn btn-ghost btn-sm">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
+                          Edit
+                        </button>
+                        <button onClick={() => handleDelete(v.id)} className="btn btn-danger btn-sm">
+                          Hapus
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
-                <button
-                  onClick={() => handleDelete(v.id)}
-                  style={{
-                    background: "none",
-                    border: "1px solid #555",
-                    borderRadius: 6,
-                    color: "#f88",
-                    padding: "4px 10px",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    flexShrink: 0,
-                    marginLeft: 8,
-                  }}
-                >
-                  Hapus
-                </button>
-              </div>
-
-              <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-                <button
-                  onClick={() => startEdit(v)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: 6,
-                    border: "1px solid #6cf",
-                    background: "none",
-                    color: "#6cf",
-                    cursor: "pointer",
-                    fontSize: 13,
-                  }}
-                >
-                  Edit
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      ))}
-    </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </DashboardLayout>
   );
 }

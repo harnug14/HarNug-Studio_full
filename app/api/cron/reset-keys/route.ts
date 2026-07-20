@@ -2,9 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
 // Endpoint ini dipanggil otomatis 1x/hari oleh Vercel Cron.
-// Tugasnya: reset semua API key Gemini yang berstatus "limited" balik jadi "active",
-// mengikuti jadwal reset kuota harian Gemini (tengah malam Pacific Time, ~15:00 WIB,
-// diberi jeda ke 16:00 WIB biar aman).
+// Tugasnya: reset semua API key Gemini & Groq yang berstatus "limited" balik jadi "active",
+// mengikuti jadwal reset kuota harian.
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -19,7 +18,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("api_keys")
     .update({ status: "active" })
-    .eq("provider", "gemini")
+    .in("provider", ["gemini", "groq"])
     .eq("status", "limited")
     .select();
 
@@ -28,7 +27,7 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    message: `Reset ${data?.length || 0} key Gemini dari limited ke active`,
+    message: `Reset ${data?.length || 0} key Gemini/Groq dari limited ke active`,
     resetCount: data?.length || 0,
   });
 }
