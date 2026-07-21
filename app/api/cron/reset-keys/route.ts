@@ -7,8 +7,11 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    console.error("[cron/reset-keys] Unauthorized - CRON_SECRET tidak cocok");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  console.log("[cron/reset-keys] Mulai jalan:", new Date().toISOString());
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,14 +20,20 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("api_keys")
-    .update({ status: "active" })
+    .update({
+      status: "active",
+      last_checked_at: new Date().toISOString(),
+    })
     .in("provider", ["gemini", "groq"])
     .eq("status", "limited")
     .select();
 
   if (error) {
+    console.error("[cron/reset-keys] Gagal update:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  console.log(`[cron/reset-keys] Selesai. ${data?.length || 0} key direset.`);
 
   return NextResponse.json({
     message: `Reset ${data?.length || 0} key Gemini/Groq dari limited ke active`,
