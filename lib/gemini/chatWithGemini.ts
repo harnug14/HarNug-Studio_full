@@ -14,6 +14,18 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Google mengirim field quotaId di detail error 429 yang isinya mengandung
+// "PerDay" untuk limit harian, atau "PerMinute"/"PerMinutePerProject" untuk limit
+// per-menit. Kita cek ini supaya key tidak dikunci seharian gara-gara rate-limit sesaat.
+function isDailyQuotaError(errText: string): boolean {
+  const lower = errText.toLowerCase();
+  if (lower.includes("perday")) return true;
+  if (lower.includes("perminute")) return false;
+  // Fallback: kalau Google tidak sertakan quotaId spesifik, anggap bukan limit
+  // harian dulu (lebih aman retry daripada salah kunci key selama 1 hari penuh).
+  return false;
+}
+
 export function buildStyleInstruction(mode: ChatMode): string {
   const baseStyle =
     "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku.";
@@ -90,6 +102,7 @@ export async function chatWithGemini(
 
   const MAX_RETRIES = 2;
   const RETRY_DELAY_MS = 5000;
+  const RPM_RETRY_DELAY_MS = 20000; // limit per-menit -> tunggu 20 detik sebelum retry key yang sama
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -112,17 +125,24 @@ export async function chatWithGemini(
     const errText = await response.text();
 
     if (response.status === 429) {
-      if (errText.toLowerCase().includes("quota")) {
+      if (isDailyQuotaError(errText)) {
+        // Beneran kuota harian habis -> kunci key ini sampai besok
         throw new GeminiQuotaError(
-          `Gemini API quota exceeded (429) - ${errText.slice(0, 200)}`
+          `Gemini API quota harian habis (429) - ${errText.slice(0, 200)}`
         );
       } else {
+        // Rate-limit per-menit / sesaat -> JANGAN kunci key, cukup tunggu & retry
         if (attempt < MAX_RETRIES) {
-          lastError = new Error(`Gemini API Rate Limit (429) - mencoba lagi...`);
-          await sleep(20000); // 20 detik
+          lastError = new Error(`Gemini API Rate Limit sesaat (429) - mencoba lagi...`);
+          await sleep(RPM_RETRY_DELAY_MS);
           continue;
         } else {
-          throw new Error(`Terlalu sering request (Rate Limit 429). Mohon tunggu beberapa saat.`);
+          // Retry di key yang sama sudah habis jatah, tapi ini BUKAN kuota harian,
+          // jadi lempar error biasa (bukan GeminiQuotaError) supaya rotasi TIDAK
+          // menandai key ini "limited" seharian.
+          throw new Error(
+            `Terlalu sering request ke key ini (Rate Limit sesaat). Coba key lain atau tunggu ~1 menit.`
+          );
         }
       }
     }
