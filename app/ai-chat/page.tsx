@@ -5,7 +5,6 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Sidebar from "../components/Sidebar";
 
-// (Keep all the interfaces and options same as before)
 interface ChatMessageItem {
   id?: string;
   role: "user" | "assistant";
@@ -140,14 +139,12 @@ function AiChatContent() {
     };
   }, [dropdownOpenId]);
 
-  const [sidebarOpen, setSidebarOpen] = useState(false); // For chat sessions sidebar — default closed, opened via effect below on wide screens
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Open chat sessions sidebar by default only on wide (desktop) screens.
-  // On mobile (<=768px) it stays closed until the user taps the toggle button.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.innerWidth > 768) {
@@ -412,8 +409,6 @@ function AiChatContent() {
       const data = await res.json();
       if (!res.ok) {
         alert("Gagal menyimpan: " + (data.error || "Terjadi kesalahan"));
-      } else {
-        // Show temporary toast or visual feedback instead of alert if possible, but alert is okay for now
       }
     } catch (err: any) {
       alert("Gagal menyimpan: " + (err.message || "Terjadi kesalahan"));
@@ -490,10 +485,8 @@ function AiChatContent() {
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
-      {/* Global Navigation Sidebar */}
       <Sidebar userEmail={userEmail} />
 
-      {/* Chat Application Area */}
       <div
         className="chat-container"
         style={{
@@ -502,9 +495,9 @@ function AiChatContent() {
           display: "flex",
           height: "100vh",
           background: "var(--bg-primary)",
+          minWidth: 0,
         }}
       >
-        {/* Chat Sessions Sidebar */}
         <div
           className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}
           style={{
@@ -668,10 +661,8 @@ function AiChatContent() {
           </div>
         </div>
 
-        {/* Chat Main Area */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", minWidth: 0 }}>
 
-          {/* Header */}
           <div style={{
             padding: "16px 24px",
             borderBottom: "1px solid var(--glass-border)",
@@ -716,7 +707,6 @@ function AiChatContent() {
             </div>
           </div>
 
-          {/* Context Banner */}
           {contextLabel && (
             <div style={{
               background: "linear-gradient(90deg, rgba(168, 85, 247, 0.1), rgba(6, 182, 212, 0.1))",
@@ -740,7 +730,6 @@ function AiChatContent() {
             </div>
           )}
 
-          {/* Messages Area */}
           <div style={{ flex: 1, overflowY: "auto", padding: "24px", display: "flex", flexDirection: "column", gap: 24 }}>
             {messages.length === 0 && (
               <div style={{ margin: "auto", textAlign: "center", maxWidth: 400 }}>
@@ -772,7 +761,6 @@ function AiChatContent() {
                   gap: 16,
                   alignItems: "flex-start",
                 }}>
-                  {/* Avatar */}
                   <div style={{
                     width: 36, height: 36, borderRadius: "var(--radius-full)", flexShrink: 0,
                     display: "flex", alignItems: "center", justifyContent: "center",
@@ -786,7 +774,6 @@ function AiChatContent() {
                     )}
                   </div>
 
-                  {/* Bubble */}
                   <div style={{
                     maxWidth: "75%",
                     minWidth: 0,
@@ -876,7 +863,6 @@ function AiChatContent() {
                       ) : m.content}
                     </div>
 
-                    {/* Inline Save Form */}
                     {savingMessageIndex === i && (
                       <div className="glass-card animate-fade-in-up" style={{ marginTop: 12, padding: 16, border: "1px solid var(--accent-primary)" }}>
                         <div style={{ marginBottom: 12 }}>
@@ -928,7 +914,6 @@ function AiChatContent() {
             <div ref={messagesEndRef} style={{ height: 20 }} />
           </div>
 
-          {/* Input Area */}
           <div style={{ padding: "16px 24px 24px", background: "linear-gradient(var(--bg-primary-transparent), var(--bg-primary) 20%)" }}>
             <div style={{
               display: "flex",
@@ -958,6 +943,7 @@ function AiChatContent() {
                 rows={1}
                 style={{
                   flex: 1,
+                  minWidth: 0,
                   background: "transparent",
                   border: "none",
                   color: "var(--text-primary)",
@@ -1014,8 +1000,6 @@ function AiChatContent() {
           .toggle-sidebar-btn {
             display: flex !important;
           }
-        }
-        @media (max-width: 768px) {
           .chat-container {
             margin-left: 0 !important;
           }
