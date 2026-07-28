@@ -18,7 +18,6 @@ export default function DashboardLayout({
   const [checked, setChecked] = useState(false);
 
   const isLoginPage = pathname === "/login";
-  // Cek apakah user sedang membuka menu AI Chat
   const isChatPage = pathname?.includes("chat");
 
   useEffect(() => {
@@ -46,7 +45,6 @@ export default function DashboardLayout({
     checkAuth();
   }, [router, isLoginPage]);
 
-  // Halaman login: render polos tanpa Sidebar, tanpa auth-check gate
   if (isLoginPage) {
     return <>{children}</>;
   }
@@ -69,7 +67,6 @@ export default function DashboardLayout({
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      {/* Mengirim userEmail yang sesuai dengan tipe data prop Sidebar */}
       <Sidebar userEmail={user?.email || undefined} />
       <main
         style={{
@@ -93,7 +90,9 @@ export default function DashboardLayout({
           {children}
         </div>
       </main>
-      <style jsx>{`
+
+      {/* Global Responsive Fix untuk Semua Halaman di HP */}
+      <style jsx global>{`
         .dashboard-main {
           margin-left: var(--sidebar-width, 260px);
           transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -105,10 +104,26 @@ export default function DashboardLayout({
             padding: 24px 16px !important;
             padding-top: 64px !important;
           }
-          /* Khusus tampilan mobile di menu AI Chat */
           .dashboard-main.is-chat-page {
             padding: 0 !important;
             height: 100vh !important;
+          }
+
+          /* Container tombol berjajar otomatis membuat tombol ke-2 berpindah ke baris bawah secara utuh */
+          .dashboard-main div[style*="display: flex"],
+          .dashboard-main div[style*="display:flex"] {
+            flex-wrap: wrap !important;
+          }
+
+          /* Mencegah huruf mengeja vertikal kebawah */
+          .dashboard-main button {
+            max-width: 100% !important;
+            white-space: nowrap !important;
+          }
+
+          .dashboard-main select,
+          .dashboard-main input {
+            max-width: 100% !important;
           }
         }
       `}</style>
