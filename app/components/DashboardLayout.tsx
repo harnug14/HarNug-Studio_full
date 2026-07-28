@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Sidebar from "./Sidebar";
+import { ThemeProvider } from "./ThemeProvider";
 import { User } from "@supabase/supabase-js";
 
 export default function DashboardLayout({
@@ -73,50 +74,52 @@ export default function DashboardLayout({
   }
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      <Sidebar userEmail={user?.email || undefined} />
-      <main
-        style={{
-          flex: 1,
-          padding: isChatPage ? "0" : "32px 40px",
-          maxWidth: "100%",
-          overflow: "hidden",
-          minHeight: "100vh",
-          height: isChatPage ? "100vh" : "auto",
-        }}
-        className={`dashboard-main ${isChatPage ? "is-chat-page" : ""}`}
-      >
-        <div
+    <ThemeProvider>
+      <div style={{ display: "flex", minHeight: "100vh" }}>
+        <Sidebar userEmail={user?.email || undefined} />
+        <main
           style={{
-            maxWidth: isChatPage ? "100%" : 900,
-            margin: isChatPage ? 0 : "0 auto",
-            height: isChatPage ? "100%" : "auto",
-            width: "100%",
+            flex: 1,
+            padding: isChatPage ? "0" : "32px 40px",
+            maxWidth: "100%",
+            overflow: "hidden",
+            minHeight: "100vh",
+            height: isChatPage ? "100vh" : "auto",
           }}
+          className={`dashboard-main ${isChatPage ? "is-chat-page" : ""}`}
         >
-          {children}
-        </div>
-      </main>
+          <div
+            style={{
+              maxWidth: isChatPage ? "100%" : 900,
+              margin: isChatPage ? 0 : "0 auto",
+              height: isChatPage ? "100%" : "auto",
+              width: "100%",
+            }}
+          >
+            {children}
+          </div>
+        </main>
 
-      <style jsx global>{`
-        .dashboard-main {
-          margin-left: var(--sidebar-width, 260px);
-          transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        @media (max-width: 768px) {
+        <style jsx global>{`
           .dashboard-main {
-            margin-left: 0 !important;
-            padding: 24px 16px !important;
-            padding-top: 64px !important;
+            margin-left: var(--sidebar-width, 260px);
+            transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
           }
 
-          .dashboard-main.is-chat-page {
-            padding: 0 !important;
-            height: 100vh !important;
+          @media (max-width: 768px) {
+            .dashboard-main {
+              margin-left: 0 !important;
+              padding: 24px 16px !important;
+              padding-top: 64px !important;
+            }
+
+            .dashboard-main.is-chat-page {
+              padding: 0 !important;
+              height: 100vh !important;
+            }
           }
-        }
-      `}</style>
-    </div>
+        `}</style>
+      </div>
+    </ThemeProvider>
   );
 }
