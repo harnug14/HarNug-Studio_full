@@ -1,30 +1,32 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "./components/ThemeProvider";
-import DashboardLayout from "./components/DashboardLayout";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
-  title: "HarNug Studio — AI Creator Studio",
-  description: "Platform AI untuk membuat konten YouTube Shorts: dari riset channel, ide topik, naskah, hingga panduan visual.",
+  title: "HarNug Studio",
+  description: "AI Creator Studio for YouTube Shorts",
+  manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#000000",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="id" className={`${inter.variable} h-full`}>
-      <body className="min-h-full flex flex-col" style={{ fontFamily: "var(--font-sans)" }}>
+    <html lang="id">
+      <body>
         <ThemeProvider>
-          <DashboardLayout>{children}</DashboardLayout>
+          {children}
         </ThemeProvider>
       </body>
     </html>
