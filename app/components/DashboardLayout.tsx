@@ -91,7 +91,6 @@ export default function DashboardLayout({
         </div>
       </main>
 
-      {/* Global Responsive Fix untuk Semua Halaman di HP */}
       <style jsx global>{`
         .dashboard-main {
           margin-left: var(--sidebar-width, 260px);
@@ -107,23 +106,6 @@ export default function DashboardLayout({
           .dashboard-main.is-chat-page {
             padding: 0 !important;
             height: 100vh !important;
-          }
-
-          /* Container tombol berjajar otomatis membuat tombol ke-2 berpindah ke baris bawah secara utuh */
-          .dashboard-main div[style*="display: flex"],
-          .dashboard-main div[style*="display:flex"] {
-            flex-wrap: wrap !important;
-          }
-
-          /* Mencegah huruf mengeja vertikal kebawah */
-          .dashboard-main button {
-            max-width: 100% !important;
-            white-space: nowrap !important;
-          }
-
-          .dashboard-main select,
-          .dashboard-main input {
-            max-width: 100% !important;
           }
         }
       `}</style>
