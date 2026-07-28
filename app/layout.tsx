@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "./components/ThemeProvider";
+import DashboardLayout from "./components/DashboardLayout";
 
 export const metadata: Metadata = {
   title: "HarNug Studio",
@@ -26,7 +27,7 @@ export default function RootLayout({
     <html lang="id">
       <body>
         <ThemeProvider>
-          {children}
+          <DashboardLayout>{children}</DashboardLayout>
         </ThemeProvider>
       </body>
     </html>
