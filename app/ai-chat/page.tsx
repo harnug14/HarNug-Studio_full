@@ -32,9 +32,8 @@ const MODEL_OPTIONS = [
   { value: "groq-mixtral-8x7b-32768", label: "Groq Mixtral 8x7B" },
 ];
 
+// Hanya 2 Mode Saja: Thinking & Web Search
 const MODE_OPTIONS = [
-  { value: "biasa", label: "Biasa" },
-  { value: "mendalam", label: "Deep Dive" },
   { value: "berpikir", label: "Thinking" },
   { value: "search", label: "Web Search" },
 ];
@@ -154,7 +153,7 @@ function AiChatContent() {
         setSidebarOpen(window.innerWidth > 768);
       }
     } catch {
-      // silent
+      // localStorage tidak tersedia, biarkan default true
     }
     setSidebarReady(true);
   }, []);
@@ -753,30 +752,29 @@ function AiChatContent() {
               gap: 12,
             }}
           >
-            {/* Tombol Buka Riwayat Chat di Kiri */}
+            {/* Tombol Ikon Panel Sidebar [◧] untuk Riwayat Chat */}
             <button
               className="btn-ghost btn-icon toggle-sidebar-btn"
               onClick={() => setSidebarOpen((prev) => !prev)}
               style={{
+                width: 36,
+                height: 36,
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
-                padding: "6px 10px",
+                justifyContent: "center",
                 borderRadius: "var(--radius-md)",
                 border: "1px solid var(--glass-border)",
                 background: "transparent",
                 color: "var(--text-primary)",
-                fontSize: 13,
                 cursor: "pointer",
                 flexShrink: 0,
               }}
               title={sidebarOpen ? "Sembunyikan Riwayat Chat" : "Tampilkan Riwayat Chat"}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                 <line x1="9" y1="3" x2="9" y2="21"></line>
               </svg>
-              <span className="hidden-mobile-text" style={{ fontSize: 13 }}>Riwayat</span>
             </button>
 
             {/* Model Selector Tepat di Tengah */}
@@ -1036,7 +1034,7 @@ function AiChatContent() {
               margin: "0 auto",
             }}
           >
-            {/* Pilihan Mode Dipindah ke Atas Input Box sebagai Teks/Pill Klik */}
+            {/* Hanya 2 Pilihan Mode: Thinking & Web Search */}
             <div
               className="chat-mode-pills"
               style={{
@@ -1055,7 +1053,7 @@ function AiChatContent() {
                     type="button"
                     onClick={() => setMode(o.value)}
                     style={{
-                      padding: "4px 12px",
+                      padding: "4px 14px",
                       borderRadius: "16px",
                       fontSize: 12,
                       fontWeight: isSelected ? 600 : 400,
@@ -1193,10 +1191,6 @@ function AiChatContent() {
 
           .chat-select-field {
             font-size: 11px !important;
-          }
-
-          .hidden-mobile-text {
-            display: none;
           }
         }
       `}</style>
