@@ -67,7 +67,6 @@ export default function DashboardLayout({
       <main
         style={{
           flex: 1,
-          marginLeft: "var(--sidebar-width)",
           padding: "32px 40px",
           maxWidth: "100%",
           overflow: "hidden",
@@ -80,6 +79,11 @@ export default function DashboardLayout({
         </div>
       </main>
       <style jsx>{`
+        .dashboard-main {
+          margin-left: var(--sidebar-width, 260px);
+          transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
         @media (max-width: 768px) {
           .dashboard-main {
             margin-left: 0 !important;
