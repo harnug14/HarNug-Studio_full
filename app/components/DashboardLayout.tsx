@@ -108,6 +108,22 @@ export default function DashboardLayout({
             padding: 0 !important;
             height: 100vh !important;
           }
+
+          /* KUNCI: Membuat baris tombol berdampingan melipat ke bawah secara utuh di HP */
+          .dashboard-main div[style*="display: flex"],
+          .dashboard-main div[style*="display:flex"] {
+            flex-wrap: wrap !important;
+          }
+
+          .dashboard-main button {
+            max-width: 100% !important;
+            white-space: nowrap !important;
+          }
+
+          .dashboard-main select,
+          .dashboard-main input {
+            max-width: 100% !important;
+          }
         }
       `}</style>
     </div>
