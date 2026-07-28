@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import Sidebar from "../components/Sidebar";
 
 interface ChatMessageItem {
   id?: string;
@@ -95,7 +94,7 @@ function AiChatContent() {
   const fromTopik = searchParams.get("fromTopik");
   const fromNaskah = searchParams.get("fromNaskah");
 
-  const [userEmail, setUserEmail] = useState<string | undefined>();
+  const [, setUserEmail] = useState<string | undefined>();
   const [authLoading, setAuthLoading] = useState(true);
 
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -125,26 +124,8 @@ function AiChatContent() {
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setDropdownOpenId(null);
-      }
-    }
-    if (dropdownOpenId) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [dropdownOpenId]);
-
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarReady, setSidebarReady] = useState(false);
-
-  // Lebar sidebar utama (fixed, dikontrol Sidebar.tsx lewat CSS var --sidebar-width)
-  const [mainSidebarWidth, setMainSidebarWidth] = useState("260px");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -163,23 +144,6 @@ function AiChatContent() {
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [dropdownOpenId]);
-
-  // Pantau perubahan --sidebar-width secara real-time (saat user toggle collapse Sidebar.tsx)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    function readWidth() {
-      const val = getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width").trim();
-      if (val) setMainSidebarWidth(val);
-    }
-
-    readWidth();
-
-    const observer = new MutationObserver(readWidth);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
-
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -324,6 +288,10 @@ function AiChatContent() {
   async function openSession(sessionId: string) {
     setActiveSessionId(sessionId);
     setLoading(true);
+    // Tutup sidebar di layar HP saat sesi di-klik
+    if (typeof window !== "undefined" && window.innerWidth <= 768) {
+      setSidebarOpen(false);
+    }
     try {
       const res = await fetch(`/api/chat/${sessionId}`);
       const data = await res.json();
@@ -349,6 +317,9 @@ function AiChatContent() {
     setSavingMessageIndex(null);
     setSavingCardKey(null);
     setInput("");
+    if (typeof window !== "undefined" && window.innerWidth <= 768) {
+      setSidebarOpen(false);
+    }
   }
 
   async function handleSend() {
@@ -540,22 +511,29 @@ function AiChatContent() {
   }
 
   return (
-    <div style={{ minHeight: "100dvh", background: "var(--bg-primary)" }}>
-      <Sidebar userEmail={userEmail} />
+    <div style={{ height: "100dvh", width: "100%", background: "var(--bg-primary)", overflow: "hidden", position: "relative" }}>
+      
+      {/* Overlay Backdrop khusus Mobile saat Drawer Riwayat Chat Terbuka */}
+      {sidebarOpen && (
+        <div
+          className="chat-mobile-overlay"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
       <div
         className="chat-container"
         style={{
-          marginLeft: mainSidebarWidth,
-          transition: "margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
           display: "flex",
-          height: "100dvh",
+          height: "100%",
+          width: "100%",
           background: "var(--bg-primary)",
           minWidth: 0,
           overflow: "hidden",
+          position: "relative"
         }}
       >
-        {/* Sub-Sidebar Riwayat Chat — menyatu dengan pola sidebar utama, tanpa panel/kotak terpisah */}
+        {/* Sub-Sidebar Riwayat Chat */}
         <div
           className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}
           style={{
@@ -565,11 +543,12 @@ function AiChatContent() {
             display: "flex",
             background: "var(--bg-primary)",
             flexDirection: "column",
-            transition: "width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1), max-width 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
+            transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
             flexShrink: 0,
-            zIndex: 10,
+            zIndex: 30,
             overflow: "hidden",
             height: "100%",
+            borderRight: sidebarOpen ? "1px solid var(--glass-border)" : "none",
           }}
         >
           <div style={{ padding: "12px 10px 8px", flexShrink: 0 }}>
@@ -712,7 +691,7 @@ function AiChatContent() {
                               border: "1px solid var(--glass-border)",
                               borderRadius: "var(--radius-md)",
                               padding: 4,
-                              zIndex: 20,
+                              zIndex: 40,
                               minWidth: 120,
                               boxShadow: "var(--shadow-md)"
                             }}
@@ -763,19 +742,21 @@ function AiChatContent() {
 
         {/* Main Chat Content Area */}
         <div style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", position: "relative", minWidth: 0, height: "100%", overflow: "hidden", background: "var(--bg-primary)" }}>
-          {/* Header Bar — tanpa border-bottom tebal, cukup garis tipis senada agar tidak terasa seperti panel terpisah */}
-          <div style={{
-            padding: "16px 24px",
-            borderBottom: "1px solid var(--glass-border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            zIndex: 5,
-            flexShrink: 0,
-            flexWrap: "wrap",
-            gap: 12,
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {/* Header Bar */}
+          <div
+            className="chat-header-bar"
+            style={{
+              padding: "16px 24px",
+              borderBottom: "1px solid var(--glass-border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              zIndex: 5,
+              flexShrink: 0,
+              gap: 12,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", flexWrap: "wrap" }}>
               <button
                 className="btn-ghost btn-icon toggle-sidebar-btn"
                 onClick={() => setSidebarOpen((prev) => !prev)}
@@ -788,12 +769,12 @@ function AiChatContent() {
                 </svg>
               </button>
 
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <div className="chat-header-selects" style={{ display: "flex", gap: 8, flex: 1, minWidth: 0 }}>
                 <select
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  className="select-field"
-                  style={{ width: 200, padding: "8px 32px 8px 12px" }}
+                  className="select-field chat-select-field"
+                  style={{ flex: 2, minWidth: 0, padding: "8px 24px 8px 10px" }}
                 >
                   {MODEL_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
@@ -802,8 +783,8 @@ function AiChatContent() {
                 <select
                   value={mode}
                   onChange={(e) => setMode(e.target.value)}
-                  className="select-field"
-                  style={{ width: 150, padding: "8px 32px 8px 12px" }}
+                  className="select-field chat-select-field"
+                  style={{ flex: 1, minWidth: 0, padding: "8px 24px 8px 10px" }}
                 >
                   {MODE_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
@@ -817,7 +798,7 @@ function AiChatContent() {
             <div style={{
               background: "linear-gradient(90deg, rgba(168, 85, 247, 0.08), rgba(6, 182, 212, 0.08))",
               borderBottom: "1px solid var(--glass-border)",
-              padding: "10px 24px",
+              padding: "10px 16px",
               display: "flex",
               alignItems: "center",
               gap: 12,
@@ -832,23 +813,23 @@ function AiChatContent() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ color: "var(--text-secondary)" }}>Konteks termuat dari </span>
                 <strong style={{ color: "var(--text-primary)" }}>{contextLabel}</strong>
-                {saveTarget === "naskah" && <span style={{ marginLeft: 8, color: "var(--accent-cyan)", fontSize: 12 }}>— Pencarian web otomatis aktif</span>}
+                {saveTarget === "naskah" && <span style={{ marginLeft: 8, color: "var(--accent-cyan)", fontSize: 12 }}>— Web search aktif</span>}
               </div>
             </div>
           )}
 
           {/* Area Pesan Chat */}
-          <div style={{ flex: "1 1 auto", overflowY: "auto", overflowX: "hidden", padding: "24px", display: "flex", flexDirection: "column", gap: 24, minHeight: 0 }}>
+          <div className="chat-messages-area" style={{ flex: "1 1 auto", overflowY: "auto", overflowX: "hidden", padding: "24px", display: "flex", flexDirection: "column", gap: 20, minHeight: 0 }}>
             {messages.length === 0 && (
               <div style={{ margin: "auto", textAlign: "center", maxWidth: 400, padding: "0 16px" }}>
                 <div style={{
-                  width: 64, height: 64, borderRadius: "var(--radius-2xl)", background: "var(--glass-bg)", border: "1px solid var(--glass-border)",
-                  display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", color: "var(--accent-purple)"
+                  width: 56, height: 56, borderRadius: "var(--radius-2xl)", background: "var(--glass-bg)", border: "1px solid var(--glass-border)",
+                  display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", color: "var(--accent-purple)"
                 }}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                 </div>
-                <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8, color: "var(--text-primary)" }}>Mulai Chat Baru</h2>
-                <p style={{ color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: "var(--text-primary)" }}>Mulai Chat Baru</h2>
+                <p style={{ color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.5 }}>
                   {!contextLabel
                     ? "Tanyakan apapun, generate script, ide topic, atau riset konten YouTube Shorts Anda di sini."
                     : `Tekan Kirim untuk meminta AI memproses konteks dari ${contextLabel}.`
@@ -866,26 +847,26 @@ function AiChatContent() {
                 <div key={i} className="animate-fade-in-up" style={{
                   display: "flex",
                   flexDirection: m.role === "user" ? "row-reverse" : "row",
-                  gap: 16,
+                  gap: 12,
                   alignItems: "flex-start",
                   width: "100%",
                 }}>
                   <div style={{
-                    width: 36, height: 36, borderRadius: "var(--radius-full)", flexShrink: 0,
+                    width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
                     display: "flex", alignItems: "center", justifyContent: "center",
                     background: m.role === "user" ? "var(--glass-bg-hover)" : "var(--accent-primary)",
                     color: m.role === "user" ? "var(--text-primary)" : "#fff", border: `1px solid ${m.role === "user" ? "var(--glass-border)" : "transparent"}`,
                   }}>
                     {m.role === "user" ? (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                     ) : (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
                     )}
                   </div>
 
-                  <div style={{ maxWidth: "75%", minWidth: 0 }}>
+                  <div className="chat-bubble-wrapper" style={{ maxWidth: "82%", minWidth: 0 }}>
                     <div style={{
-                      padding: "14px 18px",
+                      padding: "12px 16px",
                       borderRadius: "var(--radius-lg)",
                       borderTopLeftRadius: m.role === "assistant" ? 4 : "var(--radius-lg)",
                       borderTopRightRadius: m.role === "user" ? 4 : "var(--radius-lg)",
@@ -908,7 +889,7 @@ function AiChatContent() {
                               const isSavingCard = savingCardKey === cardKey;
                               return (
                                 <div key={ci} style={{
-                                  padding: 14,
+                                  padding: 12,
                                   borderRadius: "var(--radius-md)",
                                   background: "var(--bg-secondary)",
                                   border: "1px solid var(--glass-border)",
@@ -916,10 +897,10 @@ function AiChatContent() {
                                   flexDirection: "column",
                                   gap: 8,
                                 }}>
-                                  <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>
+                                  <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
                                     {card.judul}
                                   </div>
-                                  <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                  <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
                                     {card.deskripsi}
                                   </div>
                                   <button
@@ -956,35 +937,35 @@ function AiChatContent() {
                       {savingMessageIndex === i && (
                         <div style={{
                           marginTop: 12,
-                          padding: 16,
+                          padding: 14,
                           borderRadius: "var(--radius-md)",
                           background: "var(--bg-elevated)",
                           border: "1px solid var(--accent-primary)",
                           display: "flex",
                           flexDirection: "column",
-                          gap: 12,
+                          gap: 10,
                         }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
                             Simpan ke {saveTarget === "topik" ? "Topik" : saveTarget === "naskah" ? "Naskah" : "Visual"}
                           </div>
                           <div>
-                            <label style={{ display: "block", fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>Judul</label>
+                            <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Judul</label>
                             <input
                               type="text"
                               value={saveJudul}
                               onChange={(e) => setSaveJudul(e.target.value)}
                               className="input-field"
-                              style={{ width: "100%", padding: "8px 12px", fontSize: 13 }}
+                              style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
                             />
                           </div>
                           <div>
-                            <label style={{ display: "block", fontSize: 12, color: "var(--text-secondary)", marginBottom: 4 }}>Isi / Catatan</label>
+                            <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Isi / Catatan</label>
                             <textarea
                               value={saveCatatan}
                               onChange={(e) => setSaveCatatan(e.target.value)}
                               className="input-field"
-                              rows={4}
-                              style={{ width: "100%", padding: "8px 12px", fontSize: 13, resize: "vertical" }}
+                              rows={3}
+                              style={{ width: "100%", padding: "6px 10px", fontSize: 13, resize: "vertical" }}
                             />
                           </div>
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -1013,20 +994,20 @@ function AiChatContent() {
             })}
 
             {loading && (
-              <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                 <div style={{
-                  width: 36, height: 36, borderRadius: "var(--radius-full)", flexShrink: 0,
+                  width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   background: "var(--accent-primary)", color: "#fff"
                 }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
                 </div>
                 <div style={{
-                  padding: "12px 18px", borderRadius: "var(--radius-lg)", borderTopLeftRadius: 4,
+                  padding: "10px 14px", borderRadius: "var(--radius-lg)", borderTopLeftRadius: 4,
                   background: "var(--glass-bg)", border: "1px solid var(--glass-border)", display: "flex", alignItems: "center", gap: 8
                 }}>
-                  <div className="spinner" style={{ width: 16, height: 16 }} />
-                  <span style={{ fontSize: 14, color: "var(--text-secondary)" }}>Sedang mengetik...</span>
+                  <div className="spinner" style={{ width: 14, height: 14 }} />
+                  <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Sedang mengetik...</span>
                 </div>
               </div>
             )}
@@ -1034,11 +1015,14 @@ function AiChatContent() {
           </div>
 
           {/* Input Chat */}
-          <div style={{
-            padding: "16px 24px",
-            borderTop: "1px solid var(--glass-border)",
-            flexShrink: 0,
-          }}>
+          <div
+            className="chat-input-container"
+            style={{
+              padding: "12px 16px",
+              borderTop: "1px solid var(--glass-border)",
+              flexShrink: 0,
+            }}
+          >
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1046,14 +1030,15 @@ function AiChatContent() {
               }}
               style={{
                 display: "flex",
-                gap: 12,
+                gap: 8,
                 alignItems: "flex-end",
                 background: "var(--bg-secondary)",
                 border: "1px solid var(--glass-border)",
                 borderRadius: "var(--radius-xl)",
-                padding: "8px 12px 8px 16px",
+                padding: "6px 8px 6px 12px",
                 maxWidth: 900,
                 margin: "0 auto",
+                width: "100%",
               }}
             >
               <textarea
@@ -1086,25 +1071,79 @@ function AiChatContent() {
                 disabled={loading || (!input.trim() && contextSent) || (!input.trim() && !contextText)}
                 className="btn btn-primary btn-icon"
                 style={{
-                  width: 36,
-                  height: 36,
+                  width: 34,
+                  height: 34,
                   borderRadius: "var(--radius-lg)",
                   flexShrink: 0,
                   opacity: loading || (!input.trim() && contextSent) || (!input.trim() && !contextText) ? 0.5 : 1,
                 }}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="22" y1="2" x2="11" y2="13"></line>
                   <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                 </svg>
               </button>
             </form>
-            <div style={{ textAlign: "center", fontSize: 11, color: "var(--text-tertiary)", marginTop: 8 }}>
+            <div style={{ textAlign: "center", fontSize: 10, color: "var(--text-tertiary)", marginTop: 6 }}>
               AI dapat melakukan kesalahan. Harap verifikasi info penting.
             </div>
           </div>
         </div>
       </div>
+
+      {/* CSS Responsive Overrides */}
+      <style jsx>{`
+        .chat-mobile-overlay {
+          display: none;
+        }
+
+        @media (max-width: 768px) {
+          .chat-mobile-overlay {
+            display: block;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(2px);
+            z-index: 25;
+          }
+
+          .chat-sidebar {
+            position: fixed !important;
+            top: 0 !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            height: 100dvh !important;
+            z-index: 30 !important;
+            background: var(--bg-primary) !important;
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5) !important;
+            width: 270px !important;
+            min-width: 270px !important;
+            max-width: 270px !important;
+            transform: ${sidebarOpen ? "translateX(0)" : "translateX(-100%)"} !important;
+          }
+
+          .chat-header-bar {
+            padding: 10px 12px !important;
+          }
+
+          .chat-messages-area {
+            padding: 14px 10px !important;
+            gap: 14px !important;
+          }
+
+          .chat-bubble-wrapper {
+            max-width: 90% !important;
+          }
+
+          .chat-input-container {
+            padding: 8px 10px !important;
+          }
+
+          .chat-select-field {
+            font-size: 11px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
