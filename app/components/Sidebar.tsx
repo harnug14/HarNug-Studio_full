@@ -90,7 +90,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-  
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -383,25 +383,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
       )}
 
       {/* Sidebar Main */}
-      <aside
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          bottom: 0,
-          width: isCollapsed ? 68 : 260,
-          background: "var(--bg-primary)",
-          borderRight: "1px solid var(--glass-border)",
-          backdropFilter: "blur(16px)",
-          display: "flex",
-          flexDirection: "column",
-          zIndex: 40,
-          transform: mobileOpen ? "translateX(0)" : undefined,
-          transition: "width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s ease",
-          overflow: "hidden",
-        }}
-        className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}
-      >
+      <aside className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}>
         {/* Header Logo + Toggle Button PC */}
         <div
           className="sidebar-header"
@@ -659,6 +641,23 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
       </aside>
 
       <style jsx>{`
+        .sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          width: ${isCollapsed ? "68px" : "260px"};
+          background: var(--bg-primary);
+          border-right: 1px solid var(--glass-border);
+          backdrop-filter: blur(16px);
+          display: flex;
+          flex-direction: column;
+          z-index: 40;
+          transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s ease;
+          overflow: hidden;
+          transform: translateX(0);
+        }
+
         @media (max-width: 768px) {
           .desktop-toggle-btn {
             display: none !important;
@@ -675,7 +674,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           }
           .sidebar-header {
             padding-left: 64px !important;
-            justifyContent: flex-start !important;
+            justify-content: flex-start !important;
           }
         }
         @keyframes fadeIn {
