@@ -95,7 +95,7 @@ function AiChatContent() {
   const [input, setInput] = useState("");
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
 
-  // Toggle Mode Independen (bisa 0, 1, atau keduanya aktif)
+  // Toggle Mode Independen
   const [isThinking, setIsThinking] = useState(false);
   const [isWebSearch, setIsWebSearch] = useState(false);
 
@@ -126,6 +126,21 @@ function AiChatContent() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Menyembunyikan tombol hamburger utama saat Riwayat Chat terbuka di HP
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.innerWidth <= 768) {
+      if (sidebarOpen) {
+        document.body.classList.add("chat-history-open");
+      } else {
+        document.body.classList.remove("chat-history-open");
+      }
+    }
+    return () => {
+      document.body.classList.remove("chat-history-open");
+    };
+  }, [sidebarOpen]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -293,7 +308,6 @@ function AiChatContent() {
         setMessages(data.messages || []);
         setModel(data.session.model);
         
-        // Load state toggle mode dari session
         const sessMode = data.session.mode || "biasa";
         setIsThinking(sessMode.includes("berpikir"));
         setIsWebSearch(sessMode.includes("search"));
@@ -336,7 +350,6 @@ function AiChatContent() {
 
     setMessages((prev) => [...prev, { role: "user", content: pesanDikirim }]);
 
-    // Penentuan string mode yang dikirim ke API
     let modeDipakai = "biasa";
     if (isThinking && isWebSearch) {
       modeDipakai = "berpikir+search";
@@ -754,7 +767,7 @@ function AiChatContent() {
 
         {/* Main Chat Content Area */}
         <div style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", position: "relative", minWidth: 0, height: "100%", overflow: "hidden", background: "var(--bg-primary)" }}>
-          {/* Header Bar — Tinggi 57px Presisi Simetris */}
+          {/* Header Bar */}
           <div
             className="chat-header-bar"
             style={{
@@ -1054,7 +1067,7 @@ function AiChatContent() {
               margin: "0 auto",
             }}
           >
-            {/* Toggle Mode: Thinking & Web Search (Bisa 0, 1, atau keduanya aktif) */}
+            {/* Toggle Mode: Thinking & Web Search */}
             <div
               className="chat-mode-pills"
               style={{
@@ -1175,6 +1188,11 @@ function AiChatContent() {
         }
 
         @media (max-width: 768px) {
+          /* Otomatis sembunyikan tombol hamburger utama saat Riwayat Chat terbuka di HP */
+          :global(body.chat-history-open .sidebar-mobile-toggle) {
+            display: none !important;
+          }
+
           .chat-mobile-overlay {
             display: block;
             position: fixed;
@@ -1204,7 +1222,6 @@ function AiChatContent() {
             transform: translateX(0) !important;
           }
 
-          /* Berikan ruang 48px di kiri header agar ikon Riwayat [◧] berada di sebelah ikon Hamburger [≡] tanpa saling bertumpuk */
           .mobile-header-left-space {
             padding-left: 48px !important;
           }
