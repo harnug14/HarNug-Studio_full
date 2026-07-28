@@ -6,14 +6,21 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "HarNug Studio",
     description: "AI Creator Studio for YouTube Shorts",
     start_url: "/",
-    display: "standalone", // Wajib "standalone" agar LEPAS DARI CHROME!
-    background_color: "#0d0d0d",
-    theme_color: "#0d0d0d",
+    display: "standalone",
+    background_color: "#000000",
+    theme_color: "#000000",
     icons: [
+      {
+        src: "/icon.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
       {
         src: "/icon.png",
         sizes: "512x512",
         type: "image/png",
+        purpose: "maskable",
       },
     ],
   };
