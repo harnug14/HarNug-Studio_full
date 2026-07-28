@@ -94,7 +94,6 @@ function AiChatContent() {
   const fromTopik = searchParams.get("fromTopik");
   const fromNaskah = searchParams.get("fromNaskah");
 
-  const [, setUserEmail] = useState<string | undefined>();
   const [authLoading, setAuthLoading] = useState(true);
 
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -155,7 +154,7 @@ function AiChatContent() {
         setSidebarOpen(window.innerWidth > 768);
       }
     } catch {
-      // localStorage tidak tersedia, biarkan default true
+      // silent
     }
     setSidebarReady(true);
   }, []);
@@ -177,7 +176,6 @@ function AiChatContent() {
         router.push("/login");
         return;
       }
-      setUserEmail(user.email || undefined);
       setAuthLoading(false);
     }
     checkAuth();
@@ -288,7 +286,6 @@ function AiChatContent() {
   async function openSession(sessionId: string) {
     setActiveSessionId(sessionId);
     setLoading(true);
-    // Tutup sidebar di layar HP saat sesi di-klik
     if (typeof window !== "undefined" && window.innerWidth <= 768) {
       setSidebarOpen(false);
     }
@@ -1091,7 +1088,7 @@ function AiChatContent() {
         </div>
       </div>
 
-      {/* CSS Responsive Overrides */}
+      {/* CSS Responsive Static tanpa Error Build */}
       <style jsx>{`
         .chat-mobile-overlay {
           display: none;
@@ -1119,7 +1116,12 @@ function AiChatContent() {
             width: 270px !important;
             min-width: 270px !important;
             max-width: 270px !important;
-            transform: ${sidebarOpen ? "translateX(0)" : "translateX(-100%)"} !important;
+            transform: translateX(-100%) !important;
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          }
+
+          .chat-sidebar.open {
+            transform: translateX(0) !important;
           }
 
           .chat-header-bar {
