@@ -21,10 +21,14 @@ export default function DashboardLayout({
   const isLoginPage = pathname === "/login";
   const isChatPage = pathname?.includes("chat");
 
-  // Service Worker PWA
+  // Hapus Service Worker lama dari memori browser agar navigasi antar-menu lancar 100%
   useEffect(() => {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) {
+          registration.unregister();
+        }
+      });
     }
   }, []);
 
