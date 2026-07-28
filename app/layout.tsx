@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "./components/ThemeProvider";
+import DashboardLayout from "./components/DashboardLayout";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -23,7 +24,7 @@ export default function RootLayout({
     <html lang="id" className={`${inter.variable} h-full`}>
       <body className="min-h-full flex flex-col" style={{ fontFamily: "var(--font-sans)" }}>
         <ThemeProvider>
-          {children}
+          <DashboardLayout>{children}</DashboardLayout>
         </ThemeProvider>
       </body>
     </html>

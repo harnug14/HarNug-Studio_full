@@ -90,7 +90,9 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
+  
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<{
     email: string;
@@ -99,6 +101,23 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
   } | null>(null);
   const [loadingReset, setLoadingReset] = useState(false);
   const [resetMessage, setResetMessage] = useState("");
+
+  // Muat status collapse dari localStorage (PC)
+  useEffect(() => {
+    const savedState = localStorage.getItem("sidebar_collapsed");
+    if (savedState !== null) {
+      setIsCollapsed(savedState === "true");
+    }
+  }, []);
+
+  // Update variabel CSS --sidebar-width secara otomatis untuk menyesuaikan layout utama
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const width = isCollapsed ? "68px" : "260px";
+      document.documentElement.style.setProperty("--sidebar-width", width);
+      localStorage.setItem("sidebar_collapsed", String(isCollapsed));
+    }
+  }, [isCollapsed]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -182,7 +201,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
         </svg>
       </button>
 
-      {/* Overlay */}
+      {/* Overlay Mobile */}
       {mobileOpen && (
         <div
           onClick={() => setMobileOpen(false)}
@@ -363,14 +382,14 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
         </div>
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar Main */}
       <aside
         style={{
           position: "fixed",
           top: 0,
           left: 0,
           bottom: 0,
-          width: "var(--sidebar-width)",
+          width: isCollapsed ? 68 : 260,
           background: "var(--bg-primary)",
           borderRight: "1px solid var(--glass-border)",
           backdropFilter: "blur(16px)",
@@ -378,37 +397,76 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           flexDirection: "column",
           zIndex: 40,
           transform: mobileOpen ? "translateX(0)" : undefined,
-          transition: "transform var(--transition-base)",
-          overflow: "hidden", // Memastikan komponen internal tidak keluar saat ditutup
+          transition: "width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s ease",
+          overflow: "hidden",
         }}
         className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}
       >
-        {/* Logo */}
+        {/* Header Logo + Toggle Button PC */}
         <div
+          className="sidebar-header"
           style={{
-            padding: "24px 20px 20px",
+            padding: isCollapsed ? "20px 12px" : "20px 16px",
             borderBottom: "1px solid var(--glass-border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: isCollapsed ? "center" : "space-between",
           }}
         >
-          <Link href="/" style={{ textDecoration: "none" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div>
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 700,
-                    color: "var(--text-primary)",
-                    letterSpacing: "-0.02em",
-                  }}
-                >
-                  HarNug Studio
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                  AI Creator Studio
+          {!isCollapsed && (
+            <Link href="/" style={{ textDecoration: "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: "var(--text-primary)",
+                      letterSpacing: "-0.02em",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    HarNug Studio
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>
+                    AI Creator Studio
+                  </div>
                 </div>
               </div>
-            </div>
-          </Link>
+            </Link>
+          )}
+
+          {/* Tombol Toggle Sidebar ala Claude (Khusus PC) */}
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="desktop-toggle-btn"
+            title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              padding: 6,
+              borderRadius: "var(--radius-md)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all var(--transition-fast)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--glass-bg-hover)";
+              e.currentTarget.style.color = "var(--text-primary)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "var(--text-secondary)";
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="9" y1="3" x2="9" y2="21" />
+            </svg>
+          </button>
         </div>
 
         {/* Nav items */}
@@ -416,10 +474,11 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           style={{
             flex: 1,
             overflowY: "auto",
+            overflowX: "hidden",
             padding: "12px 10px",
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {NAV_ITEMS.map((navItem) => {
               const active = isActive(navItem.href);
 
@@ -427,11 +486,13 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
                 <Link
                   key={navItem.href}
                   href={navItem.href}
+                  title={isCollapsed ? navItem.label : undefined}
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 10,
-                    padding: "9px 12px",
+                    justifyContent: isCollapsed ? "center" : "flex-start",
+                    gap: 12,
+                    padding: isCollapsed ? "10px 0" : "9px 12px",
                     borderRadius: "var(--radius-md)",
                     textDecoration: "none",
                     fontSize: 14,
@@ -440,7 +501,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
                     background: active
                       ? "var(--accent-muted)"
                       : "transparent",
-                    borderLeft: active
+                    borderLeft: !isCollapsed && active
                       ? "2px solid var(--accent-primary)"
                       : "2px solid transparent",
                     transition: "all var(--transition-fast)",
@@ -448,7 +509,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
                   }}
                   onMouseEnter={(e) => {
                     if (!active) {
-                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.03)";
+                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
                       e.currentTarget.style.color = "var(--text-primary)";
                     }
                   }}
@@ -459,23 +520,11 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
                     }
                   }}
                 >
-                  <span style={{ opacity: active ? 1 : 0.6, display: "flex", flexShrink: 0 }}>
+                  <span style={{ opacity: active ? 1 : 0.7, display: "flex", flexShrink: 0 }}>
                     {navItem.icon}
                   </span>
-                  <span>{navItem.label}</span>
-                  {active && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: -1,
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        width: 2,
-                        height: 20,
-                        background: "var(--accent-primary)",
-                        borderRadius: 1,
-                      }}
-                    />
+                  {!isCollapsed && (
+                    <span style={{ whiteSpace: "nowrap" }}>{navItem.label}</span>
                   )}
                 </Link>
               );
@@ -483,20 +532,25 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           </div>
         </nav>
 
-        {/* User section — clickable avatar */}
+        {/* Footer User Section */}
         <div
           style={{
-            padding: "16px 16px 20px",
+            padding: isCollapsed ? "12px 8px" : "16px",
             borderTop: "1px solid var(--glass-border)",
             display: "flex",
+            flexDirection: isCollapsed ? "column" : "row",
             gap: 8,
+            alignItems: "center",
           }}
         >
           <button
             onClick={() => setAccountOpen(true)}
+            title={isCollapsed ? userEmail || "Account" : undefined}
             style={{
-              flex: 1,
-              padding: "8px 12px",
+              flex: isCollapsed ? "none" : 1,
+              width: isCollapsed ? 42 : "100%",
+              height: isCollapsed ? 42 : "auto",
+              padding: isCollapsed ? 0 : "8px 10px",
               borderRadius: "var(--radius-md)",
               border: "1px solid var(--glass-border)",
               background: "transparent",
@@ -504,7 +558,8 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              justifyContent: isCollapsed ? "center" : "flex-start",
+              gap: 8,
               transition: "all var(--transition-fast)",
             }}
             onMouseEnter={(e) => {
@@ -516,7 +571,6 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
               e.currentTarget.style.borderColor = "var(--glass-border)";
             }}
           >
-            {/* Icon Gerigi Settings pengganti huruf H */}
             <div
               style={{
                 width: 28,
@@ -535,29 +589,33 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </div>
-            <div
-              style={{
-                fontSize: 12,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                flex: 1,
-                textAlign: "left",
-              }}
-            >
-              {userEmail || "Account"}
-            </div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.4, flexShrink: 0 }}>
-              <path d="M12 15l-3-3h6l-3 3z" fill="currentColor" stroke="none" />
-              <path d="M12 9l3 3H9l3-3z" fill="currentColor" stroke="none" />
-            </svg>
+            {!isCollapsed && (
+              <>
+                <div
+                  style={{
+                    fontSize: 12,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    flex: 1,
+                    textAlign: "left",
+                  }}
+                >
+                  {userEmail || "Account"}
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ opacity: 0.4, flexShrink: 0 }}>
+                  <path d="M12 15l-3-3h6l-3 3z" fill="currentColor" stroke="none" />
+                  <path d="M12 9l3 3H9l3-3z" fill="currentColor" stroke="none" />
+                </svg>
+              </>
+            )}
           </button>
 
           <button
             onClick={toggleTheme}
             style={{
-              width: 46,
-              height: 46,
+              width: 42,
+              height: 42,
               borderRadius: "var(--radius-md)",
               border: "1px solid var(--glass-border)",
               background: "transparent",
@@ -602,14 +660,22 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
 
       <style jsx>{`
         @media (max-width: 768px) {
+          .desktop-toggle-btn {
+            display: none !important;
+          }
           .sidebar-mobile-toggle {
             display: flex !important;
           }
           .sidebar {
+            width: 280px !important;
             transform: translateX(-100%);
           }
           .sidebar-open {
             transform: translateX(0) !important;
+          }
+          .sidebar-header {
+            padding-left: 64px !important;
+            justifyContent: flex-start !important;
           }
         }
         @keyframes fadeIn {

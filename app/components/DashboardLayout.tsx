@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Sidebar from "./Sidebar";
 
@@ -11,10 +11,20 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [userEmail, setUserEmail] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
+  const [checked, setChecked] = useState(false);
+
+  const isLoginPage = pathname === "/login";
 
   useEffect(() => {
+    if (isLoginPage) {
+      setLoading(false);
+      setChecked(true);
+      return;
+    }
+
     async function checkAuth() {
       const {
         data: { user },
@@ -25,11 +35,17 @@ export default function DashboardLayout({
       }
       setUserEmail(user.email || undefined);
       setLoading(false);
+      setChecked(true);
     }
     checkAuth();
-  }, [router]);
+  }, [router, isLoginPage]);
 
-  if (loading) {
+  // Halaman login: render polos tanpa Sidebar, tanpa auth-check gate
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
+
+  if (loading || !checked) {
     return (
       <div
         style={{
