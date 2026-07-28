@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Sidebar from "./Sidebar";
+import { User } from "@supabase/supabase-js";
 
 export default function DashboardLayout({
   children,
@@ -12,11 +13,13 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [userEmail, setUserEmail] = useState<string | undefined>();
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [checked, setChecked] = useState(false);
 
   const isLoginPage = pathname === "/login";
+  // Cek apakah user sedang membuka menu AI Chat
+  const isChatPage = pathname?.includes("chat");
 
   useEffect(() => {
     if (isLoginPage) {
@@ -27,16 +30,19 @@ export default function DashboardLayout({
 
     async function checkAuth() {
       const {
-        data: { user },
+        data: { user: currentUser },
       } = await supabase.auth.getUser();
-      if (!user) {
+
+      if (!currentUser) {
         router.push("/login");
         return;
       }
-      setUserEmail(user.email || undefined);
+
+      setUser(currentUser);
       setLoading(false);
       setChecked(true);
     }
+
     checkAuth();
   }, [router, isLoginPage]);
 
@@ -63,18 +69,26 @@ export default function DashboardLayout({
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <Sidebar userEmail={userEmail} />
+      <Sidebar user={user} />
       <main
         style={{
           flex: 1,
-          padding: "32px 40px",
+          padding: isChatPage ? "0" : "32px 40px",
           maxWidth: "100%",
           overflow: "hidden",
           minHeight: "100vh",
+          height: isChatPage ? "100vh" : "auto",
         }}
-        className="dashboard-main"
+        className={`dashboard-main ${isChatPage ? "is-chat-page" : ""}`}
       >
-        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+        <div
+          style={{
+            maxWidth: isChatPage ? "100%" : 900,
+            margin: isChatPage ? 0 : "0 auto",
+            height: isChatPage ? "100%" : "auto",
+            width: "100%",
+          }}
+        >
           {children}
         </div>
       </main>
@@ -89,6 +103,11 @@ export default function DashboardLayout({
             margin-left: 0 !important;
             padding: 24px 16px !important;
             padding-top: 64px !important;
+          }
+          /* Khusus tampilan mobile di menu AI Chat */
+          .dashboard-main.is-chat-page {
+            padding: 0 !important;
+            height: 100vh !important;
           }
         }
       `}</style>
