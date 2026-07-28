@@ -32,12 +32,6 @@ const MODEL_OPTIONS = [
   { value: "groq-mixtral-8x7b-32768", label: "Groq Mixtral 8x7B" },
 ];
 
-// Hanya 2 Mode Saja: Thinking & Web Search
-const MODE_OPTIONS = [
-  { value: "berpikir", label: "Thinking" },
-  { value: "search", label: "Web Search" },
-];
-
 const CHAT_SIDEBAR_STORAGE_KEY = "ai_chat_sidebar_open";
 
 function SaveIcon() {
@@ -100,7 +94,11 @@ function AiChatContent() {
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
   const [input, setInput] = useState("");
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
-  const [mode, setMode] = useState(MODE_OPTIONS[0].value);
+
+  // Toggle Mode Independen (bisa 0, 1, atau keduanya aktif)
+  const [isThinking, setIsThinking] = useState(false);
+  const [isWebSearch, setIsWebSearch] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [contextLabel, setContextLabel] = useState<string | null>(null);
@@ -153,7 +151,7 @@ function AiChatContent() {
         setSidebarOpen(window.innerWidth > 768);
       }
     } catch {
-      // localStorage tidak tersedia, biarkan default true
+      // silent
     }
     setSidebarReady(true);
   }, []);
@@ -294,7 +292,12 @@ function AiChatContent() {
       if (res.ok) {
         setMessages(data.messages || []);
         setModel(data.session.model);
-        setMode(data.session.mode);
+        
+        // Load state toggle mode dari session
+        const sessMode = data.session.mode || "biasa";
+        setIsThinking(sessMode.includes("berpikir"));
+        setIsWebSearch(sessMode.includes("search"));
+
         setSaveTarget(data.session.content_target || null);
       }
     } catch {
@@ -313,6 +316,8 @@ function AiChatContent() {
     setSavingMessageIndex(null);
     setSavingCardKey(null);
     setInput("");
+    setIsThinking(false);
+    setIsWebSearch(false);
     if (typeof window !== "undefined" && window.innerWidth <= 768) {
       setSidebarOpen(false);
     }
@@ -331,6 +336,16 @@ function AiChatContent() {
 
     setMessages((prev) => [...prev, { role: "user", content: pesanDikirim }]);
 
+    // Penentuan string mode yang dikirim ke API
+    let modeDipakai = "biasa";
+    if (isThinking && isWebSearch) {
+      modeDipakai = "berpikir+search";
+    } else if (isThinking) {
+      modeDipakai = "berpikir";
+    } else if (isWebSearch) {
+      modeDipakai = "search";
+    }
+
     try {
       if (!activeSessionId) {
         const res = await fetch("/api/chat", {
@@ -339,7 +354,7 @@ function AiChatContent() {
           body: JSON.stringify({
             pesan: pesanDikirim,
             model,
-            mode,
+            mode: modeDipakai,
             sumber_topik_id: fromTopik || null,
             sumber_naskah_id: fromNaskah || null,
             contextText: undefined,
@@ -547,7 +562,8 @@ function AiChatContent() {
             borderRight: sidebarOpen ? "1px solid var(--glass-border)" : "none",
           }}
         >
-          <div style={{ padding: "12px 10px 8px", flexShrink: 0 }}>
+          {/* Header Sub-Sidebar yang Presisi Simetris dengan Main Topbar (57px) */}
+          <div style={{ height: 57, padding: "0 10px", display: "flex", alignItems: "center", borderBottom: "1px solid var(--glass-border)", flexShrink: 0 }}>
             <button
               onClick={startNewChat}
               style={{
@@ -555,13 +571,13 @@ function AiChatContent() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "flex-start",
-                gap: 12,
-                padding: "9px 12px",
+                gap: 10,
+                padding: "8px 12px",
                 borderRadius: "var(--radius-md)",
                 border: "1px solid var(--glass-border)",
                 background: "transparent",
                 color: "var(--text-primary)",
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: 500,
                 cursor: "pointer",
                 whiteSpace: "nowrap",
@@ -582,7 +598,7 @@ function AiChatContent() {
             </button>
           </div>
 
-          <div style={{ padding: "10px 12px 6px", fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, whiteSpace: "nowrap" }}>
+          <div style={{ padding: "12px 12px 6px", fontSize: 11, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0, whiteSpace: "nowrap" }}>
             Riwayat Chat
           </div>
 
@@ -738,11 +754,12 @@ function AiChatContent() {
 
         {/* Main Chat Content Area */}
         <div style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", position: "relative", minWidth: 0, height: "100%", overflow: "hidden", background: "var(--bg-primary)" }}>
-          {/* Header Bar */}
+          {/* Header Bar — Tinggi 57px Presisi Simetris */}
           <div
             className="chat-header-bar"
             style={{
-              padding: "12px 20px",
+              height: 57,
+              padding: "0 20px",
               borderBottom: "1px solid var(--glass-border)",
               display: "flex",
               alignItems: "center",
@@ -750,41 +767,44 @@ function AiChatContent() {
               zIndex: 5,
               flexShrink: 0,
               gap: 12,
+              boxSizing: "border-box"
             }}
           >
-            {/* Tombol Ikon Panel Sidebar [◧] untuk Riwayat Chat */}
-            <button
-              className="btn-ghost btn-icon toggle-sidebar-btn"
-              onClick={() => setSidebarOpen((prev) => !prev)}
-              style={{
-                width: 36,
-                height: 36,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "var(--radius-md)",
-                border: "1px solid var(--glass-border)",
-                background: "transparent",
-                color: "var(--text-primary)",
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
-              title={sidebarOpen ? "Sembunyikan Riwayat Chat" : "Tampilkan Riwayat Chat"}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="9" y1="3" x2="9" y2="21"></line>
-              </svg>
-            </button>
+            {/* Tombol Ikon Panel [◧] khusus Riwayat Chat */}
+            <div className="mobile-header-left-space" style={{ display: "flex", alignItems: "center" }}>
+              <button
+                className="btn-ghost btn-icon toggle-sidebar-btn"
+                onClick={() => setSidebarOpen((prev) => !prev)}
+                style={{
+                  width: 36,
+                  height: 36,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--glass-border)",
+                  background: "transparent",
+                  color: "var(--text-primary)",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+                title={sidebarOpen ? "Sembunyikan Riwayat Chat" : "Tampilkan Riwayat Chat"}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="9" y1="3" x2="9" y2="21"></line>
+                </svg>
+              </button>
+            </div>
 
-            {/* Model Selector Tepat di Tengah */}
+            {/* Model Selector Tepat di Tengah Header */}
             <div style={{ flex: 1, display: "flex", justifyContent: "center", minWidth: 0 }}>
               <select
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 className="select-field chat-select-field"
                 style={{
-                  maxWidth: 260,
+                  maxWidth: 280,
                   width: "100%",
                   padding: "6px 28px 6px 12px",
                   fontSize: 13,
@@ -798,7 +818,7 @@ function AiChatContent() {
               </select>
             </div>
 
-            {/* Penyeimbang Layout Kanan */}
+            {/* Penyeimbang Kanan */}
             <div style={{ width: 36, flexShrink: 0 }} />
           </div>
 
@@ -1034,7 +1054,7 @@ function AiChatContent() {
               margin: "0 auto",
             }}
           >
-            {/* Hanya 2 Pilihan Mode: Thinking & Web Search */}
+            {/* Toggle Mode: Thinking & Web Search (Bisa 0, 1, atau keduanya aktif) */}
             <div
               className="chat-mode-pills"
               style={{
@@ -1045,29 +1065,41 @@ function AiChatContent() {
                 flexWrap: "wrap",
               }}
             >
-              {MODE_OPTIONS.map((o) => {
-                const isSelected = mode === o.value;
-                return (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => setMode(o.value)}
-                    style={{
-                      padding: "4px 14px",
-                      borderRadius: "16px",
-                      fontSize: 12,
-                      fontWeight: isSelected ? 600 : 400,
-                      background: isSelected ? "rgba(168, 85, 247, 0.2)" : "rgba(255, 255, 255, 0.04)",
-                      color: isSelected ? "var(--accent-purple, #a855f7)" : "var(--text-secondary)",
-                      border: `1px solid ${isSelected ? "rgba(168, 85, 247, 0.5)" : "var(--glass-border)"}`,
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                    }}
-                  >
-                    {o.label}
-                  </button>
-                );
-              })}
+              <button
+                type="button"
+                onClick={() => setIsThinking((prev) => !prev)}
+                style={{
+                  padding: "5px 14px",
+                  borderRadius: "16px",
+                  fontSize: 12,
+                  fontWeight: isThinking ? 600 : 400,
+                  background: isThinking ? "rgba(168, 85, 247, 0.25)" : "rgba(255, 255, 255, 0.04)",
+                  color: isThinking ? "var(--accent-purple, #a855f7)" : "var(--text-secondary)",
+                  border: `1px solid ${isThinking ? "rgba(168, 85, 247, 0.6)" : "var(--glass-border)"}`,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                Thinking {isThinking ? "✓" : ""}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsWebSearch((prev) => !prev)}
+                style={{
+                  padding: "5px 14px",
+                  borderRadius: "16px",
+                  fontSize: 12,
+                  fontWeight: isWebSearch ? 600 : 400,
+                  background: isWebSearch ? "rgba(6, 182, 212, 0.25)" : "rgba(255, 255, 255, 0.04)",
+                  color: isWebSearch ? "var(--accent-cyan, #06b6d4)" : "var(--text-secondary)",
+                  border: `1px solid ${isWebSearch ? "rgba(6, 182, 212, 0.6)" : "var(--glass-border)"}`,
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                Web Search {isWebSearch ? "✓" : ""}
+              </button>
             </div>
 
             <form
@@ -1172,8 +1204,13 @@ function AiChatContent() {
             transform: translateX(0) !important;
           }
 
+          /* Berikan ruang 48px di kiri header agar ikon Riwayat [◧] berada di sebelah ikon Hamburger [≡] tanpa saling bertumpuk */
+          .mobile-header-left-space {
+            padding-left: 48px !important;
+          }
+
           .chat-header-bar {
-            padding: 10px 12px !important;
+            padding: 0 12px !important;
           }
 
           .chat-messages-area {
