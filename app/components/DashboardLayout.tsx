@@ -69,7 +69,8 @@ export default function DashboardLayout({
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <Sidebar user={user} />
+      {/* Mengirim userEmail yang sesuai dengan tipe data prop Sidebar */}
+      <Sidebar userEmail={user?.email || undefined} />
       <main
         style={{
           flex: 1,
