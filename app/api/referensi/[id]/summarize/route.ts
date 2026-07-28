@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { summarizeChannel } from "@/lib/gemini/summarizeChannel";
 import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
+import { DEFAULT_GEMINI_MODEL } from "@/lib/config";
 
 export async function POST(
   req: NextRequest,
@@ -11,7 +12,7 @@ export async function POST(
 
   try {
     const body = await req.json().catch(() => ({}));
-    const selectedModel = body?.model || "gemini-2.5-flash";
+    const selectedModel = body?.model || DEFAULT_GEMINI_MODEL;
 
     const supabase = await createSupabaseServerClient();
 

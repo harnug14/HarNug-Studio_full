@@ -27,9 +27,8 @@ interface TopikCard {
 }
 
 const MODEL_OPTIONS = [
+  { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash (Rekomendasi)" },
   { value: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" },
-  { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { value: "groq-llama-3.3-70b-versatile", label: "Groq Llama 3.3 70B" },
   { value: "groq-mixtral-8x7b-32768", label: "Groq Mixtral 8x7B" },
 ];
@@ -216,14 +215,16 @@ function AiChatContent() {
 
   async function loadContextFromReferensi(referensiId: string) {
     try {
-      const res = await fetch("/api/referensi");
+      const res = await fetch("/api/channel-analysis");
       const data = await res.json();
       const ref = (data.data || []).find((r: any) => r.id === referensiId);
       if (ref) {
-        setContextLabel(`Referensi: ${ref.channel_title || ref.channel_url}`);
+        const entries = ref.channel_analysis_entries || [];
+        const entrySummary = entries.slice(0, 5).map((e: any, idx: number) => `${idx + 1}. ${e.title}`).join("\n");
+        setContextLabel(`Referensi: ${ref.profile_name}`);
         setSaveTarget("topik");
         setContextText(
-          `Berikut data analisis channel referensi "${ref.channel_url}":\n\n- Niche/Topik Utama: ${ref.analysis_niche || "-"}\n- Gaya Visual: ${ref.analysis_visual || "-"}\n- Gaya Editing: ${ref.analysis_editing || "-"}\n- Hook & CTA: ${ref.analysis_hook_cta || "-"}\n\nBerdasarkan data di atas, tolong buatkan 5 ide topik video YouTube Shorts yang SANGAT RELEVAN dan BENAR-BENAR DITURUNKAN dari niche referensi tersebut. JANGAN berikan ide yang terlalu acak atau melenceng jauh. Topik ini harus terasa seperti video yang mungkin diunggah oleh channel referensi itu sendiri, namun dengan angle (sudut pandang) orisinal yang baru.\n\nUntuk tiap ide, berikan judul singkat yang sangat memikat (klik-bait positif) dan 1-2 kalimat penjelasan konkret tentang visual atau isi videonya.`
+          `Berikut data profil channel referensi "${ref.profile_name}" (${ref.channel_link || "tanpa link"}):\n\nContoh Naskah/Video Referensi:\n${entrySummary || "(Belum ada entri naskah tersimpan)"}\n\nBerdasarkan contoh naskah di atas, tolong analisis pola niche, gaya visual, dan ritmenya, lalu buatkan 5 ide topik video YouTube Shorts yang SANGAT RELEVAN dan BENAR-BENAR DITURUNKAN dari channel referensi tersebut.\n\nUntuk tiap ide, berikan judul singkat yang sangat memikat (klik-bait positif) dan 1-2 kalimat penjelasan konkret tentang visual atau isi videonya.`
         );
       }
     } catch {

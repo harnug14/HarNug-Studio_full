@@ -4,6 +4,7 @@ import { chatWithGemini, ChatMode, ContentTarget } from "@/lib/gemini/chatWithGe
 import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { chatWithGroq } from "@/lib/groq/chatWithGroq";
 import { callGroqWithRotation } from "@/lib/groq/keyRotation";
+import { DEFAULT_GEMINI_MODEL } from "@/lib/config";
 
 export async function GET() {
   const supabase = await createSupabaseServerClient();
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const model: string = body?.model || "gemini-3-flash-preview";
+  const model: string = body?.model || DEFAULT_GEMINI_MODEL;
   const mode: ChatMode = body?.mode || "biasa";
   const pesanPertama: string = (body?.pesan || "").trim();
   const sumber_topik_id = body?.sumber_topik_id || null;

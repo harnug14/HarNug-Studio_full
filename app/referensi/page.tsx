@@ -1,398 +1,268 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import DashboardLayout from "../components/DashboardLayout";
 
-interface VideoAnalysisItem {
-  videoId: string;
-  title: string;
-  niche?: string;
-  visual?: string;
-  editing?: string;
-  hookCta?: string;
-  error?: string;
-}
-
-interface ReferensiRow {
+type Entry = {
   id: string;
-  channel_url: string;
-  channel_id: string;
-  channel_title: string | null;
-  status: "processing" | "done" | "error";
-  video_data: { videos: any[]; analyses: VideoAnalysisItem[] } | null;
-  analysis_niche: string | null;
-  analysis_visual: string | null;
-  analysis_editing: string | null;
-  analysis_hook_cta: string | null;
-  created_at: string;
-}
+  title: string;
+  video_link: string | null;
+  full_script: string;
+};
 
-const MODEL_OPTIONS = [
-  { value: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview (rekomendasi)" },
-  { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
-  { value: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite (lebih ringan)" },
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (lama)" },
-];
+type ChannelProfile = {
+  id: string;
+  profile_name: string;
+  channel_link: string | null;
+  channel_analysis_entries?: Entry[];
+  created_at: string;
+};
 
 export default function ReferensiPage() {
-  const router = useRouter();
-  const [list, setList] = useState<ReferensiRow[]>([]);
-  const [loadingList, setLoadingList] = useState(true);
-  const [channelUrl, setChannelUrl] = useState("");
-  const [selectedModel, setSelectedModel] = useState(MODEL_OPTIONS[0].value);
-  const [submitting, setSubmitting] = useState(false);
-  const [progressText, setProgressText] = useState("");
-  const [progressPercent, setProgressPercent] = useState(0);
-  const [notifications, setNotifications] = useState<string[]>([]);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [formError, setFormError] = useState("");
+  const [profiles, setProfiles] = useState<ChannelProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // New Profile Form State
+  const [profileName, setProfileName] = useState("");
+  const [channelLink, setChannelLink] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  // Active Selected Profile for adding entries
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const [entryTitle, setEntryTitle] = useState("");
+  const [entryVideoLink, setEntryVideoLink] = useState("");
+  const [entryFullScript, setEntryFullScript] = useState("");
+  const [addingEntry, setAddingEntry] = useState(false);
+
+  async function fetchProfiles() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/channel-analysis");
+      const json = await res.json();
+      if (json.data) setProfiles(json.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    fetchList();
+    fetchProfiles();
   }, []);
 
-  async function fetchList() {
-    setLoadingList(true);
-    try {
-      const res = await fetch("/api/referensi");
-      const data = await res.json();
-      if (res.ok) setList(data.data || []);
-    } catch {
-      // keep empty
-    }
-    setLoadingList(false);
-  }
-
-  function pushNotification(msg: string) {
-    setNotifications((prev) => [...prev, msg]);
-    setTimeout(() => {
-      setNotifications((prev) => prev.slice(1));
-    }, 5000);
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleCreateProfile(e: React.FormEvent) {
     e.preventDefault();
-    setFormError("");
+    if (!profileName.trim()) return alert("Nama profil wajib diisi");
 
-    if (!channelUrl.trim()) {
-      setFormError("Link channel wajib diisi");
-      return;
-    }
-
-    setSubmitting(true);
-    setProgressText("Mengambil daftar video channel...");
-    setProgressPercent(5);
-
+    setCreating(true);
     try {
-      const startRes = await fetch("/api/referensi", {
+      const res = await fetch("/api/channel-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelUrl }),
+        body: JSON.stringify({ profileName, channelLink }),
       });
-      const startData = await startRes.json();
-
-      if (!startRes.ok) {
-        setFormError(startData.error || "Gagal memulai analisis");
-        setSubmitting(false);
-        setProgressText("");
-        setProgressPercent(0);
-        return;
+      const json = await res.json();
+      if (json.error) {
+        alert("Gagal membuat profil: " + json.error);
+      } else {
+        setProfileName("");
+        setChannelLink("");
+        fetchProfiles();
       }
-
-      const { id, totalVideos } = startData;
-      await fetchList();
-
-      for (let i = 0; i < totalVideos; i++) {
-        setProgressText(`Menganalisis video ${i + 1} dari ${totalVideos}...`);
-        setProgressPercent(10 + Math.round(((i + 1) / totalVideos) * 80));
-
-        const videoRes = await fetch(`/api/referensi/${id}/analyze-video`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ videoIndex: i, model: selectedModel }),
-        });
-        const videoData = await videoRes.json();
-
-        if (!videoRes.ok || !videoData.success) {
-          pushNotification(`Video ${i + 1} gagal dianalisis${videoData.error ? `: ${videoData.error}` : ""}`);
-        }
-      }
-
-      setProgressText("Merangkum kesimpulan channel...");
-      setProgressPercent(95);
-
-      const summaryRes = await fetch(`/api/referensi/${id}/summarize`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: selectedModel }),
-      });
-      const summaryData = await summaryRes.json();
-
-      if (!summaryRes.ok) {
-        pushNotification(summaryData.error || "Gagal merangkum kesimpulan channel");
-      }
-
-      setChannelUrl("");
-      setProgressPercent(100);
-      await fetchList();
     } catch (err: any) {
-      setFormError(err.message || "Terjadi kesalahan");
+      alert("Error: " + err.message);
+    } finally {
+      setCreating(false);
     }
-
-    setSubmitting(false);
-    setProgressText("");
-    setProgressPercent(0);
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Hapus data referensi ini?")) return;
+  async function handleAddEntry(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedProfileId) return;
+    if (!entryTitle.trim() || !entryFullScript.trim()) return alert("Judul dan Naskah wajib diisi");
+
+    setAddingEntry(true);
     try {
-      const res = await fetch(`/api/referensi/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setList((prev) => prev.filter((r) => r.id !== id));
-        if (expandedId === id) setExpandedId(null);
+      const res = await fetch(`/api/channel-analysis/${selectedProfileId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: entryTitle,
+          videoLink: entryVideoLink,
+          fullScript: entryFullScript,
+        }),
+      });
+      const json = await res.json();
+      if (json.error) {
+        alert("Gagal menambah entri: " + json.error);
+      } else {
+        setEntryTitle("");
+        setEntryVideoLink("");
+        setEntryFullScript("");
+        fetchProfiles();
       }
-    } catch {
-      // silent
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setAddingEntry(false);
     }
   }
 
-  function handleBuatTopik(id: string) {
-    router.push(`/ai-chat?fromReferensi=${id}`);
-  }
-
-  function statusBadge(status: string) {
-    if (status === "done") return <span className="badge badge-success"><span className="status-dot status-dot-success" />Selesai</span>;
-    if (status === "processing") return <span className="badge badge-processing"><span className="status-dot status-dot-processing" />Memproses</span>;
-    return <span className="badge badge-error"><span className="status-dot status-dot-error" />Gagal</span>;
+  async function handleDeleteProfile(id: string) {
+    if (!confirm("Yakin mau hapus profil analisis channel ini beserta semua entrinya?")) return;
+    await fetch(`/api/channel-analysis/${id}`, { method: "DELETE" });
+    if (selectedProfileId === id) setSelectedProfileId(null);
+    fetchProfiles();
   }
 
   return (
     <DashboardLayout>
       <div className="animate-fade-in">
         <div className="page-header" style={{ marginBottom: 24 }}>
-          <h1 className="page-title">Reference</h1>
-          <p className="page-subtitle">Analisis channel YouTube untuk riset gaya konten, niche, visual, dan editing.</p>
+          <h1 className="page-title">Menu Analisis Channel</h1>
+          <p className="page-subtitle">
+            Simpan profil analisis per channel referensi (5-10 naskah contoh) untuk digunakan sebagai kalibrasi saat generate Topic & Script.
+          </p>
         </div>
 
-        {/* Toast notifications */}
-        {notifications.length > 0 && (
-          <div className="toast-container">
-            {notifications.map((msg, i) => (
-              <div key={i} className="toast toast-error">{msg}</div>
-            ))}
-          </div>
-        )}
-
-        {/* Form */}
+        {/* Create Profile Form */}
         <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: 16 }}>
-              <label className="form-label">Link channel YouTube</label>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: "var(--text-primary)" }}>
+            ➕ Tambah Profil Channel Referensi Baru
+          </h3>
+          <form onSubmit={handleCreateProfile} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+            <div>
+              <label className="form-label">Nama Profil / Channel *</label>
               <input
                 type="text"
-                value={channelUrl}
-                onChange={(e) => setChannelUrl(e.target.value)}
-                placeholder="https://www.youtube.com/@namachannel"
-                disabled={submitting}
+                placeholder="Contoh: Bright Side / Veritasium / Channel X"
+                value={profileName}
+                onChange={(e) => setProfileName(e.target.value)}
+                required
                 className="input-field"
               />
             </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label className="form-label">Model Gemini</label>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                disabled={submitting}
-                className="select-field"
-              >
-                {MODEL_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+            <div>
+              <label className="form-label">Link Channel (Opsional)</label>
+              <input
+                type="text"
+                placeholder="Contoh: https://youtube.com/@channelname"
+                value={channelLink}
+                onChange={(e) => setChannelLink(e.target.value)}
+                className="input-field"
+              />
             </div>
-
-            {formError && (
-              <div style={{
-                padding: "10px 14px",
-                borderRadius: "var(--radius-md)",
-                background: "var(--glass-bg)",
-                border: "1px solid var(--status-error)",
-                color: "var(--status-error)",
-                fontSize: 13,
-                marginBottom: 16,
-              }}>
-                {formError}
-              </div>
-            )}
-
-            <button type="submit" disabled={submitting} className="btn btn-primary">
-              {submitting ? (
-                <><span className="spinner" />Memproses...</>
-              ) : (
-                <>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
-                  Analisis Channel
-                </>
-              )}
-            </button>
-
-            {submitting && progressText && (
-              <div style={{ marginTop: 16 }}>
-                <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 8 }}>
-                  {progressText}
-                </div>
-                <div className="progress-bar-track">
-                  <div className="progress-bar-fill" style={{ width: `${progressPercent}%` }} />
-                </div>
-              </div>
-            )}
+            <div style={{ display: "flex", alignItems: "flex-end" }}>
+              <button type="submit" disabled={creating} className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }}>
+                {creating ? <><span className="spinner" />Buat Profil...</> : <>Simpan Profil Channel</>}
+              </button>
+            </div>
           </form>
         </div>
 
-        {/* List */}
-        <div className="section-title">Riwayat Analisis</div>
+        {/* Channel Profiles Grid */}
+        <div className="section-title">Profil Analisis Channel ({profiles.length})</div>
 
-        {loadingList && (
+        {loading ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {[1, 2].map((i) => (
-              <div key={i} className="skeleton" style={{ height: 100 }} />
-            ))}
+            {[1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 120 }} />)}
           </div>
-        )}
-
-        {!loadingList && list.length === 0 && (
+        ) : profiles.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
-              </svg>
-            </div>
-            <div className="empty-state-text">Belum ada channel yang dianalisis.</div>
+            <div className="empty-state-icon">📺</div>
+            <div className="empty-state-text">Belum ada profil analisis channel. Buat profil pertama di atas.</div>
           </div>
-        )}
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
+            {profiles.map((prof) => {
+              const entries = prof.channel_analysis_entries || [];
+              const isSelected = selectedProfileId === prof.id;
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {list.map((row) => {
-            const isExpanded = expandedId === row.id;
-            const analyses = row.video_data?.analyses || [];
-
-            return (
-              <div key={row.id} className="glass-card-static" style={{ padding: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, wordBreak: "break-all" }}>
-                      {row.channel_title || row.channel_url}
+              return (
+                <div key={prof.id} className="glass-card-static" style={{ padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+                      <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>{prof.profile_name}</h3>
+                      <span className="badge badge-accent">{entries.length} Entri Naskah</span>
                     </div>
-                    {row.channel_title && (
-                      <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 8 }}>
-                        {row.channel_url}
+
+                    {prof.channel_link && (
+                      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12, wordBreak: "break-all" }}>
+                        🔗 <a href={prof.channel_link} target="_blank" rel="noreferrer" style={{ color: "var(--accent-primary)" }}>{prof.channel_link}</a>
                       </div>
                     )}
-                    {statusBadge(row.status)}
-                  </div>
-                  <button onClick={() => handleDelete(row.id)} className="btn btn-danger btn-sm">
-                    Hapus
-                  </button>
-                </div>
 
-                {row.status === "done" && (
-                  <>
-                    <div style={{
-                      marginTop: 16,
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                      gap: 12,
-                    }}>
-                      {[
-                        { label: "Niche", value: row.analysis_niche },
-                        { label: "Visual", value: row.analysis_visual },
-                        { label: "Editing", value: row.analysis_editing },
-                        { label: "Hook & CTA", value: row.analysis_hook_cta },
-                      ].map((item) => (
-                        <div key={item.label} style={{
-                          padding: 12,
-                          borderRadius: "var(--radius-md)",
-                          background: "var(--glass-bg)",
-                          border: "1px solid var(--glass-border)",
-                        }}>
-                          <div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4, fontWeight: 500 }}>
-                            {item.label}
-                          </div>
-                          <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                            {item.value || "-"}
-                          </div>
+                    {/* Entries summary */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+                      {entries.slice(0, 5).map((entry) => (
+                        <div key={entry.id} style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: 6, fontSize: 12 }}>
+                          📄 <strong>{entry.title}</strong>
                         </div>
                       ))}
-                    </div>
-
-                    <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-                      <button
-                        onClick={() => setExpandedId(isExpanded ? null : row.id)}
-                        className="btn btn-ghost btn-sm"
-                        style={{ color: "var(--accent-primary)" }}
-                      >
-                        {isExpanded ? "Sembunyikan detail" : `Lihat detail ${analyses.length} video`}
-                      </button>
-                      <button
-                        onClick={() => handleBuatTopik(row.id)}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        ✨ Buat Ide Topik dari Referensi Ini
-                      </button>
-                    </div>
-
-                    {isExpanded && (
-                      <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-                        {analyses.map((a, i) => (
-                          <div key={i} style={{
-                            padding: 14,
-                            borderRadius: "var(--radius-md)",
-                            background: "var(--glass-bg)",
-                            border: "1px solid var(--glass-border)",
-                          }} className="animate-fade-in">
-                            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 14 }}>
-                              {i + 1}. {a.title}
-                            </div>
-                            {a.error ? (
-                              <div style={{ color: "var(--status-error)", fontSize: 13 }}>Gagal: {a.error}</div>
-                            ) : (
-                              <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-                                <div><strong style={{ color: "var(--text-tertiary)" }}>Niche:</strong> {a.niche}</div>
-                                <div><strong style={{ color: "var(--text-tertiary)" }}>Visual:</strong> {a.visual}</div>
-                                <div><strong style={{ color: "var(--text-tertiary)" }}>Editing:</strong> {a.editing}</div>
-                                <div><strong style={{ color: "var(--text-tertiary)" }}>Hook/CTA:</strong> {a.hookCta}</div>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {row.status === "processing" && (
-                  <div style={{ marginTop: 12 }}>
-                    <div className="progress-bar-track">
-                      <div className="progress-bar-fill progress-bar-indeterminate" />
-                    </div>
-                    <div style={{ fontSize: 13, color: "var(--text-tertiary)", marginTop: 8 }}>
-                      Analisis sedang berjalan...
+                      {entries.length > 5 && (
+                        <div style={{ fontSize: 11, color: "var(--text-secondary)", fontStyle: "italic" }}>
+                          + {entries.length - 5} entri lainnya...
+                        </div>
+                      )}
                     </div>
                   </div>
-                )}
 
-                {row.status === "error" && (
-                  <div style={{ marginTop: 12, fontSize: 13, color: "var(--status-error)" }}>
-                    Analisis gagal untuk channel ini.
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <button
+                      onClick={() => setSelectedProfileId(isSelected ? null : prof.id)}
+                      className={`btn ${isSelected ? "btn-primary" : "btn-ghost"} btn-sm`}
+                      style={{ flex: 1, justifyContent: "center" }}
+                    >
+                      {isSelected ? "Tutup Edit Entri" : "📝 Kelola 5-10 Entri"}
+                    </button>
+                    <button onClick={() => handleDeleteProfile(prof.id)} className="btn btn-danger btn-sm">Hapus</button>
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+
+                  {/* Expandable Add Entry Form */}
+                  {isSelected && (
+                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                      <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--accent-primary)" }}>
+                        Tambah Entri Video/Naskah ke "{prof.profile_name}"
+                      </h4>
+                      <form onSubmit={handleAddEntry} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        <input
+                          type="text"
+                          placeholder="Judul Video Contoh *"
+                          value={entryTitle}
+                          onChange={(e) => setEntryTitle(e.target.value)}
+                          required
+                          className="input-field"
+                          style={{ fontSize: 13 }}
+                        />
+                        <input
+                          type="text"
+                          placeholder="Link Video Contoh (Opsional)"
+                          value={entryVideoLink}
+                          onChange={(e) => setEntryVideoLink(e.target.value)}
+                          className="input-field"
+                          style={{ fontSize: 13 }}
+                        />
+                        <textarea
+                          placeholder="Full Script Video Contoh (akan digunakan sebagai kalibrasi gaya naskah)... *"
+                          value={entryFullScript}
+                          onChange={(e) => setEntryFullScript(e.target.value)}
+                          required
+                          rows={4}
+                          className="textarea-field"
+                          style={{ fontSize: 13 }}
+                        />
+                        <button type="submit" disabled={addingEntry} className="btn btn-primary btn-sm" style={{ justifyContent: "center" }}>
+                          {addingEntry ? <span className="spinner" /> : "➕ Tambah Entri Kalibrasi"}
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

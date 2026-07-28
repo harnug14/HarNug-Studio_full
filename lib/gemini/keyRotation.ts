@@ -79,6 +79,16 @@ export async function markGeminiKeyLimited(supabase: any, keyId: string) {
     .eq("id", keyId);
 }
 
+// Helper delay function for backoff
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Maximum retries per key before rotating
+const MAX_RETRIES_PER_KEY = 3;
+// Base delay in ms (doubles each retry: 2s, 4s, 8s)
+const BASE_RETRY_DELAY_MS = 2000;
+
 export async function callGeminiWithRotation<T>(
   supabase: any,
   fn: (apiKey: string) => Promise<T>
@@ -94,19 +104,38 @@ export async function callGeminiWithRotation<T>(
   let lastError: any = null;
 
   for (const key of keys) {
-    try {
-      return await fn(key.api_key);
-    } catch (err: any) {
-      lastError = err;
+    // Try this key with exponential backoff retries for rate-limit (429)
+    for (let attempt = 0; attempt <= MAX_RETRIES_PER_KEY; attempt++) {
+      try {
+        // Add a small pre-request delay on retries to avoid hammering the API
+        if (attempt > 0) {
+          const delayMs = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+          console.log(
+            `[GeminiRetry] Key ${key.id.slice(0, 8)}... attempt ${attempt + 1}/${MAX_RETRIES_PER_KEY + 1}, waiting ${delayMs}ms before retry...`
+          );
+          await sleep(delayMs);
+        }
 
-      if (err instanceof GeminiQuotaError) {
-        // Key ini kena limit kuota, tandai limited lalu coba key berikutnya
-        await markGeminiKeyLimited(supabase, key.id);
-        continue;
+        return await fn(key.api_key);
+      } catch (err: any) {
+        lastError = err;
+
+        if (err instanceof GeminiQuotaError) {
+          // If we still have retries left for this key, retry with backoff
+          if (attempt < MAX_RETRIES_PER_KEY) {
+            continue; // will sleep on next iteration
+          }
+          // All retries exhausted for this key — mark limited and try next key
+          console.log(
+            `[GeminiRetry] Key ${key.id.slice(0, 8)}... exhausted all ${MAX_RETRIES_PER_KEY + 1} attempts. Marking limited, rotating...`
+          );
+          await markGeminiKeyLimited(supabase, key.id);
+          break; // exit retry loop, move to next key
+        }
+
+        // Error selain kuota (misal error parsing, network) -> jangan rotasi, langsung gagal
+        throw err;
       }
-
-      // Error selain kuota (misal error parsing, network) -> jangan rotasi, langsung gagal
-      throw err;
     }
   }
 

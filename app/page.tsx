@@ -1,437 +1,261 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import DashboardLayout from "./components/DashboardLayout";
+import ExportModal from "@/components/ExportModal";
 
-interface Stats {
-  referensi: number;
-  topik: number;
-  naskah: number;
-  visual: number;
-}
+type DashboardStats = {
+  totalTopics: number;
+  totalScripts: number;
+  totalVisuals: number;
+  draftCount: number;
+  reviewCount: number;
+  approvedCount: number;
+};
 
-interface YouTubeChannel {
-  title: string;
-  description: string;
-  thumbnail: string;
-  bannerUrl?: string;
-  country?: string;
-  publishedAt?: string;
-  subscriberCount: string;
-  videoCount: string;
-  viewCount: string;
-  topVideos?: any[];
-  latestVideos?: any[];
-}
+export default function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats>({
+    totalTopics: 0,
+    totalScripts: 0,
+    totalVisuals: 0,
+    draftCount: 0,
+    reviewCount: 0,
+    approvedCount: 0,
+  });
+  const [recentScripts, setRecentScripts] = useState<any[]>([]);
+  const [recentVisuals, setRecentVisuals] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-export default function ProfilePage() {
-  const [stats, setStats] = useState<Stats>({ referensi: 0, topik: 0, naskah: 0, visual: 0 });
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [channelId, setChannelId] = useState("");
-  const [channelInput, setChannelInput] = useState("");
-  const [channelData, setChannelData] = useState<YouTubeChannel | null>(null);
-  const [loadingChannel, setLoadingChannel] = useState(false);
-  const [channelError, setChannelError] = useState("");
+  const [exportModalItem, setExportModalItem] = useState<{ item: any; type: "script" | "visual" } | null>(null);
 
-  // Load saved channel ID from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("harnug_channel_id");
-    if (saved) {
-      setChannelId(saved);
-      setChannelInput(saved);
-    }
-  }, []);
-
-  // Fetch app stats
-  useEffect(() => {
-    async function fetchStats() {
-      try {
-        const [refRes, topikRes, naskahRes, visualRes] = await Promise.all([
-          fetch("/api/referensi").then((r) => r.json()),
-          fetch("/api/topik").then((r) => r.json()),
-          fetch("/api/naskah").then((r) => r.json()),
-          fetch("/api/visual").then((r) => r.json()),
-        ]);
-        setStats({
-          referensi: refRes.data?.length || 0,
-          topik: topikRes.data?.length || 0,
-          naskah: naskahRes.data?.length || 0,
-          visual: visualRes.data?.length || 0,
-        });
-      } catch {
-        // keep zeros
-      }
-      setLoadingStats(false);
-    }
-    fetchStats();
-  }, []);
-
-  // Fetch YouTube channel data
-  useEffect(() => {
-    if (!channelId) return;
-    fetchChannelData(channelId);
-  }, [channelId]);
-
-  async function fetchChannelData(id: string) {
-    setLoadingChannel(true);
-    setChannelError("");
+  async function fetchDashboardData() {
+    setLoading(true);
     try {
-      // Use YouTube API via our existing keys
-      const res = await fetch(`/api/referensi?channelLookup=${encodeURIComponent(id)}`);
-      const json = await res.json();
-      if (json.channel) {
-        setChannelData(json.channel);
-      } else {
-        setChannelError("Channel tidak ditemukan. Pastikan ID/Handle benar.");
-      }
-    } catch {
-      setChannelError("Gagal mengambil data channel.");
+      const [topikRes, naskahRes, visualRes] = await Promise.all([
+        fetch("/api/topik").then((r) => r.json()),
+        fetch("/api/naskah").then((r) => r.json()),
+        fetch("/api/visual").then((r) => r.json()),
+      ]);
+
+      const topics = topikRes.data || [];
+      const scripts = naskahRes.data || [];
+      const visuals = visualRes.data || [];
+
+      let drafts = 0;
+      let reviews = 0;
+      let approveds = 0;
+
+      scripts.forEach((s: any) => {
+        if (s.status === "approved") approveds++;
+        else if (s.status === "review") reviews++;
+        else drafts++;
+      });
+
+      setStats({
+        totalTopics: topics.length,
+        totalScripts: scripts.length,
+        totalVisuals: visuals.length,
+        draftCount: drafts,
+        reviewCount: reviews,
+        approvedCount: approveds,
+      });
+
+      setRecentScripts(scripts.slice(0, 5));
+      setRecentVisuals(visuals.slice(0, 5));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
-    setLoadingChannel(false);
   }
 
-  function handleSaveChannel(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = channelInput.trim();
-    if (!trimmed) return;
-    localStorage.setItem("harnug_channel_id", trimmed);
-    setChannelId(trimmed);
-  }
-
-  function handleDisconnect() {
-    localStorage.removeItem("harnug_channel_id");
-    setChannelId("");
-    setChannelInput("");
-    setChannelData(null);
-  }
-
-  function formatCount(numStr: string | number): string {
-    const n = typeof numStr === 'string' ? parseInt(numStr, 10) : numStr;
-    if (isNaN(n)) return "0";
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
-    if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "K";
-    return n.toLocaleString("id-ID");
-  }
-
-  function parseISO8601Duration(duration: string) {
-    const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
-    if (!match) return "0:00";
-    const h = (parseInt(match[1]) || 0);
-    const m = (parseInt(match[2]) || 0);
-    const s = (parseInt(match[3]) || 0);
-    if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  }
-
-  const VideoCard = ({ video, badge }: { video: any; badge: string }) => (
-    <div style={{
-      display: "flex", gap: 16, padding: 16, borderRadius: "var(--radius-md)", 
-      background: "rgba(255,255,255,0.02)", border: "1px solid var(--glass-border)", 
-      position: "relative"
-    }}>
-      <div style={{ position: "relative", width: 160, flexShrink: 0, borderRadius: 8, overflow: "hidden", aspectRatio: "16/9", background: "var(--bg-secondary)" }}>
-        <img src={video.thumbnail} alt={video.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        <div style={{ position: "absolute", bottom: 6, right: 6, background: "var(--bg-elevated)", color: "var(--text-primary)", fontSize: 11, padding: "2px 6px", borderRadius: 4, fontWeight: 500 }}>
-          {parseISO8601Duration(video.duration)}
-        </div>
-      </div>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", lineHeight: 1.4 }}>
-          {video.title}
-        </div>
-        <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--text-tertiary)", marginTop: "auto" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            {formatCount(video.viewCount)}
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
-            {formatCount(video.likeCount)}
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            {formatCount(video.commentCount)}
-          </span>
-        </div>
-      </div>
-      <div style={{ position: "absolute", top: -8, left: -8, background: "var(--accent-primary)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "4px 8px", borderRadius: 12, boxShadow: "var(--shadow-sm)" }}>
-        {badge}
-      </div>
-    </div>
-  );
-
-  const avgViews = channelData && parseInt(channelData.videoCount) > 0 
-    ? (parseInt(channelData.viewCount) / parseInt(channelData.videoCount)).toFixed(0) 
-    : "0";
-
-  const progressCards = [
-    { label: "Reference", value: stats.referensi, color: "var(--accent-primary)", icon: "🔍" },
-    { label: "Topic", value: stats.topik, color: "var(--accent-primary)", icon: "💡" },
-    { label: "Script", value: stats.naskah, color: "var(--accent-primary)", icon: "📝" },
-    { label: "Visual", value: stats.visual, color: "var(--accent-primary)", icon: "🎬" },
-  ];
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
   return (
     <DashboardLayout>
       <div className="animate-fade-in">
-        {/* Page Header */}
-        <div className="page-header">
-          <h1 className="page-title">Profile</h1>
+        {/* Header */}
+        <div className="page-header" style={{ marginBottom: 28 }}>
+          <h1 className="page-title">HarNug Studio V2.0 Dashboard</h1>
           <p className="page-subtitle">
-            Ringkasan channel YouTube dan progres pembuatan konten Anda.
+            Ringkasan status produksi, alur pipeline dari ideation hingga export package siap rilis.
           </p>
         </div>
 
-        {/* YouTube Channel Section */}
-        {channelId && channelData ? (
-          <>
-            {/* Connected Channel Card */}
-            <div
-              className="glass-card-static"
-              style={{
-                padding: 0,
-                marginBottom: 32,
-                overflow: "hidden",
-              }}
-            >
-              {/* Channel Banner */}
-              <div style={{
-                height: 140,
-                background: channelData.bannerUrl ? `url(${channelData.bannerUrl}) center/cover no-repeat` : "var(--accent-muted)",
-                position: "relative",
-              }}>
-                <div style={{
-                  position: "absolute",
-                  bottom: 0, left: 0, right: 0, height: "100%",
-                  background: "linear-gradient(to top, var(--bg-elevated) 0%, var(--bg-elevated-transparent) 100%)",
-                }} />
+        {/* Status Pipeline Cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 32 }}>
+          <div className="glass-card-static" style={{ padding: 18 }}>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>💡 TOPIC BANK</div>
+            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4, color: "var(--text-primary)" }}>
+              {loading ? "..." : stats.totalTopics}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>Ide topik tervalidasi 50 poin</div>
+          </div>
+
+          <div className="glass-card-static" style={{ padding: 18 }}>
+            <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>📜 SCRIPT DRAFTS</div>
+            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4, color: "var(--text-primary)" }}>
+              {loading ? "..." : stats.draftCount}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>Sedang dalam tahap penyusunan</div>
+          </div>
+
+          <div className="glass-card-static" style={{ padding: 18 }}>
+            <div style={{ fontSize: 12, color: "var(--status-warning)", fontWeight: 600 }}>🔍 NEEDS FACT CHECK REVIEW</div>
+            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4, color: "var(--status-warning)" }}>
+              {loading ? "..." : stats.reviewCount}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>Perlu verifikasi manual</div>
+          </div>
+
+          <div className="glass-card-static" style={{ padding: 18 }}>
+            <div style={{ fontSize: 12, color: "var(--status-success)", fontWeight: 600 }}>✓ VERIFIED SCRIPTS</div>
+            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4, color: "var(--status-success)" }}>
+              {loading ? "..." : stats.approvedCount}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>Siap produksi visual & voiceover</div>
+          </div>
+
+          <div className="glass-card-static" style={{ padding: 18 }}>
+            <div style={{ fontSize: 12, color: "var(--accent-primary)", fontWeight: 600 }}>🎨 VISUAL PACKAGES</div>
+            <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4, color: "var(--accent-primary)" }}>
+              {loading ? "..." : stats.totalVisuals}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>Storyboard & Prompt Google Flow</div>
+          </div>
+        </div>
+
+        {/* Production Pipeline Visual Flow */}
+        <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: "var(--text-primary)" }}>
+            🚀 Alur Produksi Video (Modular Pipeline)
+          </h3>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, textAlign: "center" }}>
+            <Link href="/referensi" style={{ textDecoration: "none" }}>
+              <div style={{ background: "rgba(255,255,255,0.03)", padding: 14, borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                <div style={{ fontSize: 20, marginBottom: 4 }}>📺</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>1. Analisis Channel</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Kalibrasi Niche</div>
               </div>
+            </Link>
 
-              {/* Channel Info */}
-              <div style={{ padding: "0 28px 24px", marginTop: -44, position: "relative" }}>
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 20, marginBottom: 24, flexWrap: "wrap" }}>
-                  <img
-                    src={channelData.thumbnail}
-                    alt={channelData.title}
-                    style={{
-                      width: 88,
-                      height: 88,
-                      borderRadius: "50%",
-                      border: "4px solid var(--bg-elevated)",
-                      objectFit: "cover",
-                      background: "var(--bg-secondary)",
-                      boxShadow: "var(--shadow-md)",
-                    }}
-                  />
-                  <div style={{ flex: 1, minWidth: 200, paddingBottom: 4 }}>
-                    <h2 style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", margin: 0, marginBottom: 6 }}>
-                      {channelData.title}
-                    </h2>
-                    <div style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 13, color: "var(--text-tertiary)" }}>
-                      {channelData.publishedAt && (
-                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                          Joined {new Date(channelData.publishedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                        </span>
-                      )}
-                      {channelData.country && (
-                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                          {channelData.country}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleDisconnect}
-                    style={{
-                      padding: "8px 16px", borderRadius: "var(--radius-md)", border: "1px solid var(--glass-border)",
-                      background: "rgba(255,255,255,0.03)", color: "var(--text-secondary)", fontSize: 13, fontWeight: 500,
-                      cursor: "pointer", transition: "all var(--transition-fast)", marginBottom: 4,
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(239,68,68,0.4)"; e.currentTarget.style.color = "#f87171"; e.currentTarget.style.background = "rgba(239,68,68,0.1)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--glass-border)"; e.currentTarget.style.color = "var(--text-secondary)"; e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
-                  >
-                    Disconnect
-                  </button>
-                </div>
+            <Link href="/topik" style={{ textDecoration: "none" }}>
+              <div style={{ background: "rgba(255,255,255,0.03)", padding: 14, borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                <div style={{ fontSize: 20, marginBottom: 4 }}>💡</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>2. Topic Framework</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Validator 50 Poin</div>
+              </div>
+            </Link>
 
-                {channelData.description && (
-                  <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 24, lineHeight: 1.6, background: "var(--glass-bg)", padding: 16, borderRadius: "var(--radius-md)", border: "1px solid var(--glass-border)" }}>
-                    {channelData.description}
-                  </div>
-                )}
+            <Link href="/naskah" style={{ textDecoration: "none" }}>
+              <div style={{ background: "rgba(255,255,255,0.03)", padding: 14, borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                <div style={{ fontSize: 20, marginBottom: 4 }}>📜</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>3. Script Framework</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Hook → Timeline</div>
+              </div>
+            </Link>
 
-                {/* Stats row */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
-                  {[
-                    { label: "Subscribers", value: formatCount(channelData.subscriberCount), color: "var(--accent-primary)" },
-                    { label: "Total Views", value: formatCount(channelData.viewCount), color: "var(--accent-primary)" },
-                    { label: "Total Videos", value: formatCount(channelData.videoCount), color: "var(--accent-primary)" },
-                    { label: "Avg Views / Video", value: formatCount(avgViews), color: "var(--accent-primary)" },
-                  ].map((s) => (
-                    <div key={s.label} style={{
-                      padding: "16px", borderRadius: "var(--radius-md)",
-                      background: "var(--glass-bg)",
-                      border: "1px solid var(--glass-border)",
-                    }}>
-                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 500 }}>
-                        {s.label}
+            <Link href="/naskah" style={{ textDecoration: "none" }}>
+              <div style={{ background: "rgba(255,255,255,0.03)", padding: 14, borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                <div style={{ fontSize: 20, marginBottom: 4 }}>🔍</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>4. Fact Check & Trans</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Konsistensi & EN</div>
+              </div>
+            </Link>
+
+            <Link href="/visual" style={{ textDecoration: "none" }}>
+              <div style={{ background: "rgba(255,255,255,0.03)", padding: 14, borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                <div style={{ fontSize: 20, marginBottom: 4 }}>🎨</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>5. Visual Framework</div>
+                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>Storyboard & Prompts</div>
+              </div>
+            </Link>
+          </div>
+        </div>
+
+        {/* Recent Pipeline Activity & Quick Export */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
+          {/* Recent Scripts */}
+          <div className="glass-card-static" style={{ padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>📜 Script Terbaru</h3>
+              <Link href="/naskah" style={{ fontSize: 12, color: "var(--accent-primary)", textDecoration: "none" }}>Lihat Semua →</Link>
+            </div>
+
+            {recentScripts.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Belum ada script tersimpan.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {recentScripts.map((s) => (
+                  <div key={s.id} style={{ background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {s.judul}
                       </div>
-                      <div style={{ fontSize: 28, fontWeight: 700, color: s.color, letterSpacing: "-0.02em" }}>
-                        {s.value}
+                      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+                        Status: <span style={{ color: s.status === "approved" ? "var(--status-success)" : "var(--text-secondary)" }}>{s.status}</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: 24, marginBottom: 40 }}>
-              {/* Top Videos */}
-              <div className="glass-card-static" style={{ padding: 24 }}>
-                <div className="section-title" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                  Top Videos (Most Viewed)
-                </div>
-                {channelData.topVideos && channelData.topVideos.length > 0 ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    {channelData.topVideos.map((vid: any, i: number) => (
-                      <VideoCard key={vid.id} video={vid} badge={`#${i + 1} TOP`} />
-                    ))}
+                    <button
+                      onClick={() => setExportModalItem({ item: s, type: "script" })}
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11 }}
+                    >
+                      📦 Export
+                    </button>
                   </div>
-                ) : (
-                  <div className="empty-state" style={{ padding: 32 }}>Belum ada video di channel ini.</div>
-                )}
-              </div>
-
-              {/* Latest Videos */}
-              <div className="glass-card-static" style={{ padding: 24 }}>
-                <div className="section-title" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  Latest Videos
-                </div>
-                {channelData.latestVideos && channelData.latestVideos.length > 0 ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    {channelData.latestVideos.map((vid: any, i: number) => (
-                      <VideoCard key={vid.id} video={vid} badge="NEW" />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="empty-state" style={{ padding: 32 }}>Belum ada video di channel ini.</div>
-                )}
-              </div>
-            </div>
-          </>
-        ) : (
-          /* Connect Channel Form */
-          <div
-            className="glass-card-static"
-            style={{ padding: 28, marginBottom: 32 }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-              <div style={{
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                background: "rgba(239, 68, 68, 0.1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="#ef4444">
-                  <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"/>
-                  <polygon fill="#fff" points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"/>
-                </svg>
-              </div>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>
-                  Connect Your YouTube Channel
-                </div>
-                <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>
-                  Enter your Channel ID or Handle to display your stats
-                </div>
-              </div>
-            </div>
-
-            <form onSubmit={handleSaveChannel} style={{ display: "flex", gap: 12 }}>
-              <input
-                type="text"
-                placeholder="@handle or UCxxxxxxxx"
-                value={channelInput}
-                onChange={(e) => setChannelInput(e.target.value)}
-                required
-                className="input-field"
-                style={{ flex: 1 }}
-              />
-              <button type="submit" className="btn btn-primary" disabled={loadingChannel}>
-                {loadingChannel ? <><span className="spinner"/>Connecting...</> : "Connect"}
-              </button>
-            </form>
-
-            {channelError && (
-              <div style={{
-                marginTop: 12,
-                padding: "10px 14px",
-                borderRadius: "var(--radius-md)",
-                fontSize: 13,
-                background: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.2)",
-                color: "#fca5a5",
-              }}>
-                {channelError}
+                ))}
               </div>
             )}
           </div>
-        )}
 
-        {/* App Progress Section */}
-        <div className="section-title">Content Progress</div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 16,
-            marginBottom: 40,
-          }}
-        >
-          {progressCards.map((stat) => (
-            <div
-              key={stat.label}
-              className="glass-card-static"
-              style={{ padding: "20px 24px" }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "var(--text-tertiary)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    fontWeight: 500,
-                  }}
-                >
-                  {stat.label}
-                </div>
-                <span style={{ fontSize: 18 }}>{stat.icon}</span>
-              </div>
-              {loadingStats ? (
-                <div className="skeleton" style={{ width: 40, height: 32 }} />
-              ) : (
-                <div
-                  style={{
-                    fontSize: 32,
-                    fontWeight: 700,
-                    color: stat.color,
-                    letterSpacing: "-0.02em",
-                  }}
-                >
-                  {stat.value}
-                </div>
-              )}
+          {/* Recent Visual Packages */}
+          <div className="glass-card-static" style={{ padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary)" }}>🎨 Visual Package Terbaru</h3>
+              <Link href="/visual" style={{ fontSize: 12, color: "var(--accent-primary)", textDecoration: "none" }}>Lihat Semua →</Link>
             </div>
-          ))}
+
+            {recentVisuals.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Belum ada Visual Package tersimpan.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {recentVisuals.map((v) => (
+                  <div key={v.id} style={{ background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {v.judul}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--accent-primary)", marginTop: 2 }}>
+                        {v.isi_visual?.scenes?.length || 0} Scenes & Prompts
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setExportModalItem({ item: v, type: "visual" })}
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11 }}
+                    >
+                      📦 Export
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Export Modal */}
+        {exportModalItem && (
+          <ExportModal
+            item={exportModalItem.item}
+            type={exportModalItem.type}
+            onClose={() => setExportModalItem(null)}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

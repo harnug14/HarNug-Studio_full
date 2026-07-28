@@ -2,6 +2,7 @@
 // Gemini "menonton" video (visual + audio) tanpa perlu transkrip terpisah
 
 import { GeminiQuotaError } from "./keyRotation";
+import { DEFAULT_GEMINI_MODEL } from "../config";
 
 export interface VideoAnalysis {
   niche: string;
@@ -17,7 +18,7 @@ function sleep(ms: number) {
 export async function analyzeVideo(
   videoUrl: string,
   apiKey: string,
-  model: string = "gemini-2.5-flash"
+  model: string = DEFAULT_GEMINI_MODEL
 ): Promise<VideoAnalysis> {
   const prompt = `Analisis video YouTube Shorts ini secara mendalam. Tonton visual dan dengarkan audionya, lalu berikan hasil analisis dalam format JSON PERSIS seperti ini (tanpa markdown, tanpa backtick, hanya JSON murni):
 

@@ -2,6 +2,7 @@
 
 import { VideoAnalysis } from "./analyzeVideo";
 import { GeminiQuotaError } from "./keyRotation";
+import { DEFAULT_GEMINI_MODEL } from "../config";
 
 export interface ChannelSummary {
   niche: string;
@@ -17,7 +18,7 @@ function sleep(ms: number) {
 export async function summarizeChannel(
   analyses: VideoAnalysis[],
   apiKey: string,
-  model: string = "gemini-2.5-flash"
+  model: string = DEFAULT_GEMINI_MODEL
 ): Promise<ChannelSummary> {
   const combinedText = analyses
     .map(
