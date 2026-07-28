@@ -1,15 +1,22 @@
 {
-  "name": "HarNug Studio",
+  "name": "HarNug Studio - AI Creator Studio",
   "short_name": "HarNug Studio",
-  "description": "AI Creator Studio for YouTube Shorts",
+  "description": "Aplikasi produksi konten AI untuk YouTube Shorts",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#000000",
+  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/icon.png",
       "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
