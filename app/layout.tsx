@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ThemeProvider } from "./components/ThemeProvider";
 import DashboardLayout from "./components/DashboardLayout";
 
 export const metadata: Metadata = {
@@ -21,7 +22,9 @@ export default function RootLayout({
   return (
     <html lang="id">
       <body>
-        <DashboardLayout>{children}</DashboardLayout>
+        <ThemeProvider>
+          <DashboardLayout>{children}</DashboardLayout>
+        </ThemeProvider>
       </body>
     </html>
   );
