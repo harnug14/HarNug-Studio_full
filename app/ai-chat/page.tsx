@@ -743,7 +743,7 @@ function AiChatContent() {
           <div
             className="chat-header-bar"
             style={{
-              padding: "16px 24px",
+              padding: "12px 20px",
               borderBottom: "1px solid var(--glass-border)",
               display: "flex",
               alignItems: "center",
@@ -753,42 +753,55 @@ function AiChatContent() {
               gap: 12,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", flexWrap: "wrap" }}>
-              <button
-                className="btn-ghost btn-icon toggle-sidebar-btn"
-                onClick={() => setSidebarOpen((prev) => !prev)}
-                style={{ width: 36, height: 36, flexShrink: 0 }}
-                title={sidebarOpen ? "Sembunyikan Riwayat Chat" : "Tampilkan Riwayat Chat"}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                  <line x1="9" y1="3" x2="9" y2="21"></line>
-                </svg>
-              </button>
+            {/* Tombol Buka Riwayat Chat di Kiri */}
+            <button
+              className="btn-ghost btn-icon toggle-sidebar-btn"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 10px",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--glass-border)",
+                background: "transparent",
+                color: "var(--text-primary)",
+                fontSize: 13,
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+              title={sidebarOpen ? "Sembunyikan Riwayat Chat" : "Tampilkan Riwayat Chat"}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="9" y1="3" x2="9" y2="21"></line>
+              </svg>
+              <span className="hidden-mobile-text" style={{ fontSize: 13 }}>Riwayat</span>
+            </button>
 
-              <div className="chat-header-selects" style={{ display: "flex", gap: 8, flex: 1, minWidth: 0 }}>
-                <select
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  className="select-field chat-select-field"
-                  style={{ flex: 2, minWidth: 0, padding: "8px 24px 8px 10px" }}
-                >
-                  {MODEL_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-                <select
-                  value={mode}
-                  onChange={(e) => setMode(e.target.value)}
-                  className="select-field chat-select-field"
-                  style={{ flex: 1, minWidth: 0, padding: "8px 24px 8px 10px" }}
-                >
-                  {MODE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
+            {/* Model Selector Tepat di Tengah */}
+            <div style={{ flex: 1, display: "flex", justifyContent: "center", minWidth: 0 }}>
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="select-field chat-select-field"
+                style={{
+                  maxWidth: 260,
+                  width: "100%",
+                  padding: "6px 28px 6px 12px",
+                  fontSize: 13,
+                  textAlign: "center",
+                  borderRadius: "var(--radius-lg)",
+                }}
+              >
+                {MODEL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
             </div>
+
+            {/* Penyeimbang Layout Kanan */}
+            <div style={{ width: 36, flexShrink: 0 }} />
           </div>
 
           {contextLabel && (
@@ -1011,15 +1024,54 @@ function AiChatContent() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input Chat */}
+          {/* Input Chat Container */}
           <div
             className="chat-input-container"
             style={{
               padding: "12px 16px",
               borderTop: "1px solid var(--glass-border)",
               flexShrink: 0,
+              maxWidth: 900,
+              width: "100%",
+              margin: "0 auto",
             }}
           >
+            {/* Pilihan Mode Dipindah ke Atas Input Box sebagai Teks/Pill Klik */}
+            <div
+              className="chat-mode-pills"
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 8,
+                justifyContent: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              {MODE_OPTIONS.map((o) => {
+                const isSelected = mode === o.value;
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setMode(o.value)}
+                    style={{
+                      padding: "4px 12px",
+                      borderRadius: "16px",
+                      fontSize: 12,
+                      fontWeight: isSelected ? 600 : 400,
+                      background: isSelected ? "rgba(168, 85, 247, 0.2)" : "rgba(255, 255, 255, 0.04)",
+                      color: isSelected ? "var(--accent-purple, #a855f7)" : "var(--text-secondary)",
+                      border: `1px solid ${isSelected ? "rgba(168, 85, 247, 0.5)" : "var(--glass-border)"}`,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1033,8 +1085,6 @@ function AiChatContent() {
                 border: "1px solid var(--glass-border)",
                 borderRadius: "var(--radius-xl)",
                 padding: "6px 8px 6px 12px",
-                maxWidth: 900,
-                margin: "0 auto",
                 width: "100%",
               }}
             >
@@ -1088,7 +1138,7 @@ function AiChatContent() {
         </div>
       </div>
 
-      {/* CSS Responsive Static tanpa Error Build */}
+      {/* CSS Responsive Static */}
       <style jsx>{`
         .chat-mobile-overlay {
           display: none;
@@ -1143,6 +1193,10 @@ function AiChatContent() {
 
           .chat-select-field {
             font-size: 11px !important;
+          }
+
+          .hidden-mobile-text {
+            display: none;
           }
         }
       `}</style>
