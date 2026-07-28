@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "./components/ThemeProvider";
+import RegisterServiceWorker from "./register-sw";
 import DashboardLayout from "./components/DashboardLayout";
 
 export const metadata: Metadata = {
@@ -22,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="id">
       <body>
+        <RegisterServiceWorker />
         <ThemeProvider>
           <DashboardLayout>{children}</DashboardLayout>
         </ThemeProvider>
