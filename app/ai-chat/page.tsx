@@ -1213,12 +1213,20 @@ function AiChatContent() {
             width: 270px !important;
             min-width: 270px !important;
             max-width: 270px !important;
-            transform: translateX(-100%) !important;
-            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.25s !important;
+          }
+
+          /* KUNCI: Sembunyikan total saat Riwayat Chat ditutup agar tidak mengintip di tepi kiri layar */
+          .chat-sidebar:not(.open) {
+            transform: translateX(-105%) !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
           }
 
           .chat-sidebar.open {
             transform: translateX(0) !important;
+            visibility: visible !important;
+            pointer-events: auto !important;
           }
 
           .mobile-header-left-space {
