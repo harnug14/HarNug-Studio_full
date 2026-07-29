@@ -188,25 +188,28 @@ export default function DashboardPage() {
             <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Belum ada script tersimpan.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {recentScripts.map((s) => (
-                <div key={s.id} style={{ background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {s.judul}
+              {recentScripts.map((s) => {
+                const cleanJudul = (s.judul || "").replace(/^Naskah\s*-\s*/i, "").trim();
+                return (
+                  <div key={s.id} style={{ background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.4, wordBreak: "break-word" }}>
+                      {cleanJudul || s.judul}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-                      Status: <span style={{ color: s.status === "approved" ? "var(--status-success)" : "var(--text-secondary)" }}>{s.status}</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--text-secondary)" }}>
+                      <div>
+                        Status: <span style={{ color: s.status === "approved" ? "var(--status-success)" : "var(--text-secondary)" }}>{s.status}</span>
+                      </div>
+                      <button
+                        onClick={() => setExportModalItem({ item: s, type: "script" })}
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 11, padding: "4px 8px" }}
+                      >
+                        📦 Export
+                      </button>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setExportModalItem({ item: s, type: "script" })}
-                    className="btn btn-ghost btn-sm"
-                    style={{ fontSize: 11 }}
-                  >
-                    📦 Export
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -222,25 +225,31 @@ export default function DashboardPage() {
             <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Belum ada Visual Package tersimpan.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {recentVisuals.map((v) => (
-                <div key={v.id} style={{ background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {v.judul}
+              {recentVisuals.map((v) => {
+                const cleanJudul = (v.judul || "")
+                  .replace(/^(Visual Package|Naskah)\s*-\s*/gi, "")
+                  .replace(/^(Visual Package|Naskah)\s*-\s*/gi, "")
+                  .trim();
+                return (
+                  <div key={v.id} style={{ background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.4, wordBreak: "break-word" }}>
+                      {cleanJudul || v.judul}
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--accent-primary)", marginTop: 2 }}>
-                      {v.isi_visual?.scenes?.length || 0} Scenes & Prompts
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: "var(--accent-primary)" }}>
+                      <div>
+                        {v.isi_visual?.scenes?.length || 0} Scenes & Prompts
+                      </div>
+                      <button
+                        onClick={() => setExportModalItem({ item: v, type: "visual" })}
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 11, padding: "4px 8px" }}
+                      >
+                        📦 Export
+                      </button>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setExportModalItem({ item: v, type: "visual" })}
-                    className="btn btn-ghost btn-sm"
-                    style={{ fontSize: 11 }}
-                  >
-                    📦 Export
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
