@@ -1,10 +1,11 @@
-// Mengirim pesan chat ke Gemini, dengan dukungan mode: biasa, mendalam, berpikir, search (grounding)
+// Mengirim pesan chat ke Gemini, dengan dukungan mode: biasa, mendalam, berpikir, search (grounding) & multimodal (foto/file)
 
 import { GeminiQuotaError } from "./keyRotation";
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  attachments?: Array<{ name?: string; url?: string; type?: string; base64?: string }>;
 }
 
 export type ChatMode = "biasa" | "mendalam" | "berpikir" | "search";
@@ -21,8 +22,6 @@ function isDailyQuotaError(errText: string): boolean {
   const lower = errText.toLowerCase();
   if (lower.includes("perday")) return true;
   if (lower.includes("perminute")) return false;
-  // Fallback: kalau Google tidak sertakan quotaId spesifik, anggap bukan limit
-  // harian dulu (lebih aman retry daripada salah kunci key selama 1 hari penuh).
   return false;
 }
 
@@ -62,6 +61,39 @@ export function buildContentInstruction(contentTarget: ContentTarget): string {
   }
 }
 
+// Helper untuk mengurai Base64 & MimeType foto/file ke format inlineData Google Gemini API
+function parseInlineData(att: { name?: string; url?: string; type?: string; base64?: string }) {
+  const rawData = att.base64 || att.url || "";
+  if (!rawData) return null;
+
+  let mimeType = att.type || "image/png";
+  let base64Data = rawData;
+
+  const dataUrlMatch = rawData.match(/^data:(.+?);base64,(.+)$/);
+  if (dataUrlMatch) {
+    mimeType = dataUrlMatch[1];
+    base64Data = dataUrlMatch[2];
+  }
+
+  // Gemini mendukung image/*, audio/*, video/*, application/pdf, text/*
+  if (
+    mimeType.startsWith("image/") ||
+    mimeType.startsWith("audio/") ||
+    mimeType.startsWith("video/") ||
+    mimeType === "application/pdf" ||
+    mimeType.startsWith("text/")
+  ) {
+    return {
+      inlineData: {
+        mimeType: mimeType,
+        data: base64Data,
+      },
+    };
+  }
+
+  return null;
+}
+
 export async function chatWithGemini(
   messages: ChatMessage[],
   apiKey: string,
@@ -76,10 +108,30 @@ export async function chatWithGemini(
     ? `${contentInstruction}\n\n${styleInstruction}`
     : styleInstruction;
 
-  const contents = messages.map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    parts: [{ text: m.content }],
-  }));
+  // Format pesan beserta lampiran (multimodal)
+  const contents = messages.map((m) => {
+    const parts: any[] = [];
+
+    // Jika ada lampiran foto/file, konversi ke inlineData Gemini
+    if (m.attachments && Array.isArray(m.attachments)) {
+      for (const att of m.attachments) {
+        const inlinePart = parseInlineData(att);
+        if (inlinePart) {
+          parts.push(inlinePart);
+        }
+      }
+    }
+
+    // Masukkan teks pesan (jika ada atau jika parts masih kosong)
+    if (m.content || parts.length === 0) {
+      parts.push({ text: m.content || "Tolong analisis dan jelaskan lampiran foto/file berikut." });
+    }
+
+    return {
+      role: m.role === "assistant" ? "model" : "user",
+      parts,
+    };
+  });
 
   if (contextText) {
     contents.unshift({
@@ -126,20 +178,15 @@ export async function chatWithGemini(
 
     if (response.status === 429) {
       if (isDailyQuotaError(errText)) {
-        // Beneran kuota harian habis -> kunci key ini sampai besok
         throw new GeminiQuotaError(
           `Gemini API quota harian habis (429) - ${errText.slice(0, 200)}`
         );
       } else {
-        // Rate-limit per-menit / sesaat -> JANGAN kunci key, cukup tunggu & retry
         if (attempt < MAX_RETRIES) {
           lastError = new Error(`Gemini API Rate Limit sesaat (429) - mencoba lagi...`);
           await sleep(RPM_RETRY_DELAY_MS);
           continue;
         } else {
-          // Retry di key yang sama sudah habis jatah, tapi ini BUKAN kuota harian,
-          // jadi lempar error biasa (bukan GeminiQuotaError) supaya rotasi TIDAK
-          // menandai key ini "limited" seharian.
           throw new Error(
             `Terlalu sering request ke key ini (Rate Limit sesaat). Coba key lain atau tunggu ~1 menit.`
           );

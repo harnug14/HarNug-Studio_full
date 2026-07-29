@@ -8,7 +8,7 @@ interface ChatMessageItem {
   id?: string;
   role: "user" | "assistant";
   content: string;
-  attachments?: { name: string; url: string; type: string }[];
+  attachments?: { name: string; url: string; type: string; base64?: string }[];
 }
 
 interface SessionItem {
@@ -116,6 +116,19 @@ function AiChatContent() {
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeakingId, setIsSpeakingId] = useState<string | null>(null);
+
+  // Dynamic Animasi & Inline Edit State
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [spinningId, setSpinningId] = useState<string | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
+
+  // Lightbox / File Preview Modal State
+  const [previewAttachment, setPreviewAttachment] = useState<{
+    name: string;
+    url: string;
+    type: string;
+  } | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(true);
@@ -256,24 +269,50 @@ function AiChatContent() {
     adjustTextareaHeight();
   }, [input]);
 
-  // Copy to Clipboard
-  const handleCopy = (text: string) => {
+  // Copy to Clipboard dengan Animasi Ceklis (✓)
+  const handleCopy = (id: string, text: string) => {
+    if (!text) return;
     navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => {
+      setCopiedId(null);
+    }, 2000);
   };
 
-  // Edit User Message
-  const handleEditUser = (text: string) => {
-    setInput(text);
-    if (inputRef.current) inputRef.current.focus();
+  // Mulai Edit Pesan Langsung di dalam Gelembung
+  const handleStartEdit = (index: number, content: string) => {
+    setEditingIndex(index);
+    setEditingText(content);
   };
 
-  // Retry User Message
-  const handleRetryUser = (text: string) => {
+  // Batal Edit Pesan
+  const handleCancelEdit = () => {
+    setEditingIndex(null);
+    setEditingText("");
+  };
+
+  // Simpan Edit Pesan dan Kirim Ulang ke AI
+  const handleSaveEdit = (index: number) => {
+    if (!editingText.trim()) return;
+    const newContent = editingText.trim();
+    setEditingIndex(null);
+    setEditingText("");
+
+    // Potong riwayat pesan sampai indeks ini
+    setMessages((prev) => prev.slice(0, index));
+    handleSend(newContent);
+  };
+
+  // Retry Pesan dengan Animasi Muter (Spin)
+  const handleRetryUser = (id: string, text: string) => {
+    setSpinningId(id);
+    setTimeout(() => setSpinningId(null), 1000);
     handleSend(text);
   };
 
-  // Regenerate AI Response
-  const handleRegenerateAI = () => {
+  const handleRegenerateAI = (id: string) => {
+    setSpinningId(id);
+    setTimeout(() => setSpinningId(null), 1000);
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     if (lastUser) {
       handleSend(lastUser.content);
@@ -282,6 +321,7 @@ function AiChatContent() {
 
   // Read Aloud Bahasa Indonesia (id-ID)
   const handleReadAloud = (id: string, text: string) => {
+    if (!text) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       alert("Browser Anda tidak mendukung fitur Read Aloud.");
       return;
@@ -334,6 +374,24 @@ function AiChatContent() {
 
     recognition.onerror = () => setIsListening(false);
     recognition.start();
+  };
+
+  // Handle Klik Lampiran Foto / File untuk Membuka Pratinjau Lengkap
+  const handleAttachmentClick = (att: { name: string; url: string; type: string }) => {
+    if (att.type.startsWith("image/") || att.url.startsWith("data:image/")) {
+      setPreviewAttachment(att);
+    } else {
+      const win = window.open();
+      if (win) {
+        if (att.url.startsWith("data:")) {
+          win.document.write(
+            `<iframe src="${att.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`
+          );
+        } else {
+          win.location.href = att.url;
+        }
+      }
+    }
   };
 
   // Stop Generation [ ⏹ ]
@@ -487,11 +545,15 @@ function AiChatContent() {
   async function handleSend(overrideContent?: string) {
     if (loading) return;
 
-    const pesanDikirim = overrideContent || input.trim() || (!contextSent && contextText ? contextText : "");
+    // Teks murni dari input (KOSONG TETAP KOSONG)
+    const rawText = overrideContent !== undefined ? overrideContent : input.trim();
+    const pesanDikirim = rawText || (!contextSent && contextText ? contextText : "");
+
+    // Jika pesan teks kosong DAN tidak ada lampiran, batalkan
     if (!pesanDikirim && attachments.length === 0) return;
 
     const currentAttachments = [...attachments];
-    if (!overrideContent) setInput("");
+    if (overrideContent === undefined) setInput("");
     setAttachments([]);
     if (inputRef.current) inputRef.current.style.height = "auto";
     setLoading(true);
@@ -505,7 +567,12 @@ function AiChatContent() {
       {
         role: "user",
         content: pesanDikirim,
-        attachments: currentAttachments.map((a) => ({ name: a.name, url: a.previewUrl || "", type: a.type })),
+        attachments: currentAttachments.map((a) => ({
+          name: a.name,
+          url: a.previewUrl || a.base64 || "",
+          type: a.type,
+          base64: a.base64,
+        })),
       },
     ]);
 
@@ -737,6 +804,63 @@ function AiChatContent() {
           className="chat-mobile-overlay"
           onClick={() => setSidebarOpen(false)}
         />
+      )}
+
+      {/* LIGHTBOX / FULLSCREEN FILE PREVIEW MODAL */}
+      {previewAttachment && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.85)",
+            backdropFilter: "blur(6px)",
+            zIndex: 9999,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+          onClick={() => setPreviewAttachment(null)}
+        >
+          <div
+            style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh", display: "flex", flexDirection: "column", alignItems: "center" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewAttachment(null)}
+              style={{
+                position: "absolute",
+                top: -36,
+                right: -10,
+                background: "none",
+                border: "none",
+                color: "#fff",
+                fontSize: 22,
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+            {previewAttachment.type.startsWith("image/") || previewAttachment.url.startsWith("data:image/") ? (
+              <img
+                src={previewAttachment.url}
+                alt={previewAttachment.name}
+                style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: "8px", objectFit: "contain", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}
+              />
+            ) : (
+              <iframe
+                src={previewAttachment.url}
+                title={previewAttachment.name}
+                style={{ width: "80vw", height: "80vh", border: "none", borderRadius: "8px", background: "#fff" }}
+              />
+            )}
+            <div style={{ color: "#fff", marginTop: 12, fontSize: 13, fontWeight: 500, textAlign: "center" }}>
+              {previewAttachment.name}
+            </div>
+          </div>
+        </div>
       )}
 
       <div
@@ -1067,6 +1191,7 @@ function AiChatContent() {
                   const { isDraft, cleanContent } = m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
                   const isSavableDraft = m.role === "assistant" && saveTarget && (saveTarget === "naskah" || saveTarget === "visual") && isDraft;
                   const msgId = m.id || `msg-${i}`;
+                  const isEditingThis = editingIndex === i;
 
                   return (
                     <div key={i} className="animate-fade-in-up" style={{
@@ -1083,15 +1208,33 @@ function AiChatContent() {
                         flexDirection: "column",
                         alignItems: m.role === "user" ? "flex-end" : "flex-start",
                       }}>
-                        {/* Attachments pada pesan user */}
+                        {/* Attachments pada pesan user (BISA DI-KLIK UNTUK PRATINJAU LENGKAP) */}
                         {m.attachments && m.attachments.length > 0 && (
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
                             {m.attachments.map((att, ai) => (
-                              <div key={ai} style={{ borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--glass-border)", background: "var(--bg-secondary)", padding: 4 }}>
-                                {att.url ? (
-                                  <img src={att.url} alt={att.name} style={{ maxWidth: 160, maxHeight: 120, objectFit: "cover", borderRadius: "var(--radius-sm)" }} />
+                              <div
+                                key={ai}
+                                onClick={() => handleAttachmentClick({ name: att.name, url: att.url || att.base64 || "", type: att.type })}
+                                style={{
+                                  borderRadius: "var(--radius-md)",
+                                  overflow: "hidden",
+                                  border: "1px solid var(--glass-border)",
+                                  background: "var(--bg-secondary)",
+                                  padding: 4,
+                                  cursor: "pointer",
+                                  transition: "transform 0.15s ease",
+                                }}
+                                title="Klik untuk membuka lampiran"
+                                onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.03)"}
+                                onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+                              >
+                                {att.type.startsWith("image/") || att.url.startsWith("data:image/") ? (
+                                  <img src={att.url} alt={att.name} style={{ maxWidth: 180, maxHeight: 130, objectFit: "cover", borderRadius: "var(--radius-sm)" }} />
                                 ) : (
-                                  <div style={{ padding: "6px 10px", fontSize: 12, color: "var(--text-secondary)" }}>📄 {att.name}</div>
+                                  <div style={{ padding: "8px 12px", fontSize: 12, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span>📄</span>
+                                    <span style={{ fontWeight: 500 }}>{att.name}</span>
+                                  </div>
                                 )}
                               </div>
                             ))}
@@ -1100,22 +1243,81 @@ function AiChatContent() {
 
                         {/* RENDER GELEMBUNG USER vs BALASAN AI POLOS MELAYANG */}
                         {m.role === "user" ? (
-                          /* GELEMBUNG USER: Latar Berwarna Netral */
-                          <div style={{
-                            padding: "12px 16px",
-                            borderRadius: "var(--radius-lg)",
-                            borderTopRightRadius: "4px",
-                            background: "var(--bg-elevated)",
-                            border: "1px solid var(--glass-border-hover)",
-                            fontSize: 14,
-                            lineHeight: 1.6,
-                            color: "var(--text-primary)",
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
-                            overflowWrap: "break-word",
-                          }}>
-                            {m.content}
-                          </div>
+                          /* GELEMBUNG USER (SAMA SEKALI TIDAK DIRENDER JIKA TEKS KOSONG DENGAN LAMPIRAN) */
+                          (m.content || isEditingThis) && (
+                            <div style={{
+                              padding: "12px 16px",
+                              borderRadius: "var(--radius-lg)",
+                              borderTopRightRadius: "4px",
+                              background: "var(--bg-elevated)",
+                              border: "1px solid var(--glass-border-hover)",
+                              fontSize: 14,
+                              lineHeight: 1.6,
+                              color: "var(--text-primary)",
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                              overflowWrap: "break-word",
+                              width: isEditingThis ? "100%" : "auto",
+                              minWidth: isEditingThis ? 280 : "auto",
+                            }}>
+                              {/* INLINE EDIT DI DALAM GELEMBUNG PESAN USER */}
+                              {isEditingThis ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
+                                  <textarea
+                                    value={editingText}
+                                    onChange={(e) => setEditingText(e.target.value)}
+                                    rows={3}
+                                    style={{
+                                      width: "100%",
+                                      background: "rgba(0,0,0,0.2)",
+                                      border: "1px solid var(--glass-border)",
+                                      borderRadius: "8px",
+                                      padding: "8px 10px",
+                                      color: "var(--text-primary)",
+                                      fontSize: 14,
+                                      outline: "none",
+                                      resize: "vertical",
+                                    }}
+                                  />
+                                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                                    <button
+                                      type="button"
+                                      onClick={handleCancelEdit}
+                                      style={{
+                                        padding: "4px 12px",
+                                        borderRadius: "6px",
+                                        fontSize: 12,
+                                        background: "transparent",
+                                        border: "1px solid var(--glass-border)",
+                                        color: "var(--text-secondary)",
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Batal
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSaveEdit(i)}
+                                      style={{
+                                        padding: "4px 12px",
+                                        borderRadius: "6px",
+                                        fontSize: 12,
+                                        background: "var(--text-primary)",
+                                        border: "none",
+                                        color: "var(--bg-primary)",
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Simpan
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                m.content
+                              )}
+                            </div>
+                          )
                         ) : (
                           /* BALASAN AI: TANPA GELEMBUNG / TANPA KOTAK (Polos Melayang) */
                           <div style={{
@@ -1241,71 +1443,85 @@ function AiChatContent() {
                         )}
 
                         {/* IKON AKSI DI BAWAH GELEMBUNG CHAT DENGAN ANIMASI INTERAKTIF */}
-                        <div style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                          marginTop: 4,
-                          color: "var(--text-tertiary)",
-                        }}>
-                          {m.role === "user" ? (
-                            /* 3 IKON USER: Retry (↻), Edit (✏️), Copy (📋) */
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleRetryUser(m.content)}
-                                className="chat-action-btn"
-                                title="Retry"
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleEditUser(m.content)}
-                                className="chat-action-btn"
-                                title="Edit"
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleCopy(m.content)}
-                                className="chat-action-btn"
-                                title="Copy"
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                              </button>
-                            </>
-                          ) : (
-                            /* TEPAT 3 IKON AI: Copy (📋), Read Aloud (🔊), Retry (↻) */
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleCopy(cleanContent)}
-                                className="chat-action-btn"
-                                title="Copy"
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleReadAloud(msgId, cleanContent)}
-                                className={`chat-action-btn ${isSpeakingId === msgId ? "active-speaking" : ""}`}
-                                title="Read aloud"
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={handleRegenerateAI}
-                                className="chat-action-btn"
-                                title="Retry"
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                              </button>
-                            </>
-                          )}
-                        </div>
+                        {!isEditingThis && (
+                          <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            marginTop: 4,
+                            color: "var(--text-tertiary)",
+                          }}>
+                            {m.role === "user" ? (
+                              /* 3 IKON USER: Retry (↻), Edit (✏️), Copy (📋) */
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRetryUser(msgId, m.content)}
+                                  className={`chat-action-btn ${spinningId === msgId ? "spinning-icon" : ""}`}
+                                  title="Retry"
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEdit(i, m.content)}
+                                  className="chat-action-btn"
+                                  title="Edit"
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                                </button>
+                                {m.content && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopy(msgId, m.content)}
+                                    className="chat-action-btn"
+                                    title="Copy"
+                                  >
+                                    {copiedId === msgId ? (
+                                      /* IKON CEKLIS (✓) SAAT DICOPIED */
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    ) : (
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    )}
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              /* TEPAT 3 IKON AI: Copy (📋), Read Aloud (🔊), Retry (↻) */
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(msgId, cleanContent)}
+                                  className="chat-action-btn"
+                                  title="Copy"
+                                >
+                                  {copiedId === msgId ? (
+                                    /* IKON CEKLIS (✓) SAAT DICOPIED */
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                  ) : (
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReadAloud(msgId, cleanContent)}
+                                  className={`chat-action-btn ${isSpeakingId === msgId ? "active-speaking" : ""}`}
+                                  title="Read aloud"
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRegenerateAI(msgId)}
+                                  className={`chat-action-btn ${spinningId === msgId ? "spinning-icon" : ""}`}
+                                  title="Retry"
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1734,6 +1950,16 @@ function AiChatContent() {
         .chat-action-btn:active {
           transform: scale(0.88) translateY(0);
           background: var(--glass-border, rgba(150, 150, 150, 0.25));
+        }
+
+        /* Animasi Muter Tombol Retry (Spin) */
+        .spinning-icon {
+          animation: spin 0.8s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
 
         /* Efek Denyut Suara saat Read Aloud Aktif */

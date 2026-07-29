@@ -5,6 +5,9 @@ import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { chatWithGroq } from "@/lib/groq/chatWithGroq";
 import { callGroqWithRotation } from "@/lib/groq/keyRotation";
 
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -70,13 +73,23 @@ export async function POST(
     return NextResponse.json({ error: "Sesi chat tidak ditemukan" }, { status: 404 });
   }
 
-  const body = await req.json();
+  let body: any;
+  try {
+    body = await req.json();
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: "Ukuran foto/file terlalu besar atau format request tidak valid." },
+      { status: 400 }
+    );
+  }
+
   const pesanBaru: string = (body?.pesan || "").trim();
+  const attachments: any[] = body?.attachments || [];
   const model: string = body?.model || session.model;
   const mode: string = body?.mode || session.mode;
 
-  if (!pesanBaru) {
-    return NextResponse.json({ error: "Pesan tidak boleh kosong" }, { status: 400 });
+  if (!pesanBaru && attachments.length === 0) {
+    return NextResponse.json({ error: "Pesan atau lampiran tidak boleh kosong" }, { status: 400 });
   }
 
   const { data: riwayat } = await supabase
@@ -85,16 +98,23 @@ export async function POST(
     .eq("session_id", id)
     .order("created_at", { ascending: true });
 
-  const messages: ChatMessage[] = (riwayat || []).map((m: any) => ({
+  const messages: any[] = (riwayat || []).map((m: any) => ({
     role: m.role,
     content: m.content,
   }));
-  messages.push({ role: "user", content: pesanBaru });
+
+  messages.push({
+    role: "user",
+    content: pesanBaru || (attachments.length > 0 ? "Berikut lampiran foto/file yang saya unggah." : ""),
+    ...(attachments.length > 0 ? { attachments } : {}),
+  });
+
+  const userContent = pesanBaru || (attachments.length > 0 ? `[Lampiran: ${attachments.map((a: any) => a.name).join(", ")}]` : "");
 
   await supabase.from("chat_messages").insert({
     session_id: id,
     role: "user",
-    content: pesanBaru,
+    content: userContent,
   });
 
   let jawaban: string;
@@ -102,7 +122,7 @@ export async function POST(
     if (model.startsWith("groq-")) {
       jawaban = await callGroqWithRotation(supabase, (apiKey) =>
         chatWithGroq(
-          messages,
+          messages as any,
           apiKey,
           model,
           mode as any,
@@ -113,7 +133,7 @@ export async function POST(
     } else {
       jawaban = await callGeminiWithRotation(supabase, (apiKey) =>
         chatWithGemini(
-          messages,
+          messages as any,
           apiKey,
           model,
           mode as any,
@@ -157,7 +177,13 @@ export async function PATCH(
     return NextResponse.json({ error: "Belum login" }, { status: 401 });
   }
 
-  const body = await req.json();
+  let body: any;
+  try {
+    body = await req.json();
+  } catch (err: any) {
+    return NextResponse.json({ error: "Format JSON tidak valid" }, { status: 400 });
+  }
+
   const judulBaru: string = (body?.judul || "").trim();
 
   if (!judulBaru) {
