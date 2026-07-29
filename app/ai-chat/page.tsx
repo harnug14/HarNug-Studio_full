@@ -140,6 +140,7 @@ function AiChatContent() {
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarReady, setSidebarReady] = useState(false);
@@ -163,7 +164,7 @@ function AiChatContent() {
     };
   }, [sidebarOpen]);
 
-  // Click outside listener for plus menu
+  // Click outside listener
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -288,7 +289,7 @@ function AiChatContent() {
   };
 
   // Handle File & Image Upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: "image" | "file") => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: "image" | "file" | "camera") => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -302,9 +303,9 @@ function AiChatContent() {
           ...prev,
           {
             name: file.name,
-            type: file.type || (fileType === "image" ? "image/png" : "application/pdf"),
+            type: file.type || (fileType === "file" ? "application/pdf" : "image/png"),
             base64: base64Raw,
-            previewUrl: fileType === "image" ? base64Raw : undefined,
+            previewUrl: fileType !== "file" ? base64Raw : undefined,
           },
         ]);
       };
@@ -643,17 +644,25 @@ function AiChatContent() {
       {/* Hidden File Inputs */}
       <input
         type="file"
-        ref={fileInputRef}
-        onChange={(e) => handleFileUpload(e, "file")}
-        accept=".pdf,.txt,.doc,.docx,.csv"
+        ref={cameraInputRef}
+        onChange={(e) => handleFileUpload(e, "camera")}
+        accept="image/*"
+        capture="environment"
         style={{ display: "none" }}
-        multiple
       />
       <input
         type="file"
         ref={imageInputRef}
         onChange={(e) => handleFileUpload(e, "image")}
         accept="image/*"
+        style={{ display: "none" }}
+        multiple
+      />
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={(e) => handleFileUpload(e, "file")}
+        accept=".pdf,.txt,.doc,.docx,.csv"
         style={{ display: "none" }}
         multiple
       />
@@ -696,8 +705,8 @@ function AiChatContent() {
             borderRight: sidebarOpen ? "1px solid var(--glass-border)" : "none",
           }}
         >
-          {/* Header Sub-Sidebar */}
-          <div style={{ height: 57, padding: "0 10px", display: "flex", alignItems: "center", borderBottom: "1px solid var(--glass-border)", flexShrink: 0 }}>
+          {/* Header Sub-Sidebar Polos Tanpa Garis Pembatas */}
+          <div style={{ height: 57, padding: "0 10px", display: "flex", alignItems: "center", borderBottom: "none", flexShrink: 0 }}>
             <button
               onClick={startNewChat}
               style={{
@@ -894,6 +903,7 @@ function AiChatContent() {
             style={{
               height: 57,
               padding: "0 20px",
+              borderBottom: "none",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
@@ -961,209 +971,223 @@ function AiChatContent() {
             </div>
           )}
 
-          {/* Area Pesan Chat */}
+          {/* Area Pesan Chat - Teks "Ada yang bisa dibantu?" Tepat di Tengah Layar Vertikal & Horizontal */}
           <div className="chat-messages-area" style={{ flex: "1 1 auto", overflowY: "auto", overflowX: "hidden", padding: "24px", display: "flex", flexDirection: "column", gap: 20, minHeight: 0 }}>
-            <div style={{ maxWidth: 840, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
-              {messages.length === 0 && (
-                <div style={{ margin: "auto", textAlign: "center", maxWidth: 440, padding: "60px 16px" }}>
-                  <div style={{
-                    fontSize: 26, fontWeight: 500, color: "var(--text-primary)", fontFamily: "serif"
-                  }}>
-                    Ada yang bisa dibantu?
-                  </div>
+            {messages.length === 0 ? (
+              <div style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                minHeight: 280,
+                margin: "auto",
+                textAlign: "center",
+                padding: "20px 16px",
+              }}>
+                <div style={{
+                  fontSize: 26,
+                  fontWeight: 500,
+                  color: "var(--text-primary)",
+                  fontFamily: "serif",
+                  letterSpacing: "-0.01em",
+                }}>
+                  Ada yang bisa dibantu?
                 </div>
-              )}
+              </div>
+            ) : (
+              <div style={{ maxWidth: 840, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+                {messages.map((m, i) => {
+                  const { cards, sisaTeks } = m.role === "assistant" ? parseTopikCards(m.content) : { cards: [], sisaTeks: m.content };
+                  const { isDraft, cleanContent } = m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
+                  const isSavableDraft = m.role === "assistant" && saveTarget && (saveTarget === "naskah" || saveTarget === "visual") && isDraft;
 
-              {messages.map((m, i) => {
-                const { cards, sisaTeks } = m.role === "assistant" ? parseTopikCards(m.content) : { cards: [], sisaTeks: m.content };
-                const { isDraft, cleanContent } = m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
-                const isSavableDraft = m.role === "assistant" && saveTarget && (saveTarget === "naskah" || saveTarget === "visual") && isDraft;
+                  return (
+                    <div key={i} className="animate-fade-in-up" style={{
+                      display: "flex",
+                      flexDirection: m.role === "user" ? "row-reverse" : "row",
+                      gap: 12,
+                      alignItems: "flex-start",
+                      width: "100%",
+                    }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: m.role === "user" ? "var(--glass-bg-hover)" : "var(--accent-primary)",
+                        color: m.role === "user" ? "var(--text-primary)" : "#fff", border: `1px solid ${m.role === "user" ? "var(--glass-border)" : "transparent"}`,
+                      }}>
+                        {m.role === "user" ? (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                        ) : (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+                        )}
+                      </div>
 
-                return (
-                  <div key={i} className="animate-fade-in-up" style={{
-                    display: "flex",
-                    flexDirection: m.role === "user" ? "row-reverse" : "row",
-                    gap: 12,
-                    alignItems: "flex-start",
-                    width: "100%",
-                  }}>
+                      <div className="chat-bubble-wrapper" style={{ maxWidth: "88%", minWidth: 0, flex: 1 }}>
+                        {/* Attachments pada pesan user */}
+                        {m.attachments && m.attachments.length > 0 && (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                            {m.attachments.map((att, ai) => (
+                              <div key={ai} style={{ borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--glass-border)", background: "var(--bg-secondary)", padding: 4 }}>
+                                {att.url ? (
+                                  <img src={att.url} alt={att.name} style={{ maxWidth: 160, maxHeight: 120, objectFit: "cover", borderRadius: "var(--radius-sm)" }} />
+                                ) : (
+                                  <div style={{ padding: "6px 10px", fontSize: 12, color: "var(--text-secondary)" }}>📄 {att.name}</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div style={{
+                          padding: "12px 16px",
+                          borderRadius: "var(--radius-lg)",
+                          borderTopLeftRadius: m.role === "assistant" ? 4 : "var(--radius-lg)",
+                          borderTopRightRadius: m.role === "user" ? 4 : "var(--radius-lg)",
+                          background: m.role === "user" ? "var(--bg-elevated)" : "var(--glass-bg)",
+                          border: `1px solid ${m.role === "user" ? "var(--glass-border-hover)" : "var(--glass-border)"}`,
+                          fontSize: 14,
+                          lineHeight: 1.6,
+                          color: "var(--text-primary)",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                          overflowWrap: "break-word",
+                          boxShadow: m.role === "assistant" ? "var(--shadow-sm)" : "none",
+                        }}>
+                          {m.role === "assistant" && cards.length > 0 ? (
+                            <>
+                              {sisaTeks && <div style={{ marginBottom: 16 }}>{sisaTeks}</div>}
+                              <div style={{ display: "grid", gap: 12 }}>
+                                {cards.map((card, ci) => {
+                                  const cardKey = `${i}-${ci}`;
+                                  const isSavingCard = savingCardKey === cardKey;
+                                  return (
+                                    <div key={ci} style={{
+                                      padding: 12,
+                                      borderRadius: "var(--radius-md)",
+                                      background: "var(--bg-secondary)",
+                                      border: "1px solid var(--glass-border)",
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      gap: 8,
+                                    }}>
+                                      <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
+                                        {card.judul}
+                                      </div>
+                                      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                        {card.deskripsi}
+                                      </div>
+                                      <button
+                                        onClick={() => handleSaveCard(i, ci, card)}
+                                        disabled={isSavingCard}
+                                        className="btn btn-secondary btn-sm"
+                                        style={{ alignSelf: "flex-start", marginTop: 4, gap: 6, fontSize: 12 }}
+                                      >
+                                        <SaveIcon />
+                                        {isSavingCard ? "Menyimpan..." : "Simpan Topik"}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          ) : (
+                            <div>{cleanContent}</div>
+                          )}
+
+                          {isSavableDraft && (
+                            <div style={{ marginTop: 12 }}>
+                              <button
+                                onClick={() => openSaveForm(i, cleanContent)}
+                                className="btn btn-primary btn-sm"
+                                style={{ gap: 6, fontSize: 12 }}
+                              >
+                                <SaveIcon />
+                                Simpan ke {saveTarget === "naskah" ? "Naskah" : "Visual"}
+                              </button>
+                            </div>
+                          )}
+
+                          {savingMessageIndex === i && (
+                            <div style={{
+                              marginTop: 12,
+                              padding: 14,
+                              borderRadius: "var(--radius-md)",
+                              background: "var(--bg-elevated)",
+                              border: "1px solid var(--accent-primary)",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 10,
+                            }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                                Simpan ke {saveTarget === "topik" ? "Topik" : saveTarget === "naskah" ? "Naskah" : "Visual"}
+                              </div>
+                              <div>
+                                <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Judul</label>
+                                <input
+                                  type="text"
+                                  value={saveJudul}
+                                  onChange={(e) => setSaveJudul(e.target.value)}
+                                  className="input-field"
+                                  style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
+                                />
+                              </div>
+                              <div>
+                                <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Isi / Catatan</label>
+                                <textarea
+                                  value={saveCatatan}
+                                  onChange={(e) => setSaveCatatan(e.target.value)}
+                                  className="input-field"
+                                  rows={3}
+                                  style={{ width: "100%", padding: "6px 10px", fontSize: 13, resize: "vertical" }}
+                                />
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                                <button
+                                  onClick={cancelSaveForm}
+                                  className="btn btn-ghost btn-sm"
+                                  style={{ fontSize: 12 }}
+                                >
+                                  Batal
+                                </button>
+                                <button
+                                  onClick={handleConfirmSave}
+                                  disabled={saveSubmitting}
+                                  className="btn btn-primary btn-sm"
+                                  style={{ fontSize: 12 }}
+                                >
+                                  {saveSubmitting ? "Menyimpan..." : "Konfirmasi Simpan"}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {loading && (
+                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                     <div style={{
                       width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      background: m.role === "user" ? "var(--glass-bg-hover)" : "var(--accent-primary)",
-                      color: m.role === "user" ? "var(--text-primary)" : "#fff", border: `1px solid ${m.role === "user" ? "var(--glass-border)" : "transparent"}`,
+                      background: "var(--accent-primary)", color: "#fff"
                     }}>
-                      {m.role === "user" ? (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                      ) : (
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
-                      )}
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
                     </div>
-
-                    <div className="chat-bubble-wrapper" style={{ maxWidth: "88%", minWidth: 0, flex: 1 }}>
-                      {/* Attachments pada pesan user */}
-                      {m.attachments && m.attachments.length > 0 && (
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-                          {m.attachments.map((att, ai) => (
-                            <div key={ai} style={{ borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--glass-border)", background: "var(--bg-secondary)", padding: 4 }}>
-                              {att.url ? (
-                                <img src={att.url} alt={att.name} style={{ maxWidth: 160, maxHeight: 120, objectFit: "cover", borderRadius: "var(--radius-sm)" }} />
-                              ) : (
-                                <div style={{ padding: "6px 10px", fontSize: 12, color: "var(--text-secondary)" }}>📄 {att.name}</div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div style={{
-                        padding: "12px 16px",
-                        borderRadius: "var(--radius-lg)",
-                        borderTopLeftRadius: m.role === "assistant" ? 4 : "var(--radius-lg)",
-                        borderTopRightRadius: m.role === "user" ? 4 : "var(--radius-lg)",
-                        background: m.role === "user" ? "var(--bg-elevated)" : "var(--glass-bg)",
-                        border: `1px solid ${m.role === "user" ? "var(--glass-border-hover)" : "var(--glass-border)"}`,
-                        fontSize: 14,
-                        lineHeight: 1.6,
-                        color: "var(--text-primary)",
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word",
-                        overflowWrap: "break-word",
-                        boxShadow: m.role === "assistant" ? "var(--shadow-sm)" : "none",
-                      }}>
-                        {m.role === "assistant" && cards.length > 0 ? (
-                          <>
-                            {sisaTeks && <div style={{ marginBottom: 16 }}>{sisaTeks}</div>}
-                            <div style={{ display: "grid", gap: 12 }}>
-                              {cards.map((card, ci) => {
-                                const cardKey = `${i}-${ci}`;
-                                const isSavingCard = savingCardKey === cardKey;
-                                return (
-                                  <div key={ci} style={{
-                                    padding: 12,
-                                    borderRadius: "var(--radius-md)",
-                                    background: "var(--bg-secondary)",
-                                    border: "1px solid var(--glass-border)",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: 8,
-                                  }}>
-                                    <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
-                                      {card.judul}
-                                    </div>
-                                    <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                                      {card.deskripsi}
-                                    </div>
-                                    <button
-                                      onClick={() => handleSaveCard(i, ci, card)}
-                                      disabled={isSavingCard}
-                                      className="btn btn-secondary btn-sm"
-                                      style={{ alignSelf: "flex-start", marginTop: 4, gap: 6, fontSize: 12 }}
-                                    >
-                                      <SaveIcon />
-                                      {isSavingCard ? "Menyimpan..." : "Simpan Topik"}
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </>
-                        ) : (
-                          <div>{cleanContent}</div>
-                        )}
-
-                        {isSavableDraft && (
-                          <div style={{ marginTop: 12 }}>
-                            <button
-                              onClick={() => openSaveForm(i, cleanContent)}
-                              className="btn btn-primary btn-sm"
-                              style={{ gap: 6, fontSize: 12 }}
-                            >
-                              <SaveIcon />
-                              Simpan ke {saveTarget === "naskah" ? "Naskah" : "Visual"}
-                            </button>
-                          </div>
-                        )}
-
-                        {savingMessageIndex === i && (
-                          <div style={{
-                            marginTop: 12,
-                            padding: 14,
-                            borderRadius: "var(--radius-md)",
-                            background: "var(--bg-elevated)",
-                            border: "1px solid var(--accent-primary)",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 10,
-                          }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-                              Simpan ke {saveTarget === "topik" ? "Topik" : saveTarget === "naskah" ? "Naskah" : "Visual"}
-                            </div>
-                            <div>
-                              <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Judul</label>
-                              <input
-                                type="text"
-                                value={saveJudul}
-                                onChange={(e) => setSaveJudul(e.target.value)}
-                                className="input-field"
-                                style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
-                              />
-                            </div>
-                            <div>
-                              <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Isi / Catatan</label>
-                              <textarea
-                                value={saveCatatan}
-                                onChange={(e) => setSaveCatatan(e.target.value)}
-                                className="input-field"
-                                rows={3}
-                                style={{ width: "100%", padding: "6px 10px", fontSize: 13, resize: "vertical" }}
-                              />
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                              <button
-                                onClick={cancelSaveForm}
-                                className="btn btn-ghost btn-sm"
-                                style={{ fontSize: 12 }}
-                              >
-                                Batal
-                              </button>
-                              <button
-                                onClick={handleConfirmSave}
-                                disabled={saveSubmitting}
-                                className="btn btn-primary btn-sm"
-                                style={{ fontSize: 12 }}
-                              >
-                                {saveSubmitting ? "Menyimpan..." : "Konfirmasi Simpan"}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                    <div style={{
+                      padding: "10px 14px", borderRadius: "var(--radius-lg)", borderTopLeftRadius: 4,
+                      background: "var(--glass-bg)", border: "1px solid var(--glass-border)", display: "flex", alignItems: "center", gap: 8
+                    }}>
+                      <div className="spinner" style={{ width: 14, height: 14 }} />
+                      <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Sedang mengetik...</span>
                     </div>
                   </div>
-                );
-              })}
-
-              {loading && (
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    background: "var(--accent-primary)", color: "#fff"
-                  }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
-                  </div>
-                  <div style={{
-                    padding: "10px 14px", borderRadius: "var(--radius-lg)", borderTopLeftRadius: 4,
-                    background: "var(--glass-bg)", border: "1px solid var(--glass-border)", display: "flex", alignItems: "center", gap: 8
-                  }}>
-                    <div className="spinner" style={{ width: 14, height: 14 }} />
-                    <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Sedang mengetik...</span>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
           </div>
 
           {/* Redesigned Claude-Style Bottom Card Container (Polos Tanpa Garis Pembatas) */}
@@ -1171,6 +1195,7 @@ function AiChatContent() {
             className="chat-input-container"
             style={{
               padding: "12px 20px",
+              borderTop: "none",
               flexShrink: 0,
               width: "100%",
               display: "flex",
@@ -1299,9 +1324,10 @@ function AiChatContent() {
                   }}
                 />
 
-                {/* Bottom Controls Bar (Claude Style: [+] | Model Selector | Mic | Send) */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+                {/* Bottom Controls Bar dalam 1 Baris Sejajar Lurus Presisi */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", width: "100%" }}>
+                  {/* Kiri: [+] dan Dropdown Model AI sejajar lurus */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
                     
                     {/* Tombol [+] Multimodal Upload */}
                     <div ref={plusMenuRef} style={{ position: "relative" }}>
@@ -1321,12 +1347,12 @@ function AiChatContent() {
                           cursor: "pointer",
                           transition: "all 0.2s ease",
                         }}
-                        title="Lampirkan foto atau dokumen"
+                        title="Lampirkan foto, kamera, atau dokumen"
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                       </button>
 
-                      {/* Dropdown Menu [+] */}
+                      {/* Dropdown Menu [+] Persis Gambar 3 (Kamera, Foto, File) */}
                       {plusMenuOpen && (
                         <div style={{
                           position: "absolute",
@@ -1335,46 +1361,82 @@ function AiChatContent() {
                           marginBottom: 8,
                           background: "var(--bg-elevated)",
                           border: "1px solid var(--glass-border)",
-                          borderRadius: "var(--radius-lg)",
-                          padding: 6,
+                          borderRadius: "var(--radius-xl)",
+                          padding: "8px 10px",
                           display: "flex",
                           flexDirection: "column",
-                          gap: 4,
+                          gap: 6,
                           zIndex: 50,
                           minWidth: 160,
                           boxShadow: "var(--shadow-md)"
                         }}>
+                          {/* 1. Kamera */}
+                          <button
+                            type="button"
+                            onClick={() => cameraInputRef.current?.click()}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 12, padding: "8px 10px",
+                              background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 13,
+                              textAlign: "left", cursor: "pointer", borderRadius: "var(--radius-md)", fontWeight: 500
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                          >
+                            <div style={{
+                              width: 32, height: 32, borderRadius: "50%", background: "rgba(255,255,255,0.08)",
+                              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+                            }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+                            </div>
+                            Kamera
+                          </button>
+
+                          {/* 2. Foto */}
                           <button
                             type="button"
                             onClick={() => imageInputRef.current?.click()}
                             style={{
-                              display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+                              display: "flex", alignItems: "center", gap: 12, padding: "8px 10px",
                               background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 13,
-                              textAlign: "left", cursor: "pointer", borderRadius: "var(--radius-sm)"
+                              textAlign: "left", cursor: "pointer", borderRadius: "var(--radius-md)", fontWeight: 500
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
                             onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                           >
-                            📷 Foto / Gambar
+                            <div style={{
+                              width: 32, height: 32, borderRadius: "50%", background: "rgba(255,255,255,0.08)",
+                              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+                            }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>
+                            </div>
+                            Foto
                           </button>
+
+                          {/* 3. File */}
                           <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
                             style={{
-                              display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+                              display: "flex", alignItems: "center", gap: 12, padding: "8px 10px",
                               background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 13,
-                              textAlign: "left", cursor: "pointer", borderRadius: "var(--radius-sm)"
+                              textAlign: "left", cursor: "pointer", borderRadius: "var(--radius-md)", fontWeight: 500
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
                             onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                           >
-                            📄 Dokumen / PDF
+                            <div style={{
+                              width: 32, height: 32, borderRadius: "50%", background: "rgba(255,255,255,0.08)",
+                              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+                            }}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
+                            </div>
+                            File
                           </button>
                         </div>
                       )}
                     </div>
 
-                    {/* Model AI Selector dipindah ke Bawah (Sesuai Tampilan Claude) */}
+                    {/* Model AI Selector Sejajar Lurus Kiri */}
                     <select
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
@@ -1388,6 +1450,7 @@ function AiChatContent() {
                         color: "var(--text-primary)",
                         cursor: "pointer",
                         maxWidth: 180,
+                        height: 32,
                       }}
                     >
                       {MODEL_OPTIONS.map((o) => (
@@ -1397,8 +1460,8 @@ function AiChatContent() {
 
                   </div>
 
-                  {/* Kanan: Voice Input [🎙️] + Send Button [✈️] */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {/* Kanan: Voice Input [🎙️] + Send Button [✈️] Sejajar Lurus */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                     {/* Tombol Pesan Suara / Microphone */}
                     <button
                       type="button"
