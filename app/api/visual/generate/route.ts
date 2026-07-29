@@ -1,10 +1,94 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
-import { DEFAULT_GEMINI_MODEL } from "@/lib/config";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 
-const GEMINI_MODEL = DEFAULT_GEMINI_MODEL;
+// Hirarki Model Gemini (Engine Utama: gemini-3.6-flash | Batas Minimum: gemini-2.5-flash)
+const GEMINI_FALLBACK_MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3-flash-preview",
+  "gemini-3.1-pro",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+];
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function callGeminiApiWithFallback(
+  supabase: any,
+  userPrompt: string,
+  systemPrompt: string
+): Promise<string> {
+  let lastError: any = null;
+
+  for (const currentModel of GEMINI_FALLBACK_MODELS) {
+    try {
+      const rawResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              generationConfig: { responseMimeType: "application/json" },
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          if (response.status === 429) throw new GeminiQuotaError(`Gemini rate-limited (429)`);
+          throw new Error(`Gemini Error: ${response.status}`);
+        }
+
+        const json = await response.json();
+        return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      });
+
+      if (rawResponse) return rawResponse;
+    } catch (err: any) {
+      lastError = err;
+      const status = err?.status || err?.response?.status;
+      const isRetryable = status === 503 || status === 429 || err?.message?.includes("503") || err?.message?.includes("429");
+
+      if (isRetryable) {
+        await delay(1500);
+        try {
+          const rawRetryResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
+            const response = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+                  systemInstruction: { parts: [{ text: systemPrompt }] },
+                  generationConfig: { responseMimeType: "application/json" },
+                }),
+              }
+            );
+
+            if (!response.ok) {
+              if (response.status === 429) throw new GeminiQuotaError(`Gemini rate-limited (429)`);
+              throw new Error(`Gemini Error: ${response.status}`);
+            }
+
+            const json = await response.json();
+            return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+          });
+
+          if (rawRetryResponse) return rawRetryResponse;
+        } catch (retryErr: any) {
+          lastError = retryErr;
+        }
+      }
+    }
+  }
+
+  throw new Error(`Gagal membuat visual package: ${lastError?.message || "Internal Server Error"}`);
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -79,26 +163,11 @@ FORMAT OUTPUT JSON:
 
 Pecah naskah ini menjadi daftar adegan terstruktur (JSON murni).`;
 
-      const rawPlan = await callGeminiWithRotation(supabase, async (apiKey) => {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: planUserPrompt }] }],
-              systemInstruction: { parts: [{ text: planSystemPrompt }] },
-              generationConfig: { responseMimeType: "application/json" },
-            }),
-          }
-        );
-        if (!response.ok) {
-          if (response.status === 429) throw new GeminiQuotaError(`Gemini rate-limited (429)`);
-          throw new Error(`Gemini Error: ${response.status}`);
-        }
-        const json = await response.json();
-        return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-      });
+      const rawPlan = await callGeminiApiWithFallback(
+        supabase,
+        planUserPrompt,
+        planSystemPrompt
+      );
 
       const parsedPlan: any = parseJsonResponse(rawPlan, { scenes: [] });
       const planScenes = Array.isArray(parsedPlan?.scenes) ? parsedPlan.scenes : [];
@@ -179,26 +248,11 @@ FORMAT JSON ADEGAN SINGLE:
 
 Direct adegan ini sekarang (format JSON murni).`;
 
-      const rawScene = await callGeminiWithRotation(supabase, async (apiKey) => {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: sceneUserPrompt }] }],
-              systemInstruction: { parts: [{ text: sceneSystemPrompt }] },
-              generationConfig: { responseMimeType: "application/json" },
-            }),
-          }
-        );
-        if (!response.ok) {
-          if (response.status === 429) throw new GeminiQuotaError(`Gemini rate-limited (429)`);
-          throw new Error(`Gemini Error: ${response.status}`);
-        }
-        const json = await response.json();
-        return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-      });
+      const rawScene = await callGeminiApiWithFallback(
+        supabase,
+        sceneUserPrompt,
+        sceneSystemPrompt
+      );
 
       const parsedScene = parseJsonResponse(rawScene, { scene: sceneItem.scene });
       return NextResponse.json({ data: parsedScene });

@@ -1,10 +1,101 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
-import { DEFAULT_GEMINI_MODEL } from "@/lib/config";
+import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 
-const GEMINI_MODEL = DEFAULT_GEMINI_MODEL;
+// Hirarki Model Gemini (Engine Utama: gemini-3.6-flash | Batas Minimum: gemini-2.5-flash)
+const GEMINI_FALLBACK_MODELS = [
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3-flash-preview",
+  "gemini-3.1-pro",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+];
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function callGeminiApiWithFallback(
+  supabase: any,
+  userPrompt: string,
+  systemPrompt: string,
+  temperature: number = 1.1
+): Promise<string> {
+  let lastError: any = null;
+
+  for (const currentModel of GEMINI_FALLBACK_MODELS) {
+    try {
+      const rawResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              generationConfig: {
+                responseMimeType: "application/json",
+                temperature,
+              },
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          if (response.status === 429) throw new GeminiQuotaError(`Gemini rate-limited (429)`);
+          throw new Error(`Gemini Error: ${response.status}`);
+        }
+
+        const json = await response.json();
+        return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      });
+
+      if (rawResponse) return rawResponse;
+    } catch (err: any) {
+      lastError = err;
+      const status = err?.status || err?.response?.status;
+      const isRetryable = status === 503 || status === 429 || err?.message?.includes("503") || err?.message?.includes("429");
+
+      if (isRetryable) {
+        await delay(1500);
+        try {
+          const rawRetryResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
+            const response = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+                  systemInstruction: { parts: [{ text: systemPrompt }] },
+                  generationConfig: {
+                    responseMimeType: "application/json",
+                    temperature,
+                  },
+                }),
+              }
+            );
+
+            if (!response.ok) {
+              if (response.status === 429) throw new GeminiQuotaError(`Gemini rate-limited (429)`);
+              throw new Error(`Gemini Error: ${response.status}`);
+            }
+
+            const json = await response.json();
+            return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+          });
+
+          if (rawRetryResponse) return rawRetryResponse;
+        } catch (retryErr: any) {
+          lastError = retryErr;
+        }
+      }
+    }
+  }
+
+  throw new Error(`Gagal membuat kandidat topik: ${lastError?.message || "Internal Server Error"}`);
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -45,8 +136,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // AMBIL RIWAYAT TOPIK YANG SUDAH ADA DI TOPIC BANK USER — supaya AI tidak mengulang ide yang sama/mirip.
-    // Ini kunci fix untuk bug "ide selalu itu-itu lagi, cuma beda judul".
     const { data: existingTopics } = await supabase
       .from("topik")
       .select("judul, catatan")
@@ -111,38 +200,12 @@ Tolong hasilkan kandidat ide topik yang lolos validasi skor >= 40/50 poin sekara
 
 Tolong hasilkan kandidat ide topik yang lolos validasi skor >= 40/50 poin sekarang dalam format JSON murni.`;
 
-    const rawResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: "user",
-                parts: [{ text: userPrompt }],
-              },
-            ],
-            systemInstruction: {
-              parts: [{ text: systemPrompt }],
-            },
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 1.1,
-            },
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Gemini API Error: ${response.status} - ${errText}`);
-      }
-
-      const json = await response.json();
-      return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-    });
+    const rawResponse = await callGeminiApiWithFallback(
+      supabase,
+      userPrompt,
+      systemPrompt,
+      1.1
+    );
 
     const parsedData: any = parseJsonResponse(rawResponse, { candidates: [] });
 

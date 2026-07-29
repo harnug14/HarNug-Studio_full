@@ -8,6 +8,7 @@ interface ChatMessageItem {
   id?: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: { name: string; url: string; type: string }[];
 }
 
 interface SessionItem {
@@ -25,9 +26,20 @@ interface TopikCard {
   deskripsi: string;
 }
 
+interface AttachmentFile {
+  name: string;
+  type: string;
+  base64: string;
+  previewUrl?: string;
+}
+
 const MODEL_OPTIONS = [
-  { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash (Rekomendasi)" },
+  { value: "gemini-3.6-flash", label: "Gemini 3.6 Flash" },
+  { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
   { value: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" },
+  { value: "gemini-3.1-pro", label: "Gemini 3.1 Pro" },
+  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { value: "groq-llama-3.3-70b-versatile", label: "Groq Llama 3.3 70B" },
   { value: "groq-mixtral-8x7b-32768", label: "Groq Mixtral 8x7B" },
 ];
@@ -99,6 +111,11 @@ function AiChatContent() {
   const [isThinking, setIsThinking] = useState(false);
   const [isWebSearch, setIsWebSearch] = useState(false);
 
+  // Multimodal Attachments & Voice State
+  const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [contextLabel, setContextLabel] = useState<string | null>(null);
@@ -120,6 +137,10 @@ function AiChatContent() {
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const plusMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarReady, setSidebarReady] = useState(false);
 
@@ -142,19 +163,21 @@ function AiChatContent() {
     };
   }, [sidebarOpen]);
 
+  // Click outside listener for plus menu
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpenId(null);
       }
+      if (plusMenuRef.current && !plusMenuRef.current.contains(event.target as Node)) {
+        setPlusMenuOpen(false);
+      }
     }
-    if (dropdownOpenId) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [dropdownOpenId]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -229,6 +252,72 @@ function AiChatContent() {
   useEffect(() => {
     adjustTextareaHeight();
   }, [input]);
+
+  // Voice Input Speech-to-Text
+  const handleVoiceInput = () => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Browser Anda belum mendukung input suara. Silakan gunakan Google Chrome terbaru.");
+      return;
+    }
+
+    if (isListening) {
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "id-ID";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      if (transcript) {
+        setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      }
+    };
+
+    recognition.onerror = () => setIsListening(false);
+    recognition.start();
+  };
+
+  // Handle File & Image Upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: "image" | "file") => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64Raw = event.target?.result as string;
+        if (!base64Raw) return;
+
+        setAttachments((prev) => [
+          ...prev,
+          {
+            name: file.name,
+            type: file.type || (fileType === "image" ? "image/png" : "application/pdf"),
+            base64: base64Raw,
+            previewUrl: fileType === "image" ? base64Raw : undefined,
+          },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    setPlusMenuOpen(false);
+    if (e.target) e.target.value = "";
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
 
   async function fetchSessions() {
     setLoadingSessions(true);
@@ -330,6 +419,7 @@ function AiChatContent() {
     setSavingMessageIndex(null);
     setSavingCardKey(null);
     setInput("");
+    setAttachments([]);
     setIsThinking(false);
     setIsWebSearch(false);
     if (typeof window !== "undefined" && window.innerWidth <= 768) {
@@ -341,14 +431,23 @@ function AiChatContent() {
     if (loading) return;
 
     const pesanDikirim = input.trim() || (!contextSent && contextText ? contextText : "");
-    if (!pesanDikirim) return;
+    if (!pesanDikirim && attachments.length === 0) return;
 
+    const currentAttachments = [...attachments];
     setInput("");
+    setAttachments([]);
     if (inputRef.current) inputRef.current.style.height = "auto";
     setLoading(true);
     if (contextText) setContextSent(true);
 
-    setMessages((prev) => [...prev, { role: "user", content: pesanDikirim }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        content: pesanDikirim,
+        attachments: currentAttachments.map((a) => ({ name: a.name, url: a.previewUrl || "", type: a.type })),
+      },
+    ]);
 
     let modeDipakai = "biasa";
     if (isThinking && isWebSearch) {
@@ -372,6 +471,7 @@ function AiChatContent() {
             sumber_naskah_id: fromNaskah || null,
             contextText: undefined,
             contentTarget: saveTarget,
+            attachments: currentAttachments,
           }),
         });
         const data = await res.json();
@@ -387,7 +487,10 @@ function AiChatContent() {
         const res = await fetch(`/api/chat/${activeSessionId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ pesan: pesanDikirim }),
+          body: JSON.stringify({
+            pesan: pesanDikirim,
+            attachments: currentAttachments,
+          }),
         });
         const data = await res.json();
 
@@ -537,6 +640,24 @@ function AiChatContent() {
   return (
     <div style={{ height: "100%", width: "100%", background: "var(--bg-primary)", overflow: "hidden", position: "relative" }}>
       
+      {/* Hidden File Inputs */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={(e) => handleFileUpload(e, "file")}
+        accept=".pdf,.txt,.doc,.docx,.csv"
+        style={{ display: "none" }}
+        multiple
+      />
+      <input
+        type="file"
+        ref={imageInputRef}
+        onChange={(e) => handleFileUpload(e, "image")}
+        accept="image/*"
+        style={{ display: "none" }}
+        multiple
+      />
+
       {/* Overlay Backdrop khusus Mobile saat Drawer Riwayat Chat Terbuka */}
       {sidebarOpen && (
         <div
@@ -767,13 +888,12 @@ function AiChatContent() {
 
         {/* Main Chat Content Area */}
         <div style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", position: "relative", minWidth: 0, height: "100%", overflow: "hidden", background: "var(--bg-primary)" }}>
-          {/* Header Bar */}
+          {/* Header Bar Polos Tanpa Garis & Tanpa Teks Tengah */}
           <div
             className="chat-header-bar"
             style={{
               height: 57,
               padding: "0 20px",
-              borderBottom: "1px solid var(--glass-border)",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
@@ -810,26 +930,8 @@ function AiChatContent() {
               </button>
             </div>
 
-            {/* Model Selector Tepat di Tengah Header */}
-            <div style={{ flex: 1, display: "flex", justifyContent: "center", minWidth: 0 }}>
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="select-field chat-select-field"
-                style={{
-                  maxWidth: 280,
-                  width: "100%",
-                  padding: "6px 28px 6px 12px",
-                  fontSize: 13,
-                  textAlign: "center",
-                  borderRadius: "var(--radius-lg)",
-                }}
-              >
-                {MODEL_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
+            {/* Tengah Kosong Polos */}
+            <div style={{ flex: 1 }} />
 
             {/* Penyeimbang Kanan */}
             <div style={{ width: 36, flexShrink: 0 }} />
@@ -863,20 +965,12 @@ function AiChatContent() {
           <div className="chat-messages-area" style={{ flex: "1 1 auto", overflowY: "auto", overflowX: "hidden", padding: "24px", display: "flex", flexDirection: "column", gap: 20, minHeight: 0 }}>
             <div style={{ maxWidth: 840, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
               {messages.length === 0 && (
-                <div style={{ margin: "auto", textAlign: "center", maxWidth: 400, padding: "40px 16px" }}>
+                <div style={{ margin: "auto", textAlign: "center", maxWidth: 440, padding: "60px 16px" }}>
                   <div style={{
-                    width: 56, height: 56, borderRadius: "var(--radius-2xl)", background: "var(--glass-bg)", border: "1px solid var(--glass-border)",
-                    display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", color: "var(--accent-purple)"
+                    fontSize: 26, fontWeight: 500, color: "var(--text-primary)", fontFamily: "serif"
                   }}>
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                    Ada yang bisa dibantu?
                   </div>
-                  <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: "var(--text-primary)" }}>Mulai Chat Baru</h2>
-                  <p style={{ color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.5 }}>
-                    {!contextLabel
-                      ? "Tanyakan apapun, generate script, ide topic, atau riset konten YouTube Shorts Anda di sini."
-                      : `Tekan Kirim untuk meminta AI memproses konteks dari ${contextLabel}.`
-                    }
-                  </p>
                 </div>
               )}
 
@@ -907,6 +1001,21 @@ function AiChatContent() {
                     </div>
 
                     <div className="chat-bubble-wrapper" style={{ maxWidth: "88%", minWidth: 0, flex: 1 }}>
+                      {/* Attachments pada pesan user */}
+                      {m.attachments && m.attachments.length > 0 && (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                          {m.attachments.map((att, ai) => (
+                            <div key={ai} style={{ borderRadius: "var(--radius-md)", overflow: "hidden", border: "1px solid var(--glass-border)", background: "var(--bg-secondary)", padding: 4 }}>
+                              {att.url ? (
+                                <img src={att.url} alt={att.name} style={{ maxWidth: 160, maxHeight: 120, objectFit: "cover", borderRadius: "var(--radius-sm)" }} />
+                              ) : (
+                                <div style={{ padding: "6px 10px", fontSize: 12, color: "var(--text-secondary)" }}>📄 {att.name}</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       <div style={{
                         padding: "12px 16px",
                         borderRadius: "var(--radius-lg)",
@@ -1057,12 +1166,11 @@ function AiChatContent() {
             </div>
           </div>
 
-          {/* Input Chat Container (Di-lock Fleksibel Sejajar 100% dengan Chat Messages) */}
+          {/* Redesigned Claude-Style Bottom Card Container (Polos Tanpa Garis Pembatas) */}
           <div
             className="chat-input-container"
             style={{
               padding: "12px 20px",
-              borderTop: "1px solid var(--glass-border)",
               flexShrink: 0,
               width: "100%",
               display: "flex",
@@ -1086,9 +1194,9 @@ function AiChatContent() {
                   type="button"
                   onClick={() => setIsThinking((prev) => !prev)}
                   style={{
-                    padding: "5px 14px",
+                    padding: "4px 12px",
                     borderRadius: "16px",
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: isThinking ? 600 : 400,
                     background: isThinking ? "rgba(168, 85, 247, 0.25)" : "rgba(255, 255, 255, 0.04)",
                     color: isThinking ? "var(--accent-purple, #a855f7)" : "var(--text-secondary)",
@@ -1104,9 +1212,9 @@ function AiChatContent() {
                   type="button"
                   onClick={() => setIsWebSearch((prev) => !prev)}
                   style={{
-                    padding: "5px 14px",
+                    padding: "4px 12px",
                     borderRadius: "16px",
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: isWebSearch ? 600 : 400,
                     background: isWebSearch ? "rgba(6, 182, 212, 0.25)" : "rgba(255, 255, 255, 0.04)",
                     color: isWebSearch ? "var(--accent-cyan, #06b6d4)" : "var(--text-secondary)",
@@ -1119,22 +1227,52 @@ function AiChatContent() {
                 </button>
               </div>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSend();
-                }}
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "flex-end",
-                  background: "var(--bg-secondary)",
-                  border: "1px solid var(--glass-border)",
-                  borderRadius: "var(--radius-xl)",
-                  padding: "6px 8px 6px 12px",
-                  width: "100%",
-                }}
-              >
+              {/* Input Card Outer */}
+              <div style={{
+                background: "var(--bg-secondary)",
+                border: "1px solid var(--glass-border)",
+                borderRadius: "var(--radius-xl)",
+                padding: "12px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                position: "relative",
+              }}>
+                {/* Preview File Attachments */}
+                {attachments.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", borderBottom: "1px solid var(--glass-border)", paddingBottom: 10 }}>
+                    {attachments.map((att, ai) => (
+                      <div key={ai} style={{
+                        position: "relative",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        background: "var(--bg-elevated)",
+                        border: "1px solid var(--glass-border)",
+                        borderRadius: "var(--radius-md)",
+                        padding: "4px 8px",
+                        fontSize: 12,
+                        color: "var(--text-primary)",
+                      }}>
+                        {att.previewUrl ? (
+                          <img src={att.previewUrl} alt={att.name} style={{ width: 24, height: 24, borderRadius: 4, objectFit: "cover" }} />
+                        ) : (
+                          <span>📄</span>
+                        )}
+                        <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{att.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(ai)}
+                          style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", padding: "0 2px", fontSize: 14 }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Textarea Input */}
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -1145,10 +1283,10 @@ function AiChatContent() {
                       handleSend();
                     }
                   }}
-                  placeholder={contextText && !contextSent ? "Klik Kirim untuk memproses konteks..." : "Pesan ke HarNug AI..."}
+                  placeholder={contextText && !contextSent ? "Klik Kirim untuk memproses konteks..." : "Mengobrol dengan HarNug AI..."}
                   rows={1}
                   style={{
-                    flex: 1,
+                    width: "100%",
                     background: "transparent",
                     border: "none",
                     outline: "none",
@@ -1156,28 +1294,162 @@ function AiChatContent() {
                     fontSize: 14,
                     lineHeight: 1.5,
                     resize: "none",
-                    maxHeight: 150,
+                    maxHeight: 140,
                     minWidth: 0,
                   }}
                 />
-                <button
-                  type="submit"
-                  disabled={loading || (!input.trim() && contextSent) || (!input.trim() && !contextText)}
-                  className="btn btn-primary btn-icon"
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: "var(--radius-lg)",
-                    flexShrink: 0,
-                    opacity: loading || (!input.trim() && contextSent) || (!input.trim() && !contextText) ? 0.5 : 1,
-                  }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="22" y1="2" x2="11" y2="13"></line>
-                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                  </svg>
-                </button>
-              </form>
+
+                {/* Bottom Controls Bar (Claude Style: [+] | Model Selector | Mic | Send) */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
+                    
+                    {/* Tombol [+] Multimodal Upload */}
+                    <div ref={plusMenuRef} style={{ position: "relative" }}>
+                      <button
+                        type="button"
+                        onClick={() => setPlusMenuOpen((prev) => !prev)}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: "var(--radius-full)",
+                          background: "var(--glass-bg-hover)",
+                          border: "1px solid var(--glass-border)",
+                          color: "var(--text-primary)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                        }}
+                        title="Lampirkan foto atau dokumen"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                      </button>
+
+                      {/* Dropdown Menu [+] */}
+                      {plusMenuOpen && (
+                        <div style={{
+                          position: "absolute",
+                          bottom: "100%",
+                          left: 0,
+                          marginBottom: 8,
+                          background: "var(--bg-elevated)",
+                          border: "1px solid var(--glass-border)",
+                          borderRadius: "var(--radius-lg)",
+                          padding: 6,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                          zIndex: 50,
+                          minWidth: 160,
+                          boxShadow: "var(--shadow-md)"
+                        }}>
+                          <button
+                            type="button"
+                            onClick={() => imageInputRef.current?.click()}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+                              background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 13,
+                              textAlign: "left", cursor: "pointer", borderRadius: "var(--radius-sm)"
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                          >
+                            📷 Foto / Gambar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+                              background: "transparent", border: "none", color: "var(--text-primary)", fontSize: 13,
+                              textAlign: "left", cursor: "pointer", borderRadius: "var(--radius-sm)"
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+                            onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                          >
+                            📄 Dokumen / PDF
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Model AI Selector dipindah ke Bawah (Sesuai Tampilan Claude) */}
+                    <select
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      className="select-field chat-select-field"
+                      style={{
+                        padding: "5px 24px 5px 10px",
+                        fontSize: 12,
+                        borderRadius: "20px",
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid var(--glass-border)",
+                        color: "var(--text-primary)",
+                        cursor: "pointer",
+                        maxWidth: 180,
+                      }}
+                    >
+                      {MODEL_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+
+                  </div>
+
+                  {/* Kanan: Voice Input [🎙️] + Send Button [✈️] */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {/* Tombol Pesan Suara / Microphone */}
+                    <button
+                      type="button"
+                      onClick={handleVoiceInput}
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: "var(--radius-full)",
+                        background: isListening ? "rgba(239, 68, 68, 0.2)" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${isListening ? "#f87171" : "var(--glass-border)"}`,
+                        color: isListening ? "#f87171" : "var(--text-primary)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                        animation: isListening ? "pulse 1.2s infinite" : "none",
+                      }}
+                      title={isListening ? "Mendengarkan suara..." : "Bicara pesan suara"}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" />
+                        <line x1="8" y1="23" x2="16" y2="23" />
+                      </svg>
+                    </button>
+
+                    {/* Tombol Kirim */}
+                    <button
+                      type="button"
+                      onClick={handleSend}
+                      disabled={loading || (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0)}
+                      className="btn btn-primary btn-icon"
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: "var(--radius-full)",
+                        flexShrink: 0,
+                        opacity: loading || (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0) ? 0.5 : 1,
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div style={{ textAlign: "center", fontSize: 10, color: "var(--text-tertiary)", marginTop: 6 }}>
                 AI dapat melakukan kesalahan. Harap verifikasi info penting.
               </div>
@@ -1190,6 +1462,12 @@ function AiChatContent() {
       <style jsx>{`
         .chat-mobile-overlay {
           display: none;
+        }
+
+        @keyframes pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.08); }
+          100% { transform: scale(1); }
         }
 
         @media (max-width: 768px) {
