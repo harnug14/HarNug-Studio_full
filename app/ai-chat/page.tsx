@@ -861,321 +861,326 @@ function AiChatContent() {
 
           {/* Area Pesan Chat */}
           <div className="chat-messages-area" style={{ flex: "1 1 auto", overflowY: "auto", overflowX: "hidden", padding: "24px", display: "flex", flexDirection: "column", gap: 20, minHeight: 0 }}>
-            {messages.length === 0 && (
-              <div style={{ margin: "auto", textAlign: "center", maxWidth: 400, padding: "0 16px" }}>
-                <div style={{
-                  width: 56, height: 56, borderRadius: "var(--radius-2xl)", background: "var(--glass-bg)", border: "1px solid var(--glass-border)",
-                  display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", color: "var(--accent-purple)"
-                }}>
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+            <div style={{ maxWidth: 840, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+              {messages.length === 0 && (
+                <div style={{ margin: "auto", textAlign: "center", maxWidth: 400, padding: "40px 16px" }}>
+                  <div style={{
+                    width: 56, height: 56, borderRadius: "var(--radius-2xl)", background: "var(--glass-bg)", border: "1px solid var(--glass-border)",
+                    display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", color: "var(--accent-purple)"
+                  }}>
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                  </div>
+                  <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: "var(--text-primary)" }}>Mulai Chat Baru</h2>
+                  <p style={{ color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.5 }}>
+                    {!contextLabel
+                      ? "Tanyakan apapun, generate script, ide topic, atau riset konten YouTube Shorts Anda di sini."
+                      : `Tekan Kirim untuk meminta AI memproses konteks dari ${contextLabel}.`
+                    }
+                  </p>
                 </div>
-                <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8, color: "var(--text-primary)" }}>Mulai Chat Baru</h2>
-                <p style={{ color: "var(--text-secondary)", fontSize: 13, lineHeight: 1.5 }}>
-                  {!contextLabel
-                    ? "Tanyakan apapun, generate script, ide topic, atau riset konten YouTube Shorts Anda di sini."
-                    : `Tekan Kirim untuk meminta AI memproses konteks dari ${contextLabel}.`
-                  }
-                </p>
-              </div>
-            )}
+              )}
 
-            {messages.map((m, i) => {
-              const { cards, sisaTeks } = m.role === "assistant" ? parseTopikCards(m.content) : { cards: [], sisaTeks: m.content };
-              const { isDraft, cleanContent } = m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
-              const isSavableDraft = m.role === "assistant" && saveTarget && (saveTarget === "naskah" || saveTarget === "visual") && isDraft;
+              {messages.map((m, i) => {
+                const { cards, sisaTeks } = m.role === "assistant" ? parseTopikCards(m.content) : { cards: [], sisaTeks: m.content };
+                const { isDraft, cleanContent } = m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
+                const isSavableDraft = m.role === "assistant" && saveTarget && (saveTarget === "naskah" || saveTarget === "visual") && isDraft;
 
-              return (
-                <div key={i} className="animate-fade-in-up" style={{
-                  display: "flex",
-                  flexDirection: m.role === "user" ? "row-reverse" : "row",
-                  gap: 12,
-                  alignItems: "flex-start",
-                  width: "100%",
-                }}>
+                return (
+                  <div key={i} className="animate-fade-in-up" style={{
+                    display: "flex",
+                    flexDirection: m.role === "user" ? "row-reverse" : "row",
+                    gap: 12,
+                    alignItems: "flex-start",
+                    width: "100%",
+                  }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      background: m.role === "user" ? "var(--glass-bg-hover)" : "var(--accent-primary)",
+                      color: m.role === "user" ? "var(--text-primary)" : "#fff", border: `1px solid ${m.role === "user" ? "var(--glass-border)" : "transparent"}`,
+                    }}>
+                      {m.role === "user" ? (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                      ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+                      )}
+                    </div>
+
+                    <div className="chat-bubble-wrapper" style={{ maxWidth: "88%", minWidth: 0, flex: 1 }}>
+                      <div style={{
+                        padding: "12px 16px",
+                        borderRadius: "var(--radius-lg)",
+                        borderTopLeftRadius: m.role === "assistant" ? 4 : "var(--radius-lg)",
+                        borderTopRightRadius: m.role === "user" ? 4 : "var(--radius-lg)",
+                        background: m.role === "user" ? "var(--bg-elevated)" : "var(--glass-bg)",
+                        border: `1px solid ${m.role === "user" ? "var(--glass-border-hover)" : "var(--glass-border)"}`,
+                        fontSize: 14,
+                        lineHeight: 1.6,
+                        color: "var(--text-primary)",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        overflowWrap: "break-word",
+                        boxShadow: m.role === "assistant" ? "var(--shadow-sm)" : "none",
+                      }}>
+                        {m.role === "assistant" && cards.length > 0 ? (
+                          <>
+                            {sisaTeks && <div style={{ marginBottom: 16 }}>{sisaTeks}</div>}
+                            <div style={{ display: "grid", gap: 12 }}>
+                              {cards.map((card, ci) => {
+                                const cardKey = `${i}-${ci}`;
+                                const isSavingCard = savingCardKey === cardKey;
+                                return (
+                                  <div key={ci} style={{
+                                    padding: 12,
+                                    borderRadius: "var(--radius-md)",
+                                    background: "var(--bg-secondary)",
+                                    border: "1px solid var(--glass-border)",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: 8,
+                                  }}>
+                                    <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
+                                      {card.judul}
+                                    </div>
+                                    <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                      {card.deskripsi}
+                                    </div>
+                                    <button
+                                      onClick={() => handleSaveCard(i, ci, card)}
+                                      disabled={isSavingCard}
+                                      className="btn btn-secondary btn-sm"
+                                      style={{ alignSelf: "flex-start", marginTop: 4, gap: 6, fontSize: 12 }}
+                                    >
+                                      <SaveIcon />
+                                      {isSavingCard ? "Menyimpan..." : "Simpan Topik"}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        ) : (
+                          <div>{cleanContent}</div>
+                        )}
+
+                        {isSavableDraft && (
+                          <div style={{ marginTop: 12 }}>
+                            <button
+                              onClick={() => openSaveForm(i, cleanContent)}
+                              className="btn btn-primary btn-sm"
+                              style={{ gap: 6, fontSize: 12 }}
+                            >
+                              <SaveIcon />
+                              Simpan ke {saveTarget === "naskah" ? "Naskah" : "Visual"}
+                            </button>
+                          </div>
+                        )}
+
+                        {savingMessageIndex === i && (
+                          <div style={{
+                            marginTop: 12,
+                            padding: 14,
+                            borderRadius: "var(--radius-md)",
+                            background: "var(--bg-elevated)",
+                            border: "1px solid var(--accent-primary)",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                          }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                              Simpan ke {saveTarget === "topik" ? "Topik" : saveTarget === "naskah" ? "Naskah" : "Visual"}
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Judul</label>
+                              <input
+                                type="text"
+                                value={saveJudul}
+                                onChange={(e) => setSaveJudul(e.target.value)}
+                                className="input-field"
+                                style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Isi / Catatan</label>
+                              <textarea
+                                value={saveCatatan}
+                                onChange={(e) => setSaveCatatan(e.target.value)}
+                                className="input-field"
+                                rows={3}
+                                style={{ width: "100%", padding: "6px 10px", fontSize: 13, resize: "vertical" }}
+                              />
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                              <button
+                                onClick={cancelSaveForm}
+                                className="btn btn-ghost btn-sm"
+                                style={{ fontSize: 12 }}
+                              >
+                                Batal
+                              </button>
+                              <button
+                                onClick={handleConfirmSave}
+                                disabled={saveSubmitting}
+                                className="btn btn-primary btn-sm"
+                                style={{ fontSize: 12 }}
+                              >
+                                {saveSubmitting ? "Menyimpan..." : "Konfirmasi Simpan"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {loading && (
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                   <div style={{
                     width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    background: m.role === "user" ? "var(--glass-bg-hover)" : "var(--accent-primary)",
-                    color: m.role === "user" ? "var(--text-primary)" : "#fff", border: `1px solid ${m.role === "user" ? "var(--glass-border)" : "transparent"}`,
+                    background: "var(--accent-primary)", color: "#fff"
                   }}>
-                    {m.role === "user" ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                    ) : (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
-                    )}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
                   </div>
-
-                  <div className="chat-bubble-wrapper" style={{ maxWidth: "82%", minWidth: 0 }}>
-                    <div style={{
-                      padding: "12px 16px",
-                      borderRadius: "var(--radius-lg)",
-                      borderTopLeftRadius: m.role === "assistant" ? 4 : "var(--radius-lg)",
-                      borderTopRightRadius: m.role === "user" ? 4 : "var(--radius-lg)",
-                      background: m.role === "user" ? "var(--bg-elevated)" : "var(--glass-bg)",
-                      border: `1px solid ${m.role === "user" ? "var(--glass-border-hover)" : "var(--glass-border)"}`,
-                      fontSize: 14,
-                      lineHeight: 1.6,
-                      color: "var(--text-primary)",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                      overflowWrap: "break-word",
-                      boxShadow: m.role === "assistant" ? "var(--shadow-sm)" : "none",
-                    }}>
-                      {m.role === "assistant" && cards.length > 0 ? (
-                        <>
-                          {sisaTeks && <div style={{ marginBottom: 16 }}>{sisaTeks}</div>}
-                          <div style={{ display: "grid", gap: 12 }}>
-                            {cards.map((card, ci) => {
-                              const cardKey = `${i}-${ci}`;
-                              const isSavingCard = savingCardKey === cardKey;
-                              return (
-                                <div key={ci} style={{
-                                  padding: 12,
-                                  borderRadius: "var(--radius-md)",
-                                  background: "var(--bg-secondary)",
-                                  border: "1px solid var(--glass-border)",
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  gap: 8,
-                                }}>
-                                  <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
-                                    {card.judul}
-                                  </div>
-                                  <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                                    {card.deskripsi}
-                                  </div>
-                                  <button
-                                    onClick={() => handleSaveCard(i, ci, card)}
-                                    disabled={isSavingCard}
-                                    className="btn btn-secondary btn-sm"
-                                    style={{ alignSelf: "flex-start", marginTop: 4, gap: 6, fontSize: 12 }}
-                                  >
-                                    <SaveIcon />
-                                    {isSavingCard ? "Menyimpan..." : "Simpan Topik"}
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </>
-                      ) : (
-                        <div>{cleanContent}</div>
-                      )}
-
-                      {isSavableDraft && (
-                        <div style={{ marginTop: 12 }}>
-                          <button
-                            onClick={() => openSaveForm(i, cleanContent)}
-                            className="btn btn-primary btn-sm"
-                            style={{ gap: 6, fontSize: 12 }}
-                          >
-                            <SaveIcon />
-                            Simpan ke {saveTarget === "naskah" ? "Naskah" : "Visual"}
-                          </button>
-                        </div>
-                      )}
-
-                      {savingMessageIndex === i && (
-                        <div style={{
-                          marginTop: 12,
-                          padding: 14,
-                          borderRadius: "var(--radius-md)",
-                          background: "var(--bg-elevated)",
-                          border: "1px solid var(--accent-primary)",
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 10,
-                        }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-                            Simpan ke {saveTarget === "topik" ? "Topik" : saveTarget === "naskah" ? "Naskah" : "Visual"}
-                          </div>
-                          <div>
-                            <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Judul</label>
-                            <input
-                              type="text"
-                              value={saveJudul}
-                              onChange={(e) => setSaveJudul(e.target.value)}
-                              className="input-field"
-                              style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
-                            />
-                          </div>
-                          <div>
-                            <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Isi / Catatan</label>
-                            <textarea
-                              value={saveCatatan}
-                              onChange={(e) => setSaveCatatan(e.target.value)}
-                              className="input-field"
-                              rows={3}
-                              style={{ width: "100%", padding: "6px 10px", fontSize: 13, resize: "vertical" }}
-                            />
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                            <button
-                              onClick={cancelSaveForm}
-                              className="btn btn-ghost btn-sm"
-                              style={{ fontSize: 12 }}
-                            >
-                              Batal
-                            </button>
-                            <button
-                              onClick={handleConfirmSave}
-                              disabled={saveSubmitting}
-                              className="btn btn-primary btn-sm"
-                              style={{ fontSize: 12 }}
-                            >
-                              {saveSubmitting ? "Menyimpan..." : "Konfirmasi Simpan"}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                  <div style={{
+                    padding: "10px 14px", borderRadius: "var(--radius-lg)", borderTopLeftRadius: 4,
+                    background: "var(--glass-bg)", border: "1px solid var(--glass-border)", display: "flex", alignItems: "center", gap: 8
+                  }}>
+                    <div className="spinner" style={{ width: 14, height: 14 }} />
+                    <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Sedang mengetik...</span>
                   </div>
                 </div>
-              );
-            })}
-
-            {loading && (
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  background: "var(--accent-primary)", color: "#fff"
-                }}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
-                </div>
-                <div style={{
-                  padding: "10px 14px", borderRadius: "var(--radius-lg)", borderTopLeftRadius: 4,
-                  background: "var(--glass-bg)", border: "1px solid var(--glass-border)", display: "flex", alignItems: "center", gap: 8
-                }}>
-                  <div className="spinner" style={{ width: 14, height: 14 }} />
-                  <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Sedang mengetik...</span>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
+              )}
+              <div ref={messagesEndRef} />
+            </div>
           </div>
 
-          {/* Input Chat Container */}
+          {/* Input Chat Container (Di-lock Fleksibel Sejajar 100% dengan Chat Messages) */}
           <div
             className="chat-input-container"
             style={{
-              padding: "12px 16px",
+              padding: "12px 20px",
               borderTop: "1px solid var(--glass-border)",
               flexShrink: 0,
-              maxWidth: 900,
               width: "100%",
-              margin: "0 auto",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
             }}
           >
-            {/* Toggle Mode: Thinking & Web Search */}
-            <div
-              className="chat-mode-pills"
-              style={{
-                display: "flex",
-                gap: 8,
-                marginBottom: 8,
-                justifyContent: "center",
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setIsThinking((prev) => !prev)}
+            <div style={{ width: "100%", maxWidth: 840 }}>
+              {/* Toggle Mode: Thinking & Web Search */}
+              <div
+                className="chat-mode-pills"
                 style={{
-                  padding: "5px 14px",
-                  borderRadius: "16px",
-                  fontSize: 12,
-                  fontWeight: isThinking ? 600 : 400,
-                  background: isThinking ? "rgba(168, 85, 247, 0.25)" : "rgba(255, 255, 255, 0.04)",
-                  color: isThinking ? "var(--accent-purple, #a855f7)" : "var(--text-secondary)",
-                  border: `1px solid ${isThinking ? "rgba(168, 85, 247, 0.6)" : "var(--glass-border)"}`,
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
+                  display: "flex",
+                  gap: 8,
+                  marginBottom: 8,
+                  justifyContent: "center",
+                  flexWrap: "wrap",
                 }}
               >
-                Thinking {isThinking ? "✓" : ""}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setIsThinking((prev) => !prev)}
+                  style={{
+                    padding: "5px 14px",
+                    borderRadius: "16px",
+                    fontSize: 12,
+                    fontWeight: isThinking ? 600 : 400,
+                    background: isThinking ? "rgba(168, 85, 247, 0.25)" : "rgba(255, 255, 255, 0.04)",
+                    color: isThinking ? "var(--accent-purple, #a855f7)" : "var(--text-secondary)",
+                    border: `1px solid ${isThinking ? "rgba(168, 85, 247, 0.6)" : "var(--glass-border)"}`,
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  Thinking {isThinking ? "✓" : ""}
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setIsWebSearch((prev) => !prev)}
-                style={{
-                  padding: "5px 14px",
-                  borderRadius: "16px",
-                  fontSize: 12,
-                  fontWeight: isWebSearch ? 600 : 400,
-                  background: isWebSearch ? "rgba(6, 182, 212, 0.25)" : "rgba(255, 255, 255, 0.04)",
-                  color: isWebSearch ? "var(--accent-cyan, #06b6d4)" : "var(--text-secondary)",
-                  border: `1px solid ${isWebSearch ? "rgba(6, 182, 212, 0.6)" : "var(--glass-border)"}`,
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
-              >
-                Web Search {isWebSearch ? "✓" : ""}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setIsWebSearch((prev) => !prev)}
+                  style={{
+                    padding: "5px 14px",
+                    borderRadius: "16px",
+                    fontSize: 12,
+                    fontWeight: isWebSearch ? 600 : 400,
+                    background: isWebSearch ? "rgba(6, 182, 212, 0.25)" : "rgba(255, 255, 255, 0.04)",
+                    color: isWebSearch ? "var(--accent-cyan, #06b6d4)" : "var(--text-secondary)",
+                    border: `1px solid ${isWebSearch ? "rgba(6, 182, 212, 0.6)" : "var(--glass-border)"}`,
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  Web Search {isWebSearch ? "✓" : ""}
+                </button>
+              </div>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSend();
-              }}
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "flex-end",
-                background: "var(--bg-secondary)",
-                border: "1px solid var(--glass-border)",
-                borderRadius: "var(--radius-xl)",
-                padding: "6px 8px 6px 12px",
-                width: "100%",
-              }}
-            >
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSend();
                 }}
-                placeholder={contextText && !contextSent ? "Klik Kirim untuk memproses konteks..." : "Pesan ke HarNug AI..."}
-                rows={1}
                 style={{
-                  flex: 1,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  color: "var(--text-primary)",
-                  fontSize: 14,
-                  lineHeight: 1.5,
-                  resize: "none",
-                  maxHeight: 150,
-                  minWidth: 0,
-                }}
-              />
-              <button
-                type="submit"
-                disabled={loading || (!input.trim() && contextSent) || (!input.trim() && !contextText)}
-                className="btn btn-primary btn-icon"
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: "var(--radius-lg)",
-                  flexShrink: 0,
-                  opacity: loading || (!input.trim() && contextSent) || (!input.trim() && !contextText) ? 0.5 : 1,
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "flex-end",
+                  background: "var(--bg-secondary)",
+                  border: "1px solid var(--glass-border)",
+                  borderRadius: "var(--radius-xl)",
+                  padding: "6px 8px 6px 12px",
+                  width: "100%",
                 }}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-              </button>
-            </form>
-            <div style={{ textAlign: "center", fontSize: 10, color: "var(--text-tertiary)", marginTop: 6 }}>
-              AI dapat melakukan kesalahan. Harap verifikasi info penting.
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder={contextText && !contextSent ? "Klik Kirim untuk memproses konteks..." : "Pesan ke HarNug AI..."}
+                  rows={1}
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    color: "var(--text-primary)",
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    resize: "none",
+                    maxHeight: 150,
+                    minWidth: 0,
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={loading || (!input.trim() && contextSent) || (!input.trim() && !contextText)}
+                  className="btn btn-primary btn-icon"
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: "var(--radius-lg)",
+                    flexShrink: 0,
+                    opacity: loading || (!input.trim() && contextSent) || (!input.trim() && !contextText) ? 0.5 : 1,
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </form>
+              <div style={{ textAlign: "center", fontSize: 10, color: "var(--text-tertiary)", marginTop: 6 }}>
+                AI dapat melakukan kesalahan. Harap verifikasi info penting.
+              </div>
             </div>
           </div>
         </div>

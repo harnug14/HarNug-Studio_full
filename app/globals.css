@@ -175,7 +175,6 @@ body {
 }
 
 /* ── Form Controls ── */
-/* Global Select & Option dark theme contrast enforcement */
 select {
   color-scheme: dark;
   background-color: #121215;
@@ -733,9 +732,26 @@ option,
   color: var(--text-tertiary);
 }
 
-/* ── Responsive ── */
+/* ── Responsive Mobile FIX PERMANEN ── */
 @media (max-width: 768px) {
   .page-title {
     font-size: 22px;
+  }
+
+  /* Memaksa semua container flex di mobile melipat ke bawah secara utuh */
+  .dashboard-main div[style*="display: flex"],
+  .dashboard-main div[style*="display:flex"] {
+    flex-wrap: wrap !important;
+  }
+
+  /* Mencegah tombol & input terpotong di tepi kanan layar HP */
+  .dashboard-main button {
+    max-width: 100% !important;
+    white-space: nowrap !important;
+  }
+
+  .dashboard-main select,
+  .dashboard-main input {
+    max-width: 100% !important;
   }
 }
