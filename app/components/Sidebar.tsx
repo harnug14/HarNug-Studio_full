@@ -90,7 +90,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-  
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -169,39 +169,39 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
 
   return (
     <>
-      {/* Mobile hamburger */}
-      <button
-        onClick={() => setMobileOpen(!mobileOpen)}
-        className="sidebar-mobile-toggle"
-        aria-label="Toggle menu"
-        style={{
-          position: "fixed",
-          top: 16,
-          left: 16,
-          zIndex: 60,
-          display: "none",
-          width: 40,
-          height: 40,
-          borderRadius: "var(--radius-md)",
-          border: "1px solid var(--glass-border)",
-          background: "var(--bg-elevated)",
-          backdropFilter: "blur(12px)",
-          color: "var(--text-primary)",
-          cursor: "pointer",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          {mobileOpen ? (
-            <path d="M18 6L6 18M6 6l12 12" />
-          ) : (
-            <path d="M3 12h18M3 6h18M3 18h18" />
-          )}
-        </svg>
-      </button>
+      {/* Mobile hamburger — Otomatis Hilang/Sembunyi saat Mobile Sidebar Terbuka */}
+      {!mobileOpen && (
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="sidebar-mobile-toggle"
+          aria-label="Toggle menu"
+          style={{
+            position: "fixed",
+            top: 10,
+            left: 10,
+            zIndex: 60,
+            display: "none",
+            width: 36,
+            height: 36,
+            borderRadius: "var(--radius-md)",
+            border: "1px solid var(--glass-border)",
+            background: "var(--bg-elevated)",
+            backdropFilter: "blur(12px)",
+            color: "var(--text-primary)",
+            cursor: "pointer",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      )}
 
-      {/* Overlay Mobile */}
+      {/* Overlay Mobile — Menutup Sidebar Saat Area Kosong Di-klik */}
       {mobileOpen && (
         <div
           onClick={() => setMobileOpen(false)}
@@ -209,6 +209,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
             position: "fixed",
             inset: 0,
             background: "rgba(0,0,0,0.6)",
+            backdropFilter: "blur(2px)",
             zIndex: 39,
           }}
         />
@@ -383,30 +384,14 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
       )}
 
       {/* Sidebar Main */}
-      <aside
-        style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          bottom: 0,
-          width: isCollapsed ? 68 : 260,
-          background: "var(--bg-primary)",
-          borderRight: "1px solid var(--glass-border)",
-          backdropFilter: "blur(16px)",
-          display: "flex",
-          flexDirection: "column",
-          zIndex: 40,
-          transform: mobileOpen ? "translateX(0)" : undefined,
-          transition: "width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s ease",
-          overflow: "hidden",
-        }}
-        className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}
-      >
-        {/* Header Logo + Toggle Button PC */}
+      <aside className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}>
+        {/* Header Logo + Toggle Button PC — Tinggi 57px Presisi Simetris */}
         <div
           className="sidebar-header"
           style={{
-            padding: isCollapsed ? "20px 12px" : "20px 16px",
+            height: "57px",
+            boxSizing: "border-box",
+            padding: isCollapsed ? "0 12px" : "0 16px",
             borderBottom: "1px solid var(--glass-border)",
             display: "flex",
             alignItems: "center",
@@ -436,7 +421,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
             </Link>
           )}
 
-          {/* Tombol Toggle Sidebar ala Claude (Khusus PC) */}
+          {/* Tombol Toggle Sidebar Utama PC — Menggunakan Ikon Hamburger 3 Garis [≡] */}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
             className="desktop-toggle-btn"
@@ -462,9 +447,10 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
               e.currentTarget.style.color = "var(--text-secondary)";
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <line x1="9" y1="3" x2="9" y2="21" />
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
         </div>
@@ -659,6 +645,23 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
       </aside>
 
       <style jsx>{`
+        .sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          width: ${isCollapsed ? "68px" : "260px"};
+          background: var(--bg-primary);
+          border-right: 1px solid var(--glass-border);
+          backdrop-filter: blur(16px);
+          display: flex;
+          flex-direction: column;
+          z-index: 40;
+          transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s ease;
+          overflow: hidden;
+          transform: translateX(0);
+        }
+
         @media (max-width: 768px) {
           .desktop-toggle-btn {
             display: none !important;
@@ -674,8 +677,8 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
             transform: translateX(0) !important;
           }
           .sidebar-header {
-            padding-left: 64px !important;
-            justifyContent: flex-start !important;
+            padding-left: 20px !important;
+            justify-content: flex-start !important;
           }
         }
         @keyframes fadeIn {
