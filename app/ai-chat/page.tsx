@@ -111,10 +111,11 @@ function AiChatContent() {
   const [isThinking, setIsThinking] = useState(false);
   const [isWebSearch, setIsWebSearch] = useState(false);
 
-  // Multimodal Attachments & Voice State
+  // Multimodal Attachments, Speech & Voice State
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [isSpeakingId, setIsSpeakingId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(true);
@@ -148,6 +149,7 @@ function AiChatContent() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Sembunyikan hamburger utama saat Riwayat Chat terbuka di HP
   useEffect(() => {
@@ -254,6 +256,52 @@ function AiChatContent() {
     adjustTextareaHeight();
   }, [input]);
 
+  // Copy to Clipboard
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  // Edit User Message
+  const handleEditUser = (text: string) => {
+    setInput(text);
+    if (inputRef.current) inputRef.current.focus();
+  };
+
+  // Retry User Message
+  const handleRetryUser = (text: string) => {
+    handleSend(text);
+  };
+
+  // Regenerate AI Response
+  const handleRegenerateAI = () => {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (lastUser) {
+      handleSend(lastUser.content);
+    }
+  };
+
+  // Read Aloud Bahasa Indonesia (id-ID)
+  const handleReadAloud = (id: string, text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      alert("Browser Anda tidak mendukung fitur Read Aloud.");
+      return;
+    }
+
+    if (isSpeakingId === id) {
+      window.speechSynthesis.cancel();
+      setIsSpeakingId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "id-ID";
+    utterance.onend = () => setIsSpeakingId(null);
+    utterance.onerror = () => setIsSpeakingId(null);
+    setIsSpeakingId(id);
+    window.speechSynthesis.speak(utterance);
+  };
+
   // Voice Input Speech-to-Text
   const handleVoiceInput = () => {
     if (typeof window === "undefined") return;
@@ -286,6 +334,14 @@ function AiChatContent() {
 
     recognition.onerror = () => setIsListening(false);
     recognition.start();
+  };
+
+  // Stop Generation [ ⏹ ]
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setLoading(false);
   };
 
   // Handle File & Image Upload
@@ -428,18 +484,21 @@ function AiChatContent() {
     }
   }
 
-  async function handleSend() {
+  async function handleSend(overrideContent?: string) {
     if (loading) return;
 
-    const pesanDikirim = input.trim() || (!contextSent && contextText ? contextText : "");
+    const pesanDikirim = overrideContent || input.trim() || (!contextSent && contextText ? contextText : "");
     if (!pesanDikirim && attachments.length === 0) return;
 
     const currentAttachments = [...attachments];
-    setInput("");
+    if (!overrideContent) setInput("");
     setAttachments([]);
     if (inputRef.current) inputRef.current.style.height = "auto";
     setLoading(true);
     if (contextText) setContextSent(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     setMessages((prev) => [
       ...prev,
@@ -464,6 +523,7 @@ function AiChatContent() {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             pesan: pesanDikirim,
             model,
@@ -488,6 +548,7 @@ function AiChatContent() {
         const res = await fetch(`/api/chat/${activeSessionId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             pesan: pesanDikirim,
             attachments: currentAttachments,
@@ -502,10 +563,13 @@ function AiChatContent() {
         }
       }
     } catch (err: any) {
-      setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message || "Terjadi kesalahan"}` }]);
+      if (err.name !== "AbortError") {
+        setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err.message || "Terjadi kesalahan"}` }]);
+      }
+    } finally {
+      setLoading(false);
+      abortControllerRef.current = null;
     }
-
-    setLoading(false);
   }
 
   async function handleDeleteSession(sessionId: string) {
@@ -767,8 +831,8 @@ function AiChatContent() {
                     padding: "9px 12px",
                     borderRadius: "var(--radius-md)",
                     cursor: isRenaming ? "default" : "pointer",
-                    background: isActive ? "var(--accent-muted)" : "transparent",
-                    borderLeft: isActive ? "2px solid var(--accent-primary)" : "2px solid transparent",
+                    background: isActive ? "var(--glass-bg-hover)" : "transparent",
+                    borderLeft: isActive ? "2px solid var(--text-primary)" : "2px solid transparent",
                     color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
                     fontWeight: isActive ? 500 : 400,
                     display: "flex",
@@ -897,7 +961,7 @@ function AiChatContent() {
 
         {/* Main Chat Content Area */}
         <div style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", position: "relative", minWidth: 0, height: "100%", overflow: "hidden", background: "var(--bg-primary)" }}>
-          {/* Header Bar Polos Tanpa Garis & Tanpa Teks Tengah */}
+          {/* Header Bar Polos Tanpa Garis Pembatas & Tanpa Teks Tengah */}
           <div
             className="chat-header-bar"
             style={{
@@ -949,7 +1013,7 @@ function AiChatContent() {
 
           {contextLabel && (
             <div style={{
-              background: "linear-gradient(90deg, rgba(168, 85, 247, 0.08), rgba(6, 182, 212, 0.08))",
+              background: "rgba(255, 255, 255, 0.03)",
               borderBottom: "1px solid var(--glass-border)",
               padding: "10px 16px",
               display: "flex",
@@ -959,14 +1023,14 @@ function AiChatContent() {
               flexShrink: 0,
             }}>
               <div style={{
-                width: 24, height: 24, borderRadius: "50%", background: "var(--accent-gradient)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0
+                width: 24, height: 24, borderRadius: "50%", background: "var(--glass-border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-primary)", flexShrink: 0
               }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ color: "var(--text-secondary)" }}>Konteks termuat dari </span>
                 <strong style={{ color: "var(--text-primary)" }}>{contextLabel}</strong>
-                {saveTarget === "naskah" && <span style={{ marginLeft: 8, color: "var(--accent-cyan)", fontSize: 12 }}>— Web search aktif</span>}
+                {saveTarget === "naskah" && <span style={{ marginLeft: 8, color: "var(--text-secondary)", fontSize: 12 }}>— Web search aktif</span>}
               </div>
             </div>
           )}
@@ -987,44 +1051,38 @@ function AiChatContent() {
                 padding: "20px 16px",
               }}>
                 <div style={{
-                  fontSize: 26,
+                  fontSize: 22,
                   fontWeight: 500,
                   color: "var(--text-primary)",
-                  fontFamily: "serif",
                   letterSpacing: "-0.01em",
                 }}>
                   Ada yang bisa dibantu?
                 </div>
               </div>
             ) : (
+              /* DAFTAR PESAN (HILANGKAN IKON AVATAR TOTAL) */
               <div style={{ maxWidth: 840, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
                 {messages.map((m, i) => {
                   const { cards, sisaTeks } = m.role === "assistant" ? parseTopikCards(m.content) : { cards: [], sisaTeks: m.content };
                   const { isDraft, cleanContent } = m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
                   const isSavableDraft = m.role === "assistant" && saveTarget && (saveTarget === "naskah" || saveTarget === "visual") && isDraft;
+                  const msgId = m.id || `msg-${i}`;
 
                   return (
                     <div key={i} className="animate-fade-in-up" style={{
                       display: "flex",
-                      flexDirection: m.role === "user" ? "row-reverse" : "row",
-                      gap: 12,
-                      alignItems: "flex-start",
+                      flexDirection: "column",
+                      alignItems: m.role === "user" ? "flex-end" : "flex-start",
                       width: "100%",
                     }}>
-                      <div style={{
-                        width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        background: m.role === "user" ? "var(--glass-bg-hover)" : "var(--accent-primary)",
-                        color: m.role === "user" ? "var(--text-primary)" : "#fff", border: `1px solid ${m.role === "user" ? "var(--glass-border)" : "transparent"}`,
+                      {/* BUBBLE WRAPPER (TANPA IKON AVATAR LOGO 👤 ATAU $) */}
+                      <div className="chat-bubble-wrapper" style={{
+                        maxWidth: m.role === "user" ? "80%" : "92%",
+                        minWidth: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: m.role === "user" ? "flex-end" : "flex-start",
                       }}>
-                        {m.role === "user" ? (
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                        ) : (
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
-                        )}
-                      </div>
-
-                      <div className="chat-bubble-wrapper" style={{ maxWidth: "88%", minWidth: 0, flex: 1 }}>
                         {/* Attachments pada pesan user */}
                         {m.attachments && m.attachments.length > 0 && (
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
@@ -1040,127 +1098,212 @@ function AiChatContent() {
                           </div>
                         )}
 
-                        <div style={{
-                          padding: "12px 16px",
-                          borderRadius: "var(--radius-lg)",
-                          borderTopLeftRadius: m.role === "assistant" ? 4 : "var(--radius-lg)",
-                          borderTopRightRadius: m.role === "user" ? 4 : "var(--radius-lg)",
-                          background: m.role === "user" ? "var(--bg-elevated)" : "var(--glass-bg)",
-                          border: `1px solid ${m.role === "user" ? "var(--glass-border-hover)" : "var(--glass-border)"}`,
-                          fontSize: 14,
-                          lineHeight: 1.6,
-                          color: "var(--text-primary)",
-                          whiteSpace: "pre-wrap",
-                          wordBreak: "break-word",
-                          overflowWrap: "break-word",
-                          boxShadow: m.role === "assistant" ? "var(--shadow-sm)" : "none",
-                        }}>
-                          {m.role === "assistant" && cards.length > 0 ? (
-                            <>
-                              {sisaTeks && <div style={{ marginBottom: 16 }}>{sisaTeks}</div>}
-                              <div style={{ display: "grid", gap: 12 }}>
-                                {cards.map((card, ci) => {
-                                  const cardKey = `${i}-${ci}`;
-                                  const isSavingCard = savingCardKey === cardKey;
-                                  return (
-                                    <div key={ci} style={{
-                                      padding: 12,
-                                      borderRadius: "var(--radius-md)",
-                                      background: "var(--bg-secondary)",
-                                      border: "1px solid var(--glass-border)",
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      gap: 8,
-                                    }}>
-                                      <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
-                                        {card.judul}
+                        {/* RENDER GELEMBUNG USER vs BALASAN AI POLOS MELAYANG */}
+                        {m.role === "user" ? (
+                          /* GELEMBUNG USER: Latar Berwarna Netral */
+                          <div style={{
+                            padding: "12px 16px",
+                            borderRadius: "var(--radius-lg)",
+                            borderTopRightRadius: "4px",
+                            background: "var(--bg-elevated)",
+                            border: "1px solid var(--glass-border-hover)",
+                            fontSize: 14,
+                            lineHeight: 1.6,
+                            color: "var(--text-primary)",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            overflowWrap: "break-word",
+                          }}>
+                            {m.content}
+                          </div>
+                        ) : (
+                          /* BALASAN AI: TANPA GELEMBUNG / TANPA KOTAK (Polos Melayang) */
+                          <div style={{
+                            padding: "4px 0",
+                            background: "transparent",
+                            border: "none",
+                            fontSize: 14,
+                            lineHeight: 1.6,
+                            color: "var(--text-primary)",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            overflowWrap: "break-word",
+                            width: "100%",
+                          }}>
+                            {cards.length > 0 ? (
+                              <>
+                                {sisaTeks && <div style={{ marginBottom: 16 }}>{sisaTeks}</div>}
+                                <div style={{ display: "grid", gap: 12 }}>
+                                  {cards.map((card, ci) => {
+                                    const cardKey = `${i}-${ci}`;
+                                    const isSavingCard = savingCardKey === cardKey;
+                                    return (
+                                      <div key={ci} style={{
+                                        padding: 12,
+                                        borderRadius: "var(--radius-md)",
+                                        background: "var(--bg-secondary)",
+                                        border: "1px solid var(--glass-border)",
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 8,
+                                      }}>
+                                        <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
+                                          {card.judul}
+                                        </div>
+                                        <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                                          {card.deskripsi}
+                                        </div>
+                                        <button
+                                          onClick={() => handleSaveCard(i, ci, card)}
+                                          disabled={isSavingCard}
+                                          className="btn btn-secondary btn-sm"
+                                          style={{ alignSelf: "flex-start", marginTop: 4, gap: 6, fontSize: 12 }}
+                                        >
+                                          <SaveIcon />
+                                          {isSavingCard ? "Menyimpan..." : "Simpan Topik"}
+                                        </button>
                                       </div>
-                                      <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                                        {card.deskripsi}
-                                      </div>
-                                      <button
-                                        onClick={() => handleSaveCard(i, ci, card)}
-                                        disabled={isSavingCard}
-                                        className="btn btn-secondary btn-sm"
-                                        style={{ alignSelf: "flex-start", marginTop: 4, gap: 6, fontSize: 12 }}
-                                      >
-                                        <SaveIcon />
-                                        {isSavingCard ? "Menyimpan..." : "Simpan Topik"}
-                                      </button>
-                                    </div>
-                                  );
-                                })}
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            ) : (
+                              <div>{cleanContent}</div>
+                            )}
+
+                            {isSavableDraft && (
+                              <div style={{ marginTop: 12 }}>
+                                <button
+                                  onClick={() => openSaveForm(i, cleanContent)}
+                                  className="btn btn-primary btn-sm"
+                                  style={{ gap: 6, fontSize: 12 }}
+                                >
+                                  <SaveIcon />
+                                  Simpan ke {saveTarget === "naskah" ? "Naskah" : "Visual"}
+                                </button>
                               </div>
+                            )}
+
+                            {savingMessageIndex === i && (
+                              <div style={{
+                                marginTop: 12,
+                                padding: 14,
+                                borderRadius: "var(--radius-md)",
+                                background: "var(--bg-elevated)",
+                                border: "1px solid var(--glass-border)",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 10,
+                              }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                                  Simpan ke {saveTarget === "topik" ? "Topik" : saveTarget === "naskah" ? "Naskah" : "Visual"}
+                                </div>
+                                <div>
+                                  <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Judul</label>
+                                  <input
+                                    type="text"
+                                    value={saveJudul}
+                                    onChange={(e) => setSaveJudul(e.target.value)}
+                                    className="input-field"
+                                    style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
+                                  />
+                                </div>
+                                <div>
+                                  <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Isi / Catatan</label>
+                                  <textarea
+                                    value={saveCatatan}
+                                    onChange={(e) => setSaveCatatan(e.target.value)}
+                                    className="input-field"
+                                    rows={3}
+                                    style={{ width: "100%", padding: "6px 10px", fontSize: 13, resize: "vertical" }}
+                                  />
+                                </div>
+                                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                                  <button
+                                    onClick={cancelSaveForm}
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ fontSize: 12 }}
+                                  >
+                                    Batal
+                                  </button>
+                                  <button
+                                    onClick={handleConfirmSave}
+                                    disabled={saveSubmitting}
+                                    className="btn btn-primary btn-sm"
+                                    style={{ fontSize: 12 }}
+                                  >
+                                    {saveSubmitting ? "Menyimpan..." : "Konfirmasi Simpan"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* IKON AKSI DI BAWAH GELEMBUNG CHAT DENGAN ANIMASI INTERAKTIF */}
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          marginTop: 4,
+                          color: "var(--text-tertiary)",
+                        }}>
+                          {m.role === "user" ? (
+                            /* 3 IKON USER: Retry (↻), Edit (✏️), Copy (📋) */
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleRetryUser(m.content)}
+                                className="chat-action-btn"
+                                title="Retry"
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleEditUser(m.content)}
+                                className="chat-action-btn"
+                                title="Edit"
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(m.content)}
+                                className="chat-action-btn"
+                                title="Copy"
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                              </button>
                             </>
                           ) : (
-                            <div>{cleanContent}</div>
-                          )}
-
-                          {isSavableDraft && (
-                            <div style={{ marginTop: 12 }}>
+                            /* TEPAT 3 IKON AI: Copy (📋), Read Aloud (🔊), Retry (↻) */
+                            <>
                               <button
-                                onClick={() => openSaveForm(i, cleanContent)}
-                                className="btn btn-primary btn-sm"
-                                style={{ gap: 6, fontSize: 12 }}
+                                type="button"
+                                onClick={() => handleCopy(cleanContent)}
+                                className="chat-action-btn"
+                                title="Copy"
                               >
-                                <SaveIcon />
-                                Simpan ke {saveTarget === "naskah" ? "Naskah" : "Visual"}
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                               </button>
-                            </div>
-                          )}
-
-                          {savingMessageIndex === i && (
-                            <div style={{
-                              marginTop: 12,
-                              padding: 14,
-                              borderRadius: "var(--radius-md)",
-                              background: "var(--bg-elevated)",
-                              border: "1px solid var(--accent-primary)",
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 10,
-                            }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-                                Simpan ke {saveTarget === "topik" ? "Topik" : saveTarget === "naskah" ? "Naskah" : "Visual"}
-                              </div>
-                              <div>
-                                <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Judul</label>
-                                <input
-                                  type="text"
-                                  value={saveJudul}
-                                  onChange={(e) => setSaveJudul(e.target.value)}
-                                  className="input-field"
-                                  style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
-                                />
-                              </div>
-                              <div>
-                                <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Isi / Catatan</label>
-                                <textarea
-                                  value={saveCatatan}
-                                  onChange={(e) => setSaveCatatan(e.target.value)}
-                                  className="input-field"
-                                  rows={3}
-                                  style={{ width: "100%", padding: "6px 10px", fontSize: 13, resize: "vertical" }}
-                                />
-                              </div>
-                              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                                <button
-                                  onClick={cancelSaveForm}
-                                  className="btn btn-ghost btn-sm"
-                                  style={{ fontSize: 12 }}
-                                >
-                                  Batal
-                                </button>
-                                <button
-                                  onClick={handleConfirmSave}
-                                  disabled={saveSubmitting}
-                                  className="btn btn-primary btn-sm"
-                                  style={{ fontSize: 12 }}
-                                >
-                                  {saveSubmitting ? "Menyimpan..." : "Konfirmasi Simpan"}
-                                </button>
-                              </div>
-                            </div>
+                              <button
+                                type="button"
+                                onClick={() => handleReadAloud(msgId, cleanContent)}
+                                className={`chat-action-btn ${isSpeakingId === msgId ? "active-speaking" : ""}`}
+                                title="Read aloud"
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleRegenerateAI}
+                                className="chat-action-btn"
+                                title="Retry"
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -1169,21 +1312,9 @@ function AiChatContent() {
                 })}
 
                 {loading && (
-                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: "var(--radius-full)", flexShrink: 0,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      background: "var(--accent-primary)", color: "#fff"
-                    }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
-                    </div>
-                    <div style={{
-                      padding: "10px 14px", borderRadius: "var(--radius-lg)", borderTopLeftRadius: 4,
-                      background: "var(--glass-bg)", border: "1px solid var(--glass-border)", display: "flex", alignItems: "center", gap: 8
-                    }}>
-                      <div className="spinner" style={{ width: 14, height: 14 }} />
-                      <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Sedang mengetik...</span>
-                    </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--text-secondary)", fontSize: 13, padding: "8px 0" }}>
+                    <div className="spinner" style={{ width: 14, height: 14 }} />
+                    <span>Sedang mengetik...</span>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
@@ -1191,7 +1322,7 @@ function AiChatContent() {
             )}
           </div>
 
-          {/* Redesigned Claude-Style Bottom Card Container (Polos Tanpa Garis Pembatas) */}
+          {/* KONTROL INPUT BAWAH (Polos Tanpa Garis Pembatas & Tanpa Warna Ungu) */}
           <div
             className="chat-input-container"
             style={{
@@ -1205,7 +1336,8 @@ function AiChatContent() {
             }}
           >
             <div style={{ width: "100%", maxWidth: 840 }}>
-              {/* Toggle Mode: Thinking & Web Search */}
+              
+              {/* Toggle Mode: Thinking & Web Search (Netral Adaptif Tanpa Warna Ungu) */}
               <div
                 className="chat-mode-pills"
                 style={{
@@ -1224,9 +1356,9 @@ function AiChatContent() {
                     borderRadius: "16px",
                     fontSize: 11,
                     fontWeight: isThinking ? 600 : 400,
-                    background: isThinking ? "rgba(168, 85, 247, 0.25)" : "rgba(255, 255, 255, 0.04)",
-                    color: isThinking ? "var(--accent-purple, #a855f7)" : "var(--text-secondary)",
-                    border: `1px solid ${isThinking ? "rgba(168, 85, 247, 0.6)" : "var(--glass-border)"}`,
+                    background: isThinking ? "var(--glass-bg-hover)" : "rgba(255, 255, 255, 0.04)",
+                    color: isThinking ? "var(--text-primary)" : "var(--text-secondary)",
+                    border: `1px solid ${isThinking ? "var(--text-primary)" : "var(--glass-border)"}`,
                     cursor: "pointer",
                     transition: "all 0.2s ease",
                   }}
@@ -1242,9 +1374,9 @@ function AiChatContent() {
                     borderRadius: "16px",
                     fontSize: 11,
                     fontWeight: isWebSearch ? 600 : 400,
-                    background: isWebSearch ? "rgba(6, 182, 212, 0.25)" : "rgba(255, 255, 255, 0.04)",
-                    color: isWebSearch ? "var(--accent-cyan, #06b6d4)" : "var(--text-secondary)",
-                    border: `1px solid ${isWebSearch ? "rgba(6, 182, 212, 0.6)" : "var(--glass-border)"}`,
+                    background: isWebSearch ? "var(--glass-bg-hover)" : "rgba(255, 255, 255, 0.04)",
+                    color: isWebSearch ? "var(--text-primary)" : "var(--text-secondary)",
+                    border: `1px solid ${isWebSearch ? "var(--text-primary)" : "var(--glass-border)"}`,
                     cursor: "pointer",
                     transition: "all 0.2s ease",
                   }}
@@ -1325,9 +1457,10 @@ function AiChatContent() {
                   }}
                 />
 
-                {/* Bottom Controls Bar (Di-lock flex-wrap: nowrap Sejajar Lurus Presisi dalam 1 Baris) */}
+                {/* Bottom Controls Bar (Di-lock flex-wrap: nowrap Sejajar Lurus Presisi) */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, width: "100%", flexWrap: "nowrap" }}>
-                  {/* Kiri: [+] dan Dropdown Model AI sejajar lurus */}
+                  
+                  {/* Kiri: [+] dan Dropdown Model AI */}
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 auto", minWidth: 0 }}>
                     
                     {/* Tombol [+] Multimodal Upload */}
@@ -1353,7 +1486,7 @@ function AiChatContent() {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                       </button>
 
-                      {/* Dropdown Menu [+] Persis Gambar 3 (Kamera, Foto, File) */}
+                      {/* Dropdown Menu [+] (Kamera, Foto, File) */}
                       {plusMenuOpen && (
                         <div style={{
                           position: "absolute",
@@ -1437,7 +1570,7 @@ function AiChatContent() {
                       )}
                     </div>
 
-                    {/* Mini Model Selector (Sleek 28px Pill) */}
+                    {/* Mini Model Selector (Mini-Pill Ramping Height 28px) */}
                     <div style={{ position: "relative", display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
                       <select
                         value={model}
@@ -1478,7 +1611,7 @@ function AiChatContent() {
 
                   </div>
 
-                  {/* Kanan: Voice Input [🎙️] + Send Button [✈️] Sejajar Lurus */}
+                  {/* Kanan: Voice Input [🎙️] + Send / Stop Generation Toggle (Tanpa Warna Ungu) */}
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                     {/* Tombol Pesan Suara / Microphone */}
                     <button
@@ -1506,31 +1639,57 @@ function AiChatContent() {
                       </svg>
                     </button>
 
-                    {/* Tombol Kirim */}
-                    <button
-                      type="button"
-                      onClick={handleSend}
-                      disabled={loading || (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0)}
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: "var(--radius-full)",
-                        background: "var(--accent-primary)",
-                        border: "none",
-                        color: "#fff",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                        flexShrink: 0,
-                        opacity: loading || (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0) ? 0.5 : 1,
-                      }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="22" y1="2" x2="11" y2="13"></line>
-                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                      </svg>
-                    </button>
+                    {/* Tombol Send / Stop Toggle (Tanpa Warna Ungu - Gunakan Netral var(--text-primary)) */}
+                    {loading ? (
+                      /* Tombol STOP [ ⏹ ] saat AI Mengetik */
+                      <button
+                        type="button"
+                        onClick={handleStop}
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: "var(--radius-full)",
+                          background: "var(--text-primary)",
+                          border: "none",
+                          color: "var(--bg-primary)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                        }}
+                        title="Hentikan AI seketika"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                      </button>
+                    ) : (
+                      /* Tombol SEND [ ✈️ ] saat Normal */
+                      <button
+                        type="button"
+                        onClick={() => handleSend()}
+                        disabled={(!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0)}
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: "var(--radius-full)",
+                          background: "var(--text-primary)",
+                          border: "none",
+                          color: "var(--bg-primary)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                          opacity: (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0) ? 0.3 : 1,
+                        }}
+                        title="Kirim Pesan"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="22" y1="2" x2="11" y2="13"></line>
+                          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1543,10 +1702,51 @@ function AiChatContent() {
         </div>
       </div>
 
-      {/* CSS Responsive Static */}
+      {/* CSS Responsive & Animasi Ikon Aksi */}
       <style jsx>{`
         .chat-mobile-overlay {
           display: none;
+        }
+
+        /* ANIMASI IKON AKSI BARU (HOVER & CLICK) */
+        .chat-action-btn {
+          background: transparent;
+          border: none;
+          color: var(--text-tertiary);
+          cursor: pointer;
+          padding: 5px;
+          border-radius: 6px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease, color 0.15s ease;
+          outline: none;
+        }
+
+        /* Saat kursor mengarah ke ikon (Hover) */
+        .chat-action-btn:hover {
+          color: var(--text-primary);
+          background: var(--glass-bg-hover, rgba(150, 150, 150, 0.12));
+          transform: scale(1.18) translateY(-1px);
+        }
+
+        /* Saat ikon di-klik (Active Press) */
+        .chat-action-btn:active {
+          transform: scale(0.88) translateY(0);
+          background: var(--glass-border, rgba(150, 150, 150, 0.25));
+        }
+
+        /* Efek Denyut Suara saat Read Aloud Aktif */
+        .chat-action-btn.active-speaking {
+          color: var(--text-primary);
+          background: var(--glass-bg-hover, rgba(150, 150, 150, 0.15));
+          animation: pulse-speaker 1.2s infinite;
+        }
+
+        @keyframes pulse-speaker {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.12); }
+          100% { transform: scale(1); }
         }
 
         @keyframes pulse {
@@ -1584,7 +1784,6 @@ function AiChatContent() {
             transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.25s !important;
           }
 
-          /* Sembunyikan total saat Riwayat Chat ditutup agar tidak mengintip di tepi kiri layar */
           .chat-sidebar:not(.open) {
             transform: translateX(-105%) !important;
             visibility: hidden !important;
