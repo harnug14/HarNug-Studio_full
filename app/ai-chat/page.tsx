@@ -1336,8 +1336,8 @@ function AiChatContent() {
                         type="button"
                         onClick={() => setPlusMenuOpen((prev) => !prev)}
                         style={{
-                          width: 32,
-                          height: 32,
+                          width: 28,
+                          height: 28,
                           borderRadius: "var(--radius-full)",
                           background: "var(--glass-bg-hover)",
                           border: "1px solid var(--glass-border)",
@@ -1350,7 +1350,7 @@ function AiChatContent() {
                         }}
                         title="Lampirkan foto, kamera, atau dokumen"
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                       </button>
 
                       {/* Dropdown Menu [+] Persis Gambar 3 (Kamera, Foto, File) */}
@@ -1437,31 +1437,44 @@ function AiChatContent() {
                       )}
                     </div>
 
-                    {/* Model AI Selector Fleksibel Sejajar Lurus dalam 1 Baris */}
-                    <select
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      className="select-field chat-select-field"
-                      style={{
-                        flex: "1 1 auto",
-                        minWidth: 0,
-                        maxWidth: 160,
-                        height: 32,
-                        padding: "4px 20px 4px 8px",
-                        fontSize: 11,
-                        borderRadius: "16px",
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid var(--glass-border)",
-                        color: "var(--text-primary)",
-                        cursor: "pointer",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {MODEL_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
+                    {/* Mini Model Selector (Sleek 28px Pill) */}
+                    <div style={{ position: "relative", display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
+                      <select
+                        value={model}
+                        onChange={(e) => setModel(e.target.value)}
+                        style={{
+                          height: 28,
+                          padding: "0 22px 0 10px",
+                          fontSize: 11,
+                          fontWeight: 500,
+                          borderRadius: 14,
+                          background: "rgba(255, 255, 255, 0.06)",
+                          border: "1px solid var(--glass-border)",
+                          color: "var(--text-primary)",
+                          cursor: "pointer",
+                          outline: "none",
+                          appearance: "none",
+                          WebkitAppearance: "none",
+                          maxWidth: 140,
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {MODEL_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value} style={{ background: "#1a1a1a", color: "#fff" }}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                      <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                        style={{ position: "absolute", right: 8, pointerEvents: "none", color: "var(--text-secondary)" }}
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </div>
 
                   </div>
 
@@ -1472,10 +1485,10 @@ function AiChatContent() {
                       type="button"
                       onClick={handleVoiceInput}
                       style={{
-                        width: 32,
-                        height: 32,
+                        width: 30,
+                        height: 30,
                         borderRadius: "var(--radius-full)",
-                        background: isListening ? "rgba(239, 68, 68, 0.2)" : "rgba(255,255,255,0.04)",
+                        background: isListening ? "rgba(239, 68, 68, 0.2)" : "rgba(255, 255, 255, 0.06)",
                         border: `1px solid ${isListening ? "#f87171" : "var(--glass-border)"}`,
                         color: isListening ? "#f87171" : "var(--text-primary)",
                         display: "flex",
@@ -1487,9 +1500,7 @@ function AiChatContent() {
                       }}
                       title={isListening ? "Mendengarkan suara..." : "Bicara pesan suara"}
                     >
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                         <line x1="12" y1="19" x2="12" y2="23" />
                         <line x1="8" y1="23" x2="16" y2="23" />
                       </svg>
@@ -1500,16 +1511,22 @@ function AiChatContent() {
                       type="button"
                       onClick={handleSend}
                       disabled={loading || (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0)}
-                      className="btn btn-primary btn-icon"
                       style={{
-                        width: 32,
-                        height: 32,
+                        width: 30,
+                        height: 30,
                         borderRadius: "var(--radius-full)",
+                        background: "var(--accent-primary)",
+                        border: "none",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
                         flexShrink: 0,
                         opacity: loading || (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0) ? 0.5 : 1,
                       }}
                     >
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="22" y1="2" x2="11" y2="13"></line>
                         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                       </svg>
@@ -1567,7 +1584,7 @@ function AiChatContent() {
             transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.25s !important;
           }
 
-          /* KUNCI: Sembunyikan total saat Riwayat Chat ditutup agar tidak mengintip di tepi kiri layar */
+          /* Sembunyikan total saat Riwayat Chat ditutup agar tidak mengintip di tepi kiri layar */
           .chat-sidebar:not(.open) {
             transform: translateX(-105%) !important;
             visibility: hidden !important;
