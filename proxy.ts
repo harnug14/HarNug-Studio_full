@@ -38,6 +38,9 @@ export async function proxy(request: NextRequest) {
   return response
 }
 
+// MATCHER: Di-update agar file PWA (manifest, icon, sw) tidak dialihkan ke /login
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|manifest.json|icon.png|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 }
