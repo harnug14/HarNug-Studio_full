@@ -127,7 +127,7 @@ function AiChatContent() {
   const renameInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Menyembunyikan tombol hamburger utama saat Riwayat Chat terbuka di HP
+  // Sembunyikan hamburger utama saat Riwayat Chat terbuka di HP
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.innerWidth <= 768) {
@@ -528,14 +528,14 @@ function AiChatContent() {
 
   if (authLoading) {
     return (
-      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div className="spinner" style={{ width: 28, height: 28 }} />
       </div>
     );
   }
 
   return (
-    <div style={{ height: "100dvh", width: "100%", background: "var(--bg-primary)", overflow: "hidden", position: "relative" }}>
+    <div style={{ height: "100%", width: "100%", background: "var(--bg-primary)", overflow: "hidden", position: "relative" }}>
       
       {/* Overlay Backdrop khusus Mobile saat Drawer Riwayat Chat Terbuka */}
       {sidebarOpen && (
@@ -575,7 +575,7 @@ function AiChatContent() {
             borderRight: sidebarOpen ? "1px solid var(--glass-border)" : "none",
           }}
         >
-          {/* Header Sub-Sidebar yang Presisi Simetris dengan Main Topbar (57px) */}
+          {/* Header Sub-Sidebar */}
           <div style={{ height: 57, padding: "0 10px", display: "flex", alignItems: "center", borderBottom: "1px solid var(--glass-border)", flexShrink: 0 }}>
             <button
               onClick={startNewChat}
@@ -1188,7 +1188,6 @@ function AiChatContent() {
         }
 
         @media (max-width: 768px) {
-          /* Otomatis sembunyikan tombol hamburger utama saat Riwayat Chat terbuka di HP */
           :global(body.chat-history-open .sidebar-mobile-toggle) {
             display: none !important;
           }
@@ -1207,7 +1206,7 @@ function AiChatContent() {
             top: 0 !important;
             bottom: 0 !important;
             left: 0 !important;
-            height: 100dvh !important;
+            height: 100% !important;
             z-index: 30 !important;
             background: var(--bg-primary) !important;
             box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5) !important;
@@ -1223,7 +1222,7 @@ function AiChatContent() {
           }
 
           .mobile-header-left-space {
-            padding-left: 48px !important;
+            padding-left: 56px !important;
           }
 
           .chat-header-bar {
@@ -1255,7 +1254,7 @@ function AiChatContent() {
 export default function AiChatPage() {
   return (
     <Suspense fallback={
-      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div className="spinner" style={{ width: 28, height: 28 }} />
       </div>
     }>
