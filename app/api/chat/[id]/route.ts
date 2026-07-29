@@ -94,13 +94,14 @@ export async function POST(
 
   const { data: riwayat } = await supabase
     .from("chat_messages")
-    .select("role, content")
+    .select("role, content, attachments")
     .eq("session_id", id)
     .order("created_at", { ascending: true });
 
   const messages: any[] = (riwayat || []).map((m: any) => ({
     role: m.role,
     content: m.content,
+    attachments: m.attachments || undefined,
   }));
 
   messages.push({
@@ -111,10 +112,16 @@ export async function POST(
 
   const userContent = pesanBaru || (attachments.length > 0 ? `[Lampiran: ${attachments.map((a: any) => a.name).join(", ")}]` : "");
 
+  // SIMPAN PESAN USER + DATA LAMPIRAN FOTO KE SUPABASE
   await supabase.from("chat_messages").insert({
     session_id: id,
     role: "user",
     content: userContent,
+    attachments: attachments.map((a: any) => ({
+      name: a.name,
+      type: a.type,
+      url: a.previewUrl || a.url || a.base64 || "",
+    })),
   });
 
   let jawaban: string;

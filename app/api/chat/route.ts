@@ -96,10 +96,16 @@ export async function POST(req: NextRequest) {
 
   const userContent = pesanPertama || (attachments.length > 0 ? `[Lampiran: ${attachments.map((a: any) => a.name).join(", ")}]` : "");
 
+  // SIMPAN PESAN USER + DATA LAMPIRAN FOTO KE SUPABASE
   await supabase.from("chat_messages").insert({
     session_id: session.id,
     role: "user",
     content: userContent,
+    attachments: attachments.map((a: any) => ({
+      name: a.name,
+      type: a.type,
+      url: a.previewUrl || a.url || a.base64 || "",
+    })),
   });
 
   const messagePayload: any = {
