@@ -972,16 +972,17 @@ function AiChatContent() {
           )}
 
           {/* Area Pesan Chat - Teks "Ada yang bisa dibantu?" Tepat di Tengah Layar Vertikal & Horizontal */}
-          <div className="chat-messages-area" style={{ flex: "1 1 auto", overflowY: "auto", overflowX: "hidden", padding: "24px", display: "flex", flexDirection: "column", gap: 20, minHeight: 0 }}>
+          <div className="chat-messages-area" style={{ flex: "1 1 auto", overflowY: "auto", overflowX: "hidden", padding: "24px", display: "flex", flexDirection: "column", minHeight: 0 }}>
             {messages.length === 0 ? (
               <div style={{
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
+                flex: 1,
+                width: "100%",
                 height: "100%",
                 minHeight: 280,
-                margin: "auto",
                 textAlign: "center",
                 padding: "20px 16px",
               }}>
@@ -1324,13 +1325,13 @@ function AiChatContent() {
                   }}
                 />
 
-                {/* Bottom Controls Bar dalam 1 Baris Sejajar Lurus Presisi */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", width: "100%" }}>
+                {/* Bottom Controls Bar (Di-lock flex-wrap: nowrap Sejajar Lurus Presisi dalam 1 Baris) */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, width: "100%", flexWrap: "nowrap" }}>
                   {/* Kiri: [+] dan Dropdown Model AI sejajar lurus */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 auto", minWidth: 0 }}>
                     
                     {/* Tombol [+] Multimodal Upload */}
-                    <div ref={plusMenuRef} style={{ position: "relative" }}>
+                    <div ref={plusMenuRef} style={{ position: "relative", flexShrink: 0 }}>
                       <button
                         type="button"
                         onClick={() => setPlusMenuOpen((prev) => !prev)}
@@ -1436,21 +1437,25 @@ function AiChatContent() {
                       )}
                     </div>
 
-                    {/* Model AI Selector Sejajar Lurus Kiri */}
+                    {/* Model AI Selector Fleksibel Sejajar Lurus dalam 1 Baris */}
                     <select
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
                       className="select-field chat-select-field"
                       style={{
-                        padding: "5px 24px 5px 10px",
-                        fontSize: 12,
-                        borderRadius: "20px",
+                        flex: "1 1 auto",
+                        minWidth: 0,
+                        maxWidth: 160,
+                        height: 32,
+                        padding: "4px 20px 4px 8px",
+                        fontSize: 11,
+                        borderRadius: "16px",
                         background: "rgba(255,255,255,0.04)",
                         border: "1px solid var(--glass-border)",
                         color: "var(--text-primary)",
                         cursor: "pointer",
-                        maxWidth: 180,
-                        height: 32,
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                       }}
                     >
                       {MODEL_OPTIONS.map((o) => (
@@ -1461,14 +1466,14 @@ function AiChatContent() {
                   </div>
 
                   {/* Kanan: Voice Input [🎙️] + Send Button [✈️] Sejajar Lurus */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                     {/* Tombol Pesan Suara / Microphone */}
                     <button
                       type="button"
                       onClick={handleVoiceInput}
                       style={{
-                        width: 34,
-                        height: 34,
+                        width: 32,
+                        height: 32,
                         borderRadius: "var(--radius-full)",
                         background: isListening ? "rgba(239, 68, 68, 0.2)" : "rgba(255,255,255,0.04)",
                         border: `1px solid ${isListening ? "#f87171" : "var(--glass-border)"}`,
@@ -1482,7 +1487,7 @@ function AiChatContent() {
                       }}
                       title={isListening ? "Mendengarkan suara..." : "Bicara pesan suara"}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                         <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                         <line x1="12" y1="19" x2="12" y2="23" />
@@ -1497,14 +1502,14 @@ function AiChatContent() {
                       disabled={loading || (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0)}
                       className="btn btn-primary btn-icon"
                       style={{
-                        width: 34,
-                        height: 34,
+                        width: 32,
+                        height: 32,
                         borderRadius: "var(--radius-full)",
                         flexShrink: 0,
                         opacity: loading || (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0) ? 0.5 : 1,
                       }}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="22" y1="2" x2="11" y2="13"></line>
                         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                       </svg>
