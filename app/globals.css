@@ -732,22 +732,19 @@ option,
   color: var(--text-tertiary);
 }
 
-/* ── Responsive Mobile FIX PERMANEN ── */
+/* =========================================================
+   RESPONSIVE FIX PERMANEN UNTUK HP (MOBILE)
+   ========================================================= */
 @media (max-width: 768px) {
-  .page-title {
-    font-size: 22px;
-  }
-
-  /* Memaksa semua container flex di mobile melipat ke bawah secara utuh */
-  .dashboard-main div[style*="display: flex"],
-  .dashboard-main div[style*="display:flex"] {
+  /* Izinkan flex-wrap HANYA pada container horizontal (row), KECUALI container vertikal (column) seperti Chat */
+  .dashboard-main div[style*="display: flex"]:not([style*="column"]),
+  .dashboard-main div[style*="display:flex"]:not([style*="column"]) {
     flex-wrap: wrap !important;
   }
 
-  /* Mencegah tombol & input terpotong di tepi kanan layar HP */
+  /* Memastikan tombol & input tidak kepotong di tepi kanan layar */
   .dashboard-main button {
     max-width: 100% !important;
-    white-space: nowrap !important;
   }
 
   .dashboard-main select,
