@@ -67,10 +67,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Pesan atau lampiran tidak boleh kosong" }, { status: 400 });
   }
 
+  // Judul sesi di sidebar
   const judulSesi = pesanPertama
     ? pesanPertama.slice(0, 50)
     : attachments[0]?.name
-    ? `Lampiran: ${attachments[0].name.slice(0, 40)}`
+    ? attachments[0].name.slice(0, 40)
     : "Chat Baru";
 
   const { data: session, error: sessionError } = await supabase
@@ -94,13 +95,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const userContent = pesanPertama || (attachments.length > 0 ? `[Lampiran: ${attachments.map((a: any) => a.name).join(", ")}]` : "");
-
-  // SIMPAN PESAN USER + DATA LAMPIRAN FOTO KE SUPABASE
+  // Murni simpan apa adanya (JIKA KOSONG TETAP KOSONG, TANPA TEKS NAMA LAMPIRAN)
   await supabase.from("chat_messages").insert({
     session_id: session.id,
     role: "user",
-    content: userContent,
+    content: pesanPertama,
     attachments: attachments.map((a: any) => ({
       name: a.name,
       type: a.type,
@@ -110,7 +109,7 @@ export async function POST(req: NextRequest) {
 
   const messagePayload: any = {
     role: "user",
-    content: pesanPertama || (attachments.length > 0 ? "Berikut lampiran foto/file yang saya unggah." : ""),
+    content: pesanPertama,
     attachments: attachments,
   };
 

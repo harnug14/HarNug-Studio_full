@@ -106,17 +106,15 @@ export async function POST(
 
   messages.push({
     role: "user",
-    content: pesanBaru || (attachments.length > 0 ? "Berikut lampiran foto/file yang saya unggah." : ""),
+    content: pesanBaru,
     ...(attachments.length > 0 ? { attachments } : {}),
   });
 
-  const userContent = pesanBaru || (attachments.length > 0 ? `[Lampiran: ${attachments.map((a: any) => a.name).join(", ")}]` : "");
-
-  // SIMPAN PESAN USER + DATA LAMPIRAN FOTO KE SUPABASE
+  // Murni simpan apa adanya (JIKA KOSONG TETAP KOSONG, TANPA TEKS NAMA LAMPIRAN)
   await supabase.from("chat_messages").insert({
     session_id: id,
     role: "user",
-    content: userContent,
+    content: pesanBaru,
     attachments: attachments.map((a: any) => ({
       name: a.name,
       type: a.type,
