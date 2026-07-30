@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { chatWithGemini, ChatMessage } from "@/lib/gemini/chatWithGemini";
+import { chatWithGemini } from "@/lib/gemini/chatWithGemini";
 import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { chatWithGroq } from "@/lib/groq/chatWithGroq";
 import { callGroqWithRotation } from "@/lib/groq/keyRotation";
@@ -110,7 +110,6 @@ export async function POST(
     ...(attachments.length > 0 ? { attachments } : {}),
   });
 
-  // Murni simpan apa adanya (JIKA KOSONG TETAP KOSONG, TANPA TEKS NAMA LAMPIRAN)
   await supabase.from("chat_messages").insert({
     session_id: id,
     role: "user",
@@ -130,9 +129,7 @@ export async function POST(
           messages as any,
           apiKey,
           model,
-          mode as any,
-          undefined,
-          session.content_target || null
+          mode as any
         )
       );
     } else {
@@ -141,9 +138,7 @@ export async function POST(
           messages as any,
           apiKey,
           model,
-          mode as any,
-          undefined,
-          session.content_target || null
+          mode as any
         )
       );
     }

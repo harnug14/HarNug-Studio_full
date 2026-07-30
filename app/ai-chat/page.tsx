@@ -19,13 +19,6 @@ interface SessionItem {
   created_at: string;
 }
 
-type SaveTarget = "topik" | "naskah" | "visual" | null;
-
-interface TopikCard {
-  judul: string;
-  deskripsi: string;
-}
-
 interface AttachmentFile {
   name: string;
   type: string;
@@ -33,11 +26,11 @@ interface AttachmentFile {
   previewUrl?: string;
 }
 
+// Menghapus pilihan gemini-3.1-pro yang tidak terdaftar di Google API
 const MODEL_OPTIONS = [
   { value: "gemini-3.6-flash", label: "Gemini 3.6 Flash" },
   { value: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
   { value: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" },
-  { value: "gemini-3.1-pro", label: "Gemini 3.1 Pro" },
   { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
   { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { value: "groq-llama-3.3-70b-versatile", label: "Groq Llama 3.3 70B" },
@@ -45,14 +38,6 @@ const MODEL_OPTIONS = [
 ];
 
 const CHAT_SIDEBAR_STORAGE_KEY = "ai_chat_sidebar_open";
-
-function SaveIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
 
 function EditIcon() {
   return (
@@ -62,42 +47,9 @@ function EditIcon() {
   );
 }
 
-function parseTopikCards(content: string): { cards: TopikCard[]; sisaTeks: string } {
-  const lines = content.split("\n");
-  const cards: TopikCard[] = [];
-  const sisaBaris: string[] = [];
-  const pattern = /^\[TOPIK\]\s*(.+?)\s*\|\s*(.+)$/;
-
-  for (const line of lines) {
-    const match = line.trim().match(pattern);
-    if (match) {
-      cards.push({ judul: match[1].trim(), deskripsi: match[2].trim() });
-    } else if (line.trim().length > 0) {
-      sisaBaris.push(line);
-    }
-  }
-
-  return { cards, sisaTeks: sisaBaris.join("\n") };
-}
-
-function parseDraftMarker(content: string): { isDraft: boolean; cleanContent: string } {
-  const trimmed = content.trim();
-  if (trimmed.startsWith("[DRAFT_NASKAH]") || trimmed.startsWith("[DRAFT_VISUAL]")) {
-    const cleanContent = trimmed
-      .replace(/^\[DRAFT_NASKAH\]\s*/, "")
-      .replace(/^\[DRAFT_VISUAL\]\s*/, "")
-      .trim();
-    return { isDraft: true, cleanContent };
-  }
-  return { isDraft: false, cleanContent: content };
-}
-
 function AiChatContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const fromReferensi = searchParams.get("fromReferensi");
-  const fromTopik = searchParams.get("fromTopik");
-  const fromNaskah = searchParams.get("fromNaskah");
 
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -107,23 +59,19 @@ function AiChatContent() {
   const [input, setInput] = useState("");
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
 
-  // Toggle Mode Independen
   const [isThinking, setIsThinking] = useState(false);
   const [isWebSearch, setIsWebSearch] = useState(false);
 
-  // Multimodal Attachments, Speech & Voice State
   const [attachments, setAttachments] = useState<AttachmentFile[]>([]);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeakingId, setIsSpeakingId] = useState<string | null>(null);
 
-  // Dynamic Animasi & Inline Edit State
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [spinningId, setSpinningId] = useState<string | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
 
-  // Lightbox / File Preview Modal State
   const [previewAttachment, setPreviewAttachment] = useState<{
     name: string;
     url: string;
@@ -132,18 +80,6 @@ function AiChatContent() {
 
   const [loading, setLoading] = useState(false);
   const [loadingSessions, setLoadingSessions] = useState(true);
-  const [contextLabel, setContextLabel] = useState<string | null>(null);
-  const [contextText, setContextText] = useState<string | null>(null);
-  const [contextSent, setContextSent] = useState(false);
-
-  const [saveTarget, setSaveTarget] = useState<SaveTarget>(null);
-
-  const [savingMessageIndex, setSavingMessageIndex] = useState<number | null>(null);
-  const [saveJudul, setSaveJudul] = useState("");
-  const [saveCatatan, setSaveCatatan] = useState("");
-  const [saveSubmitting, setSaveSubmitting] = useState(false);
-
-  const [savingCardKey, setSavingCardKey] = useState<string | null>(null);
 
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -164,7 +100,6 @@ function AiChatContent() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Sembunyikan hamburger utama saat Riwayat Chat terbuka di HP
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (window.innerWidth <= 768) {
@@ -179,7 +114,6 @@ function AiChatContent() {
     };
   }, [sidebarOpen]);
 
-  // Click outside listener
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -235,15 +169,6 @@ function AiChatContent() {
   useEffect(() => {
     if (authLoading) return;
     fetchSessions();
-
-    if (fromReferensi) {
-      loadContextFromReferensi(fromReferensi);
-    } else if (fromTopik) {
-      loadContextFromTopik(fromTopik);
-    } else if (fromNaskah) {
-      loadContextFromNaskah(fromNaskah);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading]);
 
   useEffect(() => {
@@ -269,7 +194,6 @@ function AiChatContent() {
     adjustTextareaHeight();
   }, [input]);
 
-  // Copy to Clipboard dengan Animasi Ceklis (✓)
   const handleCopy = (id: string, text: string) => {
     if (!text) return;
     navigator.clipboard.writeText(text);
@@ -279,31 +203,26 @@ function AiChatContent() {
     }, 2000);
   };
 
-  // Mulai Edit Pesan Langsung di dalam Gelembung
   const handleStartEdit = (index: number, content: string) => {
     setEditingIndex(index);
     setEditingText(content);
   };
 
-  // Batal Edit Pesan
   const handleCancelEdit = () => {
     setEditingIndex(null);
     setEditingText("");
   };
 
-  // Simpan Edit Pesan dan Kirim Ulang ke AI
   const handleSaveEdit = (index: number) => {
     if (!editingText.trim()) return;
     const newContent = editingText.trim();
     setEditingIndex(null);
     setEditingText("");
 
-    // Potong riwayat pesan sampai indeks ini
     setMessages((prev) => prev.slice(0, index));
     handleSend(newContent);
   };
 
-  // Retry Pesan dengan Animasi Muter (Spin)
   const handleRetryUser = (id: string, text: string) => {
     setSpinningId(id);
     setTimeout(() => setSpinningId(null), 1000);
@@ -319,7 +238,6 @@ function AiChatContent() {
     }
   };
 
-  // Read Aloud Bahasa Indonesia (id-ID)
   const handleReadAloud = (id: string, text: string) => {
     if (!text) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -342,7 +260,6 @@ function AiChatContent() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // Voice Input Speech-to-Text
   const handleVoiceInput = () => {
     if (typeof window === "undefined") return;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -376,7 +293,6 @@ function AiChatContent() {
     recognition.start();
   };
 
-  // Handle Klik Lampiran Foto / File untuk Membuka Pratinjau Lengkap
   const handleAttachmentClick = (att: { name: string; url: string; type: string }) => {
     if (att.type.startsWith("image/") || att.url.startsWith("data:image/")) {
       setPreviewAttachment(att);
@@ -394,7 +310,6 @@ function AiChatContent() {
     }
   };
 
-  // Stop Generation [ ⏹ ]
   const handleStop = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -402,7 +317,6 @@ function AiChatContent() {
     setLoading(false);
   };
 
-  // Handle File & Image Upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: "image" | "file" | "camera") => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -446,59 +360,6 @@ function AiChatContent() {
     setLoadingSessions(false);
   }
 
-  async function loadContextFromReferensi(referensiId: string) {
-    try {
-      const res = await fetch("/api/channel-analysis");
-      const data = await res.json();
-      const ref = (data.data || []).find((r: any) => r.id === referensiId);
-      if (ref) {
-        const entries = ref.channel_analysis_entries || [];
-        const entrySummary = entries.slice(0, 5).map((e: any, idx: number) => `${idx + 1}. ${e.title}`).join("\n");
-        setContextLabel(`Referensi: ${ref.profile_name}`);
-        setSaveTarget("topik");
-        setContextText(
-          `Berikut data profil channel referensi "${ref.profile_name}" (${ref.channel_link || "tanpa link"}):\n\nContoh Naskah/Video Referensi:\n${entrySummary || "(Belum ada entri naskah tersimpan)"}\n\nBerdasarkan contoh naskah di atas, tolong analisis pola niche, gaya visual, dan ritmenya, lalu buatkan 5 ide topik video YouTube Shorts yang SANGAT RELEVAN dan BENAR-BENAR DITURUNKAN dari channel referensi tersebut.\n\nUntuk tiap ide, berikan judul singkat yang sangat memikat (klik-bait positif) dan 1-2 kalimat penjelasan konkret tentang visual atau isi videonya.`
-        );
-      }
-    } catch {
-      // silent
-    }
-  }
-
-  async function loadContextFromTopik(topikId: string) {
-    try {
-      const res = await fetch("/api/topik");
-      const data = await res.json();
-      const topik = (data.data || []).find((t: any) => t.id === topikId);
-      if (topik) {
-        setContextLabel(`Topic: ${topik.judul}`);
-        setSaveTarget("naskah");
-        setContextText(
-          `Judul topik: ${topik.judul}${topik.catatan ? `\nCatatan: ${topik.catatan}` : ""}\n\nTolong buatkan naskah video YouTube Shorts berdasarkan topik ini.`
-        );
-      }
-    } catch {
-      // silent
-    }
-  }
-
-  async function loadContextFromNaskah(naskahId: string) {
-    try {
-      const res = await fetch("/api/naskah");
-      const data = await res.json();
-      const naskah = (data.data || []).find((n: any) => n.id === naskahId);
-      if (naskah) {
-        setContextLabel(`Script: ${naskah.judul}`);
-        setSaveTarget("visual");
-        setContextText(
-          `Judul naskah: ${naskah.judul}\nIsi naskah:\n${naskah.isi_naskah || ""}\n\nTolong buatkan panduan visual/storyboard berdasarkan naskah ini.`
-        );
-      }
-    } catch {
-      // silent
-    }
-  }
-
   async function openSession(sessionId: string) {
     setActiveSessionId(sessionId);
     setLoading(true);
@@ -515,8 +376,6 @@ function AiChatContent() {
         const sessMode = data.session.mode || "biasa";
         setIsThinking(sessMode.includes("berpikir"));
         setIsWebSearch(sessMode.includes("search"));
-
-        setSaveTarget(data.session.content_target || null);
       }
     } catch {
       // silent
@@ -527,12 +386,6 @@ function AiChatContent() {
   function startNewChat() {
     setActiveSessionId(null);
     setMessages([]);
-    setContextLabel(null);
-    setContextText(null);
-    setContextSent(false);
-    setSaveTarget(null);
-    setSavingMessageIndex(null);
-    setSavingCardKey(null);
     setInput("");
     setAttachments([]);
     setIsThinking(false);
@@ -545,11 +398,9 @@ function AiChatContent() {
   async function handleSend(overrideContent?: string) {
     if (loading) return;
 
-    // Teks murni dari input (KOSONG TETAP KOSONG)
     const rawText = overrideContent !== undefined ? overrideContent : input.trim();
-    const pesanDikirim = rawText || (!contextSent && contextText ? contextText : "");
+    const pesanDikirim = rawText;
 
-    // Jika pesan teks kosong DAN tidak ada lampiran, batalkan
     if (!pesanDikirim && attachments.length === 0) return;
 
     const currentAttachments = [...attachments];
@@ -557,7 +408,6 @@ function AiChatContent() {
     setAttachments([]);
     if (inputRef.current) inputRef.current.style.height = "auto";
     setLoading(true);
-    if (contextText) setContextSent(true);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -595,10 +445,6 @@ function AiChatContent() {
             pesan: pesanDikirim,
             model,
             mode: modeDipakai,
-            sumber_topik_id: fromTopik || null,
-            sumber_naskah_id: fromNaskah || null,
-            contextText: undefined,
-            contentTarget: saveTarget,
             attachments: currentAttachments,
           }),
         });
@@ -683,84 +529,6 @@ function AiChatContent() {
     cancelRename();
   }
 
-  async function handleSaveCard(msgIndex: number, cardIndex: number, card: TopikCard) {
-    const key = `${msgIndex}-${cardIndex}`;
-    setSavingCardKey(key);
-    try {
-      const res = await fetch("/api/topik", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ judul: card.judul, catatan: card.deskripsi }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        alert("Gagal menyimpan: " + (data.error || "Terjadi kesalahan"));
-      }
-    } catch (err: any) {
-      alert("Gagal menyimpan: " + (err.message || "Terjadi kesalahan"));
-    }
-    setSavingCardKey(null);
-  }
-
-  function openSaveForm(index: number, content: string) {
-    setSavingMessageIndex(index);
-    const firstLine = content.split("\n")[0].replace(/^#+\s*/, "").trim();
-    setSaveJudul(firstLine.slice(0, 100) || "Tanpa judul");
-    setSaveCatatan(content);
-  }
-
-  function cancelSaveForm() {
-    setSavingMessageIndex(null);
-    setSaveJudul("");
-    setSaveCatatan("");
-  }
-
-  async function handleConfirmSave() {
-    if (!saveTarget || !saveJudul.trim()) return;
-    setSaveSubmitting(true);
-
-    try {
-      let endpoint = "";
-      let body: Record<string, any> = {};
-
-      if (saveTarget === "topik") {
-        endpoint = "/api/topik";
-        body = { judul: saveJudul, catatan: saveCatatan };
-      } else if (saveTarget === "naskah") {
-        endpoint = "/api/naskah";
-        body = {
-          judul: saveJudul,
-          isiNaskah: saveCatatan,
-          sumberTopikId: fromTopik || null,
-        };
-      } else if (saveTarget === "visual") {
-        endpoint = "/api/visual";
-        body = {
-          judul: saveJudul,
-          isi_visual: saveCatatan,
-          sumber_naskah_id: fromNaskah || null,
-        };
-      }
-
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        alert("Gagal menyimpan: " + (data.error || "Terjadi kesalahan"));
-      } else {
-        cancelSaveForm();
-      }
-    } catch (err: any) {
-      alert("Gagal menyimpan: " + (err.message || "Terjadi kesalahan"));
-    }
-
-    setSaveSubmitting(false);
-  }
-
   if (authLoading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -772,7 +540,6 @@ function AiChatContent() {
   return (
     <div style={{ height: "100%", width: "100%", background: "var(--bg-primary)", overflow: "hidden", position: "relative" }}>
       
-      {/* Hidden File Inputs */}
       <input
         type="file"
         ref={cameraInputRef}
@@ -798,7 +565,6 @@ function AiChatContent() {
         multiple
       />
 
-      {/* Overlay Backdrop khusus Mobile saat Drawer Riwayat Chat Terbuka */}
       {sidebarOpen && (
         <div
           className="chat-mobile-overlay"
@@ -806,7 +572,6 @@ function AiChatContent() {
         />
       )}
 
-      {/* LIGHTBOX / FULLSCREEN FILE PREVIEW MODAL */}
       {previewAttachment && (
         <div
           style={{
@@ -875,7 +640,6 @@ function AiChatContent() {
           position: "relative"
         }}
       >
-        {/* Sub-Sidebar Riwayat Chat */}
         <div
           className={`chat-sidebar ${sidebarOpen ? "open" : ""}`}
           style={{
@@ -893,7 +657,6 @@ function AiChatContent() {
             borderRight: sidebarOpen ? "1px solid var(--glass-border)" : "none",
           }}
         >
-          {/* Header Sub-Sidebar Polos Tanpa Garis Pembatas */}
           <div style={{ height: 57, padding: "0 10px", display: "flex", alignItems: "center", borderBottom: "none", flexShrink: 0 }}>
             <button
               onClick={startNewChat}
@@ -1083,9 +846,7 @@ function AiChatContent() {
           </div>
         </div>
 
-        {/* Main Chat Content Area */}
         <div style={{ flex: "1 1 0%", display: "flex", flexDirection: "column", position: "relative", minWidth: 0, height: "100%", overflow: "hidden", background: "var(--bg-primary)" }}>
-          {/* Header Bar Polos Tanpa Garis Pembatas & Tanpa Teks Tengah */}
           <div
             className="chat-header-bar"
             style={{
@@ -1101,7 +862,6 @@ function AiChatContent() {
               boxSizing: "border-box"
             }}
           >
-            {/* Tombol Ikon Panel [◧] khusus Riwayat Chat */}
             <div className="mobile-header-left-space" style={{ display: "flex", alignItems: "center" }}>
               <button
                 className="btn-ghost btn-icon toggle-sidebar-btn"
@@ -1128,38 +888,11 @@ function AiChatContent() {
               </button>
             </div>
 
-            {/* Tengah Kosong Polos */}
             <div style={{ flex: 1 }} />
 
-            {/* Penyeimbang Kanan */}
             <div style={{ width: 36, flexShrink: 0 }} />
           </div>
 
-          {contextLabel && (
-            <div style={{
-              background: "rgba(255, 255, 255, 0.03)",
-              borderBottom: "1px solid var(--glass-border)",
-              padding: "10px 16px",
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              fontSize: 13,
-              flexShrink: 0,
-            }}>
-              <div style={{
-                width: 24, height: 24, borderRadius: "50%", background: "var(--glass-border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-primary)", flexShrink: 0
-              }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ color: "var(--text-secondary)" }}>Konteks termuat dari </span>
-                <strong style={{ color: "var(--text-primary)" }}>{contextLabel}</strong>
-                {saveTarget === "naskah" && <span style={{ marginLeft: 8, color: "var(--text-secondary)", fontSize: 12 }}>— Web search aktif</span>}
-              </div>
-            </div>
-          )}
-
-          {/* Area Pesan Chat - Teks "Ada yang bisa dibantu?" Tepat di Tengah Layar Vertikal & Horizontal */}
           <div className="chat-messages-area" style={{ flex: "1 1 auto", overflowY: "auto", overflowX: "hidden", padding: "24px", display: "flex", flexDirection: "column", minHeight: 0 }}>
             {messages.length === 0 ? (
               <div style={{
@@ -1184,12 +917,8 @@ function AiChatContent() {
                 </div>
               </div>
             ) : (
-              /* DAFTAR PESAN (HILANGKAN IKON AVATAR TOTAL) */
               <div style={{ maxWidth: 840, width: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
                 {messages.map((m, i) => {
-                  const { cards, sisaTeks } = m.role === "assistant" ? parseTopikCards(m.content) : { cards: [], sisaTeks: m.content };
-                  const { isDraft, cleanContent } = m.role === "assistant" ? parseDraftMarker(m.content) : { isDraft: false, cleanContent: m.content };
-                  const isSavableDraft = m.role === "assistant" && saveTarget && (saveTarget === "naskah" || saveTarget === "visual") && isDraft;
                   const msgId = m.id || `msg-${i}`;
                   const isEditingThis = editingIndex === i;
 
@@ -1200,7 +929,6 @@ function AiChatContent() {
                       alignItems: m.role === "user" ? "flex-end" : "flex-start",
                       width: "100%",
                     }}>
-                      {/* BUBBLE WRAPPER (TANPA IKON AVATAR LOGO 👤 ATAU $) */}
                       <div className="chat-bubble-wrapper" style={{
                         maxWidth: m.role === "user" ? "80%" : "92%",
                         minWidth: 0,
@@ -1208,7 +936,6 @@ function AiChatContent() {
                         flexDirection: "column",
                         alignItems: m.role === "user" ? "flex-end" : "flex-start",
                       }}>
-                        {/* Attachments pada pesan user (BISA DI-KLIK UNTUK PRATINJAU LENGKAP) */}
                         {m.attachments && m.attachments.length > 0 && (
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
                             {m.attachments.map((att, ai) => (
@@ -1241,9 +968,7 @@ function AiChatContent() {
                           </div>
                         )}
 
-                        {/* RENDER GELEMBUNG USER vs BALASAN AI POLOS MELAYANG */}
                         {m.role === "user" ? (
-                          /* GELEMBUNG USER (SAMA SEKALI TIDAK DIRENDER JIKA TEKS KOSONG DENGAN LAMPIRAN) */
                           (m.content || isEditingThis) && (
                             <div style={{
                               padding: "12px 16px",
@@ -1260,7 +985,6 @@ function AiChatContent() {
                               width: isEditingThis ? "100%" : "auto",
                               minWidth: isEditingThis ? 280 : "auto",
                             }}>
-                              {/* INLINE EDIT DI DALAM GELEMBUNG PESAN USER */}
                               {isEditingThis ? (
                                 <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
                                   <textarea
@@ -1319,7 +1043,6 @@ function AiChatContent() {
                             </div>
                           )
                         ) : (
-                          /* BALASAN AI: TANPA GELEMBUNG / TANPA KOTAK (Polos Melayang) */
                           <div style={{
                             padding: "4px 0",
                             background: "transparent",
@@ -1332,117 +1055,10 @@ function AiChatContent() {
                             overflowWrap: "break-word",
                             width: "100%",
                           }}>
-                            {cards.length > 0 ? (
-                              <>
-                                {sisaTeks && <div style={{ marginBottom: 16 }}>{sisaTeks}</div>}
-                                <div style={{ display: "grid", gap: 12 }}>
-                                  {cards.map((card, ci) => {
-                                    const cardKey = `${i}-${ci}`;
-                                    const isSavingCard = savingCardKey === cardKey;
-                                    return (
-                                      <div key={ci} style={{
-                                        padding: 12,
-                                        borderRadius: "var(--radius-md)",
-                                        background: "var(--bg-secondary)",
-                                        border: "1px solid var(--glass-border)",
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: 8,
-                                      }}>
-                                        <div style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>
-                                          {card.judul}
-                                        </div>
-                                        <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-                                          {card.deskripsi}
-                                        </div>
-                                        <button
-                                          onClick={() => handleSaveCard(i, ci, card)}
-                                          disabled={isSavingCard}
-                                          className="btn btn-secondary btn-sm"
-                                          style={{ alignSelf: "flex-start", marginTop: 4, gap: 6, fontSize: 12 }}
-                                        >
-                                          <SaveIcon />
-                                          {isSavingCard ? "Menyimpan..." : "Simpan Topik"}
-                                        </button>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            ) : (
-                              <div>{cleanContent}</div>
-                            )}
-
-                            {isSavableDraft && (
-                              <div style={{ marginTop: 12 }}>
-                                <button
-                                  onClick={() => openSaveForm(i, cleanContent)}
-                                  className="btn btn-primary btn-sm"
-                                  style={{ gap: 6, fontSize: 12 }}
-                                >
-                                  <SaveIcon />
-                                  Simpan ke {saveTarget === "naskah" ? "Naskah" : "Visual"}
-                                </button>
-                              </div>
-                            )}
-
-                            {savingMessageIndex === i && (
-                              <div style={{
-                                marginTop: 12,
-                                padding: 14,
-                                borderRadius: "var(--radius-md)",
-                                background: "var(--bg-elevated)",
-                                border: "1px solid var(--glass-border)",
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 10,
-                              }}>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-                                  Simpan ke {saveTarget === "topik" ? "Topik" : saveTarget === "naskah" ? "Naskah" : "Visual"}
-                                </div>
-                                <div>
-                                  <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Judul</label>
-                                  <input
-                                    type="text"
-                                    value={saveJudul}
-                                    onChange={(e) => setSaveJudul(e.target.value)}
-                                    className="input-field"
-                                    style={{ width: "100%", padding: "6px 10px", fontSize: 13 }}
-                                  />
-                                </div>
-                                <div>
-                                  <label style={{ display: "block", fontSize: 11, color: "var(--text-secondary)", marginBottom: 4 }}>Isi / Catatan</label>
-                                  <textarea
-                                    value={saveCatatan}
-                                    onChange={(e) => setSaveCatatan(e.target.value)}
-                                    className="input-field"
-                                    rows={3}
-                                    style={{ width: "100%", padding: "6px 10px", fontSize: 13, resize: "vertical" }}
-                                  />
-                                </div>
-                                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                                  <button
-                                    onClick={cancelSaveForm}
-                                    className="btn btn-ghost btn-sm"
-                                    style={{ fontSize: 12 }}
-                                  >
-                                    Batal
-                                  </button>
-                                  <button
-                                    onClick={handleConfirmSave}
-                                    disabled={saveSubmitting}
-                                    className="btn btn-primary btn-sm"
-                                    style={{ fontSize: 12 }}
-                                  >
-                                    {saveSubmitting ? "Menyimpan..." : "Konfirmasi Simpan"}
-                                  </button>
-                                </div>
-                              </div>
-                            )}
+                            <div>{m.content}</div>
                           </div>
                         )}
 
-                        {/* IKON AKSI DI BAWAH GELEMBUNG CHAT DENGAN ANIMASI INTERAKTIF */}
                         {!isEditingThis && (
                           <div style={{
                             display: "flex",
@@ -1452,7 +1068,6 @@ function AiChatContent() {
                             color: "var(--text-tertiary)",
                           }}>
                             {m.role === "user" ? (
-                              /* 3 IKON USER: Retry (↻), Edit (✏️), Copy (📋) */
                               <>
                                 <button
                                   type="button"
@@ -1478,7 +1093,6 @@ function AiChatContent() {
                                     title="Copy"
                                   >
                                     {copiedId === msgId ? (
-                                      /* IKON CEKLIS (✓) SAAT DICOPIED */
                                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                                     ) : (
                                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -1487,16 +1101,14 @@ function AiChatContent() {
                                 )}
                               </>
                             ) : (
-                              /* TEPAT 3 IKON AI: Copy (📋), Read Aloud (🔊), Retry (↻) */
                               <>
                                 <button
                                   type="button"
-                                  onClick={() => handleCopy(msgId, cleanContent)}
+                                  onClick={() => handleCopy(msgId, m.content)}
                                   className="chat-action-btn"
                                   title="Copy"
                                 >
                                   {copiedId === msgId ? (
-                                    /* IKON CEKLIS (✓) SAAT DICOPIED */
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                                   ) : (
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -1504,7 +1116,7 @@ function AiChatContent() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleReadAloud(msgId, cleanContent)}
+                                  onClick={() => handleReadAloud(msgId, m.content)}
                                   className={`chat-action-btn ${isSpeakingId === msgId ? "active-speaking" : ""}`}
                                   title="Read aloud"
                                 >
@@ -1538,7 +1150,6 @@ function AiChatContent() {
             )}
           </div>
 
-          {/* KONTROL INPUT BAWAH (Polos Tanpa Garis Pembatas & Tanpa Warna Ungu) */}
           <div
             className="chat-input-container"
             style={{
@@ -1553,7 +1164,6 @@ function AiChatContent() {
           >
             <div style={{ width: "100%", maxWidth: 840 }}>
               
-              {/* Toggle Mode: Thinking & Web Search (Netral Adaptif Tanpa Warna Ungu) */}
               <div
                 className="chat-mode-pills"
                 style={{
@@ -1601,7 +1211,6 @@ function AiChatContent() {
                 </button>
               </div>
 
-              {/* Input Card Outer */}
               <div style={{
                 background: "var(--bg-secondary)",
                 border: "1px solid var(--glass-border)",
@@ -1612,22 +1221,27 @@ function AiChatContent() {
                 gap: 12,
                 position: "relative",
               }}>
-                {/* Preview File Attachments */}
                 {attachments.length > 0 && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", borderBottom: "1px solid var(--glass-border)", paddingBottom: 10 }}>
                     {attachments.map((att, ai) => (
-                      <div key={ai} style={{
-                        position: "relative",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        background: "var(--bg-elevated)",
-                        border: "1px solid var(--glass-border)",
-                        borderRadius: "var(--radius-md)",
-                        padding: "4px 8px",
-                        fontSize: 12,
-                        color: "var(--text-primary)",
-                      }}>
+                      <div
+                        key={ai}
+                        onClick={() => handleAttachmentClick({ name: att.name, url: att.previewUrl || att.base64 || "", type: att.type })}
+                        style={{
+                          position: "relative",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          background: "var(--bg-elevated)",
+                          border: "1px solid var(--glass-border)",
+                          borderRadius: "var(--radius-md)",
+                          padding: "4px 8px",
+                          fontSize: 12,
+                          color: "var(--text-primary)",
+                          cursor: "pointer",
+                        }}
+                        title="Klik untuk pratinjau foto/file"
+                      >
                         {att.previewUrl ? (
                           <img src={att.previewUrl} alt={att.name} style={{ width: 24, height: 24, borderRadius: 4, objectFit: "cover" }} />
                         ) : (
@@ -1636,8 +1250,12 @@ function AiChatContent() {
                         <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{att.name}</span>
                         <button
                           type="button"
-                          onClick={() => removeAttachment(ai)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeAttachment(ai);
+                          }}
                           style={{ background: "none", border: "none", color: "var(--text-tertiary)", cursor: "pointer", padding: "0 2px", fontSize: 14 }}
+                          title="Hapus lampiran"
                         >
                           ×
                         </button>
@@ -1646,7 +1264,6 @@ function AiChatContent() {
                   </div>
                 )}
 
-                {/* Textarea Input */}
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -1657,7 +1274,7 @@ function AiChatContent() {
                       handleSend();
                     }
                   }}
-                  placeholder={contextText && !contextSent ? "Klik Kirim untuk memproses konteks..." : "Mengobrol dengan HarNug AI..."}
+                  placeholder="Mengobrol dengan HarNug AI..."
                   rows={1}
                   style={{
                     width: "100%",
@@ -1673,13 +1290,8 @@ function AiChatContent() {
                   }}
                 />
 
-                {/* Bottom Controls Bar (Di-lock flex-wrap: nowrap Sejajar Lurus Presisi) */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, width: "100%", flexWrap: "nowrap" }}>
-                  
-                  {/* Kiri: [+] dan Dropdown Model AI */}
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 auto", minWidth: 0 }}>
-                    
-                    {/* Tombol [+] Multimodal Upload */}
                     <div ref={plusMenuRef} style={{ position: "relative", flexShrink: 0 }}>
                       <button
                         type="button"
@@ -1702,7 +1314,6 @@ function AiChatContent() {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                       </button>
 
-                      {/* Dropdown Menu [+] (Kamera, Foto, File) */}
                       {plusMenuOpen && (
                         <div style={{
                           position: "absolute",
@@ -1720,7 +1331,6 @@ function AiChatContent() {
                           minWidth: 160,
                           boxShadow: "var(--shadow-md)"
                         }}>
-                          {/* 1. Kamera */}
                           <button
                             type="button"
                             onClick={() => cameraInputRef.current?.click()}
@@ -1741,7 +1351,6 @@ function AiChatContent() {
                             Kamera
                           </button>
 
-                          {/* 2. Foto */}
                           <button
                             type="button"
                             onClick={() => imageInputRef.current?.click()}
@@ -1762,7 +1371,6 @@ function AiChatContent() {
                             Foto
                           </button>
 
-                          {/* 3. File */}
                           <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
@@ -1786,7 +1394,6 @@ function AiChatContent() {
                       )}
                     </div>
 
-                    {/* Mini Model Selector (Mini-Pill Ramping Height 28px) */}
                     <div style={{ position: "relative", display: "inline-flex", alignItems: "center", flexShrink: 0 }}>
                       <select
                         value={model}
@@ -1827,9 +1434,7 @@ function AiChatContent() {
 
                   </div>
 
-                  {/* Kanan: Voice Input [🎙️] + Send / Stop Generation Toggle (Tanpa Warna Ungu) */}
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                    {/* Tombol Pesan Suara / Microphone */}
                     <button
                       type="button"
                       onClick={handleVoiceInput}
@@ -1855,9 +1460,7 @@ function AiChatContent() {
                       </svg>
                     </button>
 
-                    {/* Tombol Send / Stop Toggle (Tanpa Warna Ungu - Gunakan Netral var(--text-primary)) */}
                     {loading ? (
-                      /* Tombol STOP [ ⏹ ] saat AI Mengetik */
                       <button
                         type="button"
                         onClick={handleStop}
@@ -1879,11 +1482,10 @@ function AiChatContent() {
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
                       </button>
                     ) : (
-                      /* Tombol SEND [ ✈️ ] saat Normal */
                       <button
                         type="button"
                         onClick={() => handleSend()}
-                        disabled={(!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0)}
+                        disabled={!input.trim() && attachments.length === 0}
                         style={{
                           width: 30,
                           height: 30,
@@ -1896,7 +1498,7 @@ function AiChatContent() {
                           justifyContent: "center",
                           cursor: "pointer",
                           flexShrink: 0,
-                          opacity: (!input.trim() && contextSent && attachments.length === 0) || (!input.trim() && !contextText && attachments.length === 0) ? 0.3 : 1,
+                          opacity: !input.trim() && attachments.length === 0 ? 0.3 : 1,
                         }}
                         title="Kirim Pesan"
                       >
@@ -1918,13 +1520,11 @@ function AiChatContent() {
         </div>
       </div>
 
-      {/* CSS Responsive & Animasi Ikon Aksi */}
       <style jsx>{`
         .chat-mobile-overlay {
           display: none;
         }
 
-        /* ANIMASI IKON AKSI BARU (HOVER & CLICK) */
         .chat-action-btn {
           background: transparent;
           border: none;
@@ -1939,20 +1539,17 @@ function AiChatContent() {
           outline: none;
         }
 
-        /* Saat kursor mengarah ke ikon (Hover) */
         .chat-action-btn:hover {
           color: var(--text-primary);
           background: var(--glass-bg-hover, rgba(150, 150, 150, 0.12));
           transform: scale(1.18) translateY(-1px);
         }
 
-        /* Saat ikon di-klik (Active Press) */
         .chat-action-btn:active {
           transform: scale(0.88) translateY(0);
           background: var(--glass-border, rgba(150, 150, 150, 0.25));
         }
 
-        /* Animasi Muter Tombol Retry (Spin) */
         .spinning-icon {
           animation: spin 0.8s ease-in-out infinite;
         }
@@ -1962,7 +1559,6 @@ function AiChatContent() {
           100% { transform: rotate(360deg); }
         }
 
-        /* Efek Denyut Suara saat Read Aloud Aktif */
         .chat-action-btn.active-speaking {
           color: var(--text-primary);
           background: var(--glass-bg-hover, rgba(150, 150, 150, 0.15));

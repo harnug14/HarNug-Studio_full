@@ -1,9 +1,6 @@
-import { GroqQuotaError, callGroqWithRotation } from "./keyRotation";
-import { ChatMode, ContentTarget, ChatMessage, buildStyleInstruction, buildContentInstruction } from "../gemini/chatWithGemini";
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { GroqQuotaError } from "./keyRotation";
+import { ChatMode, ContentTarget, ChatMessage, buildStyleInstruction } from "../gemini/chatWithGemini";
+import { fetchTavilySearchResults } from "../tavily";
 
 export async function chatWithGroq(
   messages: ChatMessage[],
@@ -11,89 +8,68 @@ export async function chatWithGroq(
   model: string,
   mode: ChatMode,
   contextText?: string,
-  contentTarget: ContentTarget = null
+  contentTarget?: ContentTarget
 ): Promise<string> {
-  const styleInstruction = buildStyleInstruction(mode);
-  const contentInstruction = buildContentInstruction(contentTarget);
-  const systemInstruction = contentInstruction
-    ? `${contentInstruction}\n\n${styleInstruction}`
-    : styleInstruction;
+  const activeModel = model || "groq-llama-3.3-70b-versatile";
+  const groqModel = activeModel.replace(/^groq-/, "");
+  let finalContextText = contextText || "";
 
-  // Remove the 'groq-' prefix if it was added in the UI
-  const actualModel = model.startsWith("groq-") ? model.replace("groq-", "") : model;
+  const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
 
-  const formattedMessages = [];
-  
-  // Add system instruction
-  formattedMessages.push({
-    role: "system",
-    content: systemInstruction
-  });
-
-  // Add context if exists
-  if (contextText) {
-    formattedMessages.push({
-      role: "user",
-      content: `Konteks awal:\n${contextText}`
-    });
+  // Jika Mode Web Search Aktif, panggil Tavily Search API
+  if ((mode === "search" || (typeof mode === "string" && (mode as string).includes("search"))) && lastUserMsg && lastUserMsg.content) {
+    const tavilyData = await fetchTavilySearchResults(lastUserMsg.content);
+    if (tavilyData) {
+      const searchBlock = `\n\n[DATA PENCARIAN WEB REAL-TIME TAVILY DETIK INI]:\n${tavilyData}\n\nATURAN WAJIB: Jawab pertanyaan pengguna secara akurat berdasarkan data pencarian web Tavily di atas dan cantumkan URL sumbernya bila relevan!`;
+      finalContextText = finalContextText ? `${finalContextText}${searchBlock}` : searchBlock;
+    }
   }
 
-  // Add all chat history
-  formattedMessages.push(...messages);
+  const systemInstruction = buildStyleInstruction(mode);
+
+  const formattedMessages: any[] = [
+    {
+      role: "system",
+      content: finalContextText
+        ? `${systemInstruction}\n\n[Konteks Tambahan & Data Web Real-time]:\n${finalContextText}`
+        : systemInstruction,
+    },
+  ];
+
+  for (const m of messages) {
+    formattedMessages.push({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: m.content || " ",
+    });
+  }
 
   const body = {
-    model: actualModel,
+    model: groqModel,
     messages: formattedMessages,
+    temperature: 0.7,
+    max_tokens: 4096,
   };
 
-  const MAX_RETRIES = 2;
-  const RETRY_DELAY_MS = 5000;
-  let lastError: Error | null = null;
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      const rawText: string = data.choices?.[0]?.message?.content || "";
-      return rawText;
-    }
-
-    const errText = await response.text();
-
-    if (response.status === 429) {
-      if (errText.toLowerCase().includes("quota") || errText.toLowerCase().includes("limit")) {
-        throw new GroqQuotaError(
-          `Groq API quota exceeded (429) - ${errText.slice(0, 200)}`
-        );
-      } else {
-        if (attempt < MAX_RETRIES) {
-          lastError = new Error(`Groq API Rate Limit (429) - mencoba lagi...`);
-          await sleep(20000); // 20 detik
-          continue;
-        } else {
-          throw new Error(`Terlalu sering request (Rate Limit 429). Mohon tunggu beberapa saat.`);
-        }
-      }
-    }
-
-    if (response.status === 503 && attempt < MAX_RETRIES) {
-      lastError = new Error(
-        `Groq API 503 (percobaan ${attempt + 1}/${MAX_RETRIES + 1}) - server sibuk, mencoba lagi...`
-      );
-      await sleep(RETRY_DELAY_MS);
-      continue;
-    }
-
-    throw new Error(`Groq API error: ${response.status} - ${errText}`);
+  if (response.ok) {
+    const data = await response.json();
+    const rawText: string = data.choices?.[0]?.message?.content || "";
+    return rawText;
   }
 
-  throw lastError || new Error("Gagal chat setelah beberapa percobaan");
+  const errText = await response.text();
+
+  if (response.status === 429) {
+    throw new GroqQuotaError(`Groq API quota/rate limit habis (429) - ${errText.slice(0, 200)}`);
+  }
+
+  throw new Error(`Groq API error: ${response.status} - ${errText}`);
 }

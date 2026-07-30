@@ -1,6 +1,7 @@
 // Mengirim pesan chat ke Gemini, dengan dukungan mode: biasa, mendalam, berpikir, search (grounding) & multimodal (foto/file)
 
 import { GeminiQuotaError } from "./keyRotation";
+import { fetchTavilySearchResults } from "../tavily";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -11,18 +12,17 @@ export interface ChatMessage {
 export type ChatMode = "biasa" | "mendalam" | "berpikir" | "search";
 export type ContentTarget = "topik" | "naskah" | "visual" | null;
 
+export function buildContentInstruction(contentTarget?: ContentTarget): string {
+  return "";
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Google mengirim field quotaId di detail error 429 yang isinya mengandung
-// "PerDay" untuk limit harian, atau "PerMinute"/"PerMinutePerProject" untuk limit
-// per-menit. Kita cek ini supaya key tidak dikunci seharian gara-gara rate-limit sesaat.
 function isDailyQuotaError(errText: string): boolean {
   const lower = errText.toLowerCase();
-  if (lower.includes("perday")) return true;
-  if (lower.includes("perminute")) return false;
-  return false;
+  return lower.includes("perday");
 }
 
 export function buildStyleInstruction(mode: ChatMode): string {
@@ -33,35 +33,15 @@ export function buildStyleInstruction(mode: ChatMode): string {
     case "mendalam":
       return `${baseStyle} Jawab secara sangat detail, analitis, dan komprehensif. Berikan konteks, latar belakang, dan berbagai sudut pandang jika relevan.`;
     case "berpikir":
-      return `${baseStyle} Sebelum memberi jawaban akhir, jabarkan dulu proses berpikirmu langkah demi langkah (chain-of-thought) secara eksplisit, baru berikan kesimpulan/jawaban akhir.`;
+      return `${baseStyle} [MODE THINKING AKTIF]: Sebelum memberikan jawaban akhir, kamu WAJIB menganalisis dan menjabarkan proses berpikirmu langkah demi langkah (Chain of Thought) secara mendalam di awal jawaban, baru diikuti dengan kesimpulan akhir.`;
     case "search":
-      return `${baseStyle} Gunakan hasil pencarian web untuk memastikan jawabanmu akurat dan berdasarkan informasi terkini.`;
+      return `${baseStyle} Jawab pertanyaan pengguna HANYA berdasarkan data hasil pencarian web real-time Tavily yang dilampirkan. Kutip fakta, angka, dan sertakan URL sumbernya (source URL) dalam jawabanmu jika memungkinkan.`;
     case "biasa":
     default:
       return `${baseStyle} Jawab secara natural dan ringkas seperti obrolan biasa, tapi tetap sopan.`;
   }
 }
 
-const VERIFICATION_HONESTY_INSTRUCTION =
-  "\n\nATURAN WAJIB SAAT USER BERTANYA VERIFIKASI/KEBENARAN (misalnya 'emang bener itu?', 'beneran akurat?', 'coba cek lagi'): kamu WAJIB benar-benar mengecek ulang dengan jujur, BUKAN otomatis membenarkan/mempertahankan apa yang sudah kamu tulis sebelumnya. Kalau setelah dicek ulang kamu menemukan bagian yang meragukan, mengada-ada, atau kamu sebenarnya tidak yakin — WAJIB akui itu secara eksplisit dan jelaskan bagian mana yang meragukan. JANGAN PERNAH menjawab 'ya, itu 100% akurat' hanya untuk menyenangkan atau menghindari terlihat salah. DILARANG KERAS menambahkan detail/angka BARU yang belum pernah disebutkan sebelumnya sebagai 'bukti' saat menjawab pertanyaan verifikasi — itu sama saja mengarang lagi.";
-
-export function buildContentInstruction(contentTarget: ContentTarget): string {
-  switch (contentTarget) {
-    case "topik":
-      return "Kamu sedang membantu ideasi TOPIK video YouTube Shorts. Fokus HANYA pada ide/judul topik dan penjelasan singkat kenapa topik itu menarik. JANGAN membuat naskah lengkap, JANGAN membahas visual, B-roll, atau teknik editing di tahap ini — itu bukan bagian dari tahap ini.\n\nFORMAT WAJIB: setiap kali kamu memberikan satu atau beberapa ide/opsi topik video (baik diminta satu maupun banyak sekaligus), tulis SETIAP ide dalam satu baris terpisah dengan format PERSIS seperti ini, tanpa markdown tambahan (tanpa bold/asterisk) di dalam baris itu:\n[TOPIK] Judul singkat topik | Penjelasan singkat 1-2 kalimat kenapa topik ini menarik\n\nContoh (untuk 3 ide):\n[TOPIK] Misteri Kota yang Menghilang | Membahas legenda kota yang lenyap dalam semalam, menarik karena menimbulkan teori konspirasi dan sejarah.\n[TOPIK] Hewan dengan Kemampuan Tersembunyi | Fokus pada satu spesies dengan kemampuan biologis unik yang jarang diketahui orang.\n[TOPIK] Fenomena Alam yang Menyerupai Fiksi | Membahas kejadian nyata di alam yang terdengar seperti fiksi ilmiah.\n\nKamu BOLEH menulis kalimat pembuka atau penutup di luar format itu (misalnya \"Berikut beberapa ide topik:\" di awal, atau pertanyaan follow-up di akhir), tapi SETIAP baris ide topik itu sendiri WAJIB persis mengikuti format `[TOPIK] Judul | Penjelasan` itu.\n\nJika kamu sedang TIDAK memberikan ide/opsi topik baru (misalnya sedang menjawab pertanyaan, mendiskusikan/merevisi satu topik yang sudah ada dalam bentuk paragraf, atau membahas hal lain), JANGAN gunakan format itu — jawab secara natural seperti biasa." + VERIFICATION_HONESTY_INSTRUCTION;
-
-    case "naskah":
-      return "Kamu sedang membantu membuat NASKAH video YouTube Shorts. Fokus HANYA pada naskah/skrip murni — kalimat yang akan diucapkan atau dibacakan dari awal sampai akhir video. JANGAN menyertakan instruksi visual, B-roll, gerakan kamera, transisi, teks di layar, atau elemen editing apa pun — itu akan dibahas terpisah di tahap panduan visual, bukan di tahap ini.\n\nWAJIB SPESIFIK, BUKAN GENERIK: naskah HARUS berisi fakta/detail konkret yang hanya berlaku untuk topik ini — nama orang/tempat/benda asli, angka atau tahun spesifik, kejadian nyata. DILARANG KERAS menulis kalimat generik yang bisa dipakai untuk topik manapun.\n\nWAJIB PAKAI SUMBER LINK ASLI, BUKAN KARANGAN: kamu memiliki akses pencarian web (Google Search). WAJIB gunakan itu untuk mencari fakta dan SUMBER LINK URL ASLI yang mendukung naskah ini. Di akhir naskah, WAJIB tambahkan bagian 'CATATAN SUMBER:' berisi daftar URL/link ASLI dan VALID hasil pencarian web (bukan nama sumber generik seperti 'artikel sejarah populer' atau 'catatan yang sering dikutip' — itu DILARANG KERAS karena itu karangan). Untuk setiap klaim, cantumkan link URL persis dari hasil pencarian. Kalau untuk suatu detail kamu TIDAK menemukan link URL valid lewat pencarian, WAJIB tulis eksplisit 'PERLU DIVERIFIKASI: [detail itu] — tidak ditemukan sumber link yang bisa dipastikan' — JANGAN mengarang link atau nama sumber supaya terlihat meyakinkan.\n\nPENANDA WAJIB: kalau balasan ini adalah DRAFT NASKAH (baik draft pertama maupun hasil revisi), WAJIB mulai balasan dengan baris pertama persis: [DRAFT_NASKAH]\nKalau balasan ini BUKAN draft naskah (misalnya kamu sedang menjawab pertanyaan, menjelaskan, atau berdiskusi biasa tanpa menulis ulang naskahnya), JANGAN pakai penanda itu sama sekali — jawab natural biasa." + VERIFICATION_HONESTY_INSTRUCTION;
-
-    case "visual":
-      return "Kamu sedang membantu membuat PANDUAN VISUAL/STORYBOARD video YouTube Shorts berdasarkan naskah yang sudah ada, UNTUK ALUR PRODUKSI SPESIFIK berikut (WAJIB diikuti, bukan alur produksi umum): (1) Google Flow dipakai untuk generate karakter, background, dan objek beranimasi sebagai ASET TERPISAH per-pose; (2) compositing dan animasi dilakukan di CapCut dengan teknik pose swap, zoom, pan, parallax, dan keyframe animation; (3) SETIAP kalimat naskah dipecah menjadi BEBERAPA POSE karakter berbeda untuk menciptakan ilusi gerakan.\n\nATURAN WAJIB — KESINAMBUNGAN POSE (paling penting, sering dilanggar): setiap pose/visual HARUS merupakan kelanjutan LOGIS dari pose sebelumnya, membentuk satu alur gerakan yang utuh — BUKAN lompatan aksi. DILARANG KERAS melompat langsung dari satu kondisi ke kondisi yang jauh berbeda tanpa pose transisi di antaranya.\nContoh SALAH (lompat): 'pria keluar dari rumah' → langsung → 'pria naik motor ngebut'.\nContoh BENAR (bertahap): 'pria keluar dari rumah' → 'pria berdiri di dekat motor' → 'pria menaiki motor' → 'motor mulai berjalan' → 'motor melaju kencang'.\nSebelum menulis pose berikutnya, selalu cek: apakah pose ini masuk akal sebagai kelanjutan LANGSUNG dari pose sebelumnya? Kalau ada gap gerakan yang terlalu jauh, WAJIB sisipkan pose transisi tambahan di antaranya, meskipun itu berarti jumlah visual per kalimat jadi lebih banyak.\n\nWAJIB KONKRET & BISA LANGSUNG DIEKSEKUSI DI GOOGLE FLOW, BUKAN TEORITIS: untuk SETIAP pose/visual, sebutkan PERSIS dan LENGKAP:\n(a) Camera/shot type (misalnya wide shot, medium shot, close-up, POV, over-the-shoulder)\n(b) Angle kamera (misalnya eye-level, low angle, high angle, dari samping, dari belakang)\n(c) Background/setting (lokasi, waktu/pencahayaan, suasana — detail, bukan sekadar 'di jalan' atau 'di rumah')\n(d) Pose & aksi karakter secara spesifik (posisi tubuh, tangan, kaki, arah pandang — bukan deskripsi generik seperti 'sedang berjalan')\n(e) Detail tambahan jika relevan (ekspresi wajah, elemen pendukung di frame, kondisi seperti rambut/pakaian tertiup angin, dll)\nSetelah itu, baru sebutkan: aset background/objek terpisah apa yang dibutuhkan dari Google Flow, teknik CapCut apa yang dipakai (pose swap / zoom in-out / pan arah mana / parallax layer apa), teks di layar kalau ada (tulis persis teksnya), dan sound effect kalau relevan.\nDILARANG menulis instruksi umum atau pose yang tidak lengkap kelima elemen (a)-(e) di atas.\n\nPENANDA WAJIB: kalau balasan ini adalah DRAFT PANDUAN VISUAL (baik draft pertama maupun hasil revisi), WAJIB mulai balasan dengan baris pertama persis: [DRAFT_VISUAL]\nKalau balasan ini BUKAN draft panduan visual (misalnya kamu sedang menjawab pertanyaan atau berdiskusi biasa), JANGAN pakai penanda itu sama sekali — jawab natural biasa." + VERIFICATION_HONESTY_INSTRUCTION;
-
-    default:
-      return "";
-  }
-}
-
-// Helper untuk mengurai Base64 & MimeType foto/file ke format inlineData Google Gemini API
 function parseInlineData(att: { name?: string; url?: string; type?: string; base64?: string }) {
   const rawData = att.base64 || att.url || "";
   if (!rawData) return null;
@@ -75,7 +55,6 @@ function parseInlineData(att: { name?: string; url?: string; type?: string; base
     base64Data = dataUrlMatch[2];
   }
 
-  // Gemini mendukung image/*, audio/*, video/*, application/pdf, text/*
   if (
     mimeType.startsWith("image/") ||
     mimeType.startsWith("audio/") ||
@@ -100,19 +79,28 @@ export async function chatWithGemini(
   model: string,
   mode: ChatMode,
   contextText?: string,
-  contentTarget: ContentTarget = null
+  contentTarget?: ContentTarget
 ): Promise<string> {
-  const styleInstruction = buildStyleInstruction(mode);
-  const contentInstruction = buildContentInstruction(contentTarget);
-  const systemInstruction = contentInstruction
-    ? `${contentInstruction}\n\n${styleInstruction}`
-    : styleInstruction;
+  const activeModel = model || "gemini-1.5-flash";
+  let finalContextText = contextText || "";
 
-  // Format pesan beserta lampiran (multimodal)
+  // Cari pertanyaan user paling akhir
+  const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+
+  // Jika Mode Web Search Aktif, panggil Tavily Search API
+  if ((mode === "search" || (typeof mode === "string" && (mode as string).includes("search"))) && lastUserMsg && lastUserMsg.content) {
+    const tavilyData = await fetchTavilySearchResults(lastUserMsg.content);
+    if (tavilyData) {
+      const searchBlock = `\n\n[DATA PENCARIAN WEB REAL-TIME TAVILY DETIK INI]:\n${tavilyData}\n\nATURAN WAJIB: Jawab pertanyaan pengguna secara akurat berdasarkan data pencarian web Tavily di atas dan cantumkan URL sumbernya bila relevan!`;
+      finalContextText = finalContextText ? `${finalContextText}${searchBlock}` : searchBlock;
+    }
+  }
+
+  const systemInstruction = buildStyleInstruction(mode);
+
   const contents = messages.map((m) => {
     const parts: any[] = [];
 
-    // Jika ada lampiran foto/file, konversi ke inlineData Gemini
     if (m.attachments && Array.isArray(m.attachments)) {
       for (const att of m.attachments) {
         const inlinePart = parseInlineData(att);
@@ -122,7 +110,6 @@ export async function chatWithGemini(
       }
     }
 
-    // Masukkan teks pesan (jika ada atau jika parts masih kosong)
     if (m.content || parts.length === 0) {
       parts.push({ text: m.content || "Tolong analisis dan jelaskan lampiran foto/file berikut." });
     }
@@ -133,10 +120,10 @@ export async function chatWithGemini(
     };
   });
 
-  if (contextText) {
+  if (finalContextText) {
     contents.unshift({
       role: "user",
-      parts: [{ text: `Konteks awal:\n${contextText}` }],
+      parts: [{ text: `Konteks & Data Web Real-time:\n${finalContextText}` }],
     });
   }
 
@@ -147,63 +134,33 @@ export async function chatWithGemini(
     },
   };
 
-  // Search grounding aktif hanya jika mode === "search" (Manual)
-  if (mode === "search") {
-    body.tools = [{ google_search: {} }];
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (response.ok) {
+    const data = await response.json();
+    const rawText: string =
+      data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return rawText;
   }
 
-  const MAX_RETRIES = 2;
-  const RETRY_DELAY_MS = 5000;
-  const RPM_RETRY_DELAY_MS = 20000; // limit per-menit -> tunggu 20 detik sebelum retry key yang sama
-  let lastError: Error | null = null;
+  const errText = await response.text();
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }
-    );
-
-    if (response.ok) {
-      const data = await response.json();
-      const rawText: string =
-        data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      return rawText;
-    }
-
-    const errText = await response.text();
-
-    if (response.status === 429) {
-      if (isDailyQuotaError(errText)) {
-        throw new GeminiQuotaError(
-          `Gemini API quota harian habis (429) - ${errText.slice(0, 200)}`
-        );
-      } else {
-        if (attempt < MAX_RETRIES) {
-          lastError = new Error(`Gemini API Rate Limit sesaat (429) - mencoba lagi...`);
-          await sleep(RPM_RETRY_DELAY_MS);
-          continue;
-        } else {
-          throw new Error(
-            `Terlalu sering request ke key ini (Rate Limit sesaat). Coba key lain atau tunggu ~1 menit.`
-          );
-        }
-      }
-    }
-
-    if (response.status === 503 && attempt < MAX_RETRIES) {
-      lastError = new Error(
-        `Gemini API 503 (percobaan ${attempt + 1}/${MAX_RETRIES + 1}) - server sibuk, mencoba lagi...`
+  if (response.status === 429) {
+    if (isDailyQuotaError(errText)) {
+      throw new GeminiQuotaError(
+        `Gemini API quota harian habis (429) - ${errText.slice(0, 200)}`
       );
-      await sleep(RETRY_DELAY_MS);
-      continue;
+    } else {
+      throw new Error(`Rate limit sesaat pada key ini.`);
     }
-
-    throw new Error(`Gemini API error: ${response.status} - ${errText}`);
   }
 
-  throw lastError || new Error("Gagal chat setelah beberapa percobaan");
+  throw new Error(`Gemini API error: ${response.status} - ${errText}`);
 }

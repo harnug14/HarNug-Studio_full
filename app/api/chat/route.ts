@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { chatWithGemini, ChatMode, ContentTarget } from "@/lib/gemini/chatWithGemini";
+import { chatWithGemini, ChatMode } from "@/lib/gemini/chatWithGemini";
 import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { chatWithGroq } from "@/lib/groq/chatWithGroq";
 import { callGroqWithRotation } from "@/lib/groq/keyRotation";
@@ -58,16 +58,12 @@ export async function POST(req: NextRequest) {
   const mode: ChatMode = body?.mode || "biasa";
   const pesanPertama: string = (body?.pesan || "").trim();
   const attachments: any[] = body?.attachments || [];
-  const sumber_topik_id = body?.sumber_topik_id || null;
-  const sumber_naskah_id = body?.sumber_naskah_id || null;
   const contextText: string | undefined = body?.contextText || undefined;
-  const contentTarget: ContentTarget = body?.contentTarget || null;
 
   if (!pesanPertama && attachments.length === 0) {
     return NextResponse.json({ error: "Pesan atau lampiran tidak boleh kosong" }, { status: 400 });
   }
 
-  // Judul sesi di sidebar
   const judulSesi = pesanPertama
     ? pesanPertama.slice(0, 50)
     : attachments[0]?.name
@@ -81,9 +77,6 @@ export async function POST(req: NextRequest) {
       judul: judulSesi,
       model,
       mode,
-      sumber_topik_id,
-      sumber_naskah_id,
-      content_target: contentTarget,
     })
     .select()
     .single();
@@ -95,7 +88,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Murni simpan apa adanya (JIKA KOSONG TETAP KOSONG, TANPA TEKS NAMA LAMPIRAN)
   await supabase.from("chat_messages").insert({
     session_id: session.id,
     role: "user",
@@ -122,8 +114,7 @@ export async function POST(req: NextRequest) {
           apiKey,
           model,
           mode,
-          contextText,
-          contentTarget
+          contextText
         )
       );
     } else {
@@ -133,8 +124,7 @@ export async function POST(req: NextRequest) {
           apiKey,
           model,
           mode,
-          contextText,
-          contentTarget
+          contextText
         )
       );
     }
