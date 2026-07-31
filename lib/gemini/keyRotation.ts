@@ -7,6 +7,7 @@ export class GeminiQuotaError extends Error {
   }
 }
 
+// Cek apakah key "limited" seharusnya sudah reset (lewat jam 16:00 WIB hari ini)
 function shouldResetByNow(lastCheckedAt: string | null): boolean {
   if (!lastCheckedAt) return false;
 
@@ -30,6 +31,7 @@ function shouldResetByNow(lastCheckedAt: string | null): boolean {
   return lcDate < nowDate && nowHour >= 16;
 }
 
+// Ambil API Key aktif, dan otomatis reset key yang sudah lewat jam 16:00 WIB kembali ke "active" (Hijau)
 export async function getActiveGeminiKeys(
   supabase: any
 ): Promise<{ id: string; api_key: string }[]> {
@@ -52,6 +54,7 @@ export async function getActiveGeminiKeys(
     }
   }
 
+  // Otomatis ubah kembali status menjadi "active" (Hijau) di database jika sudah lewat jam 16:00 WIB
   if (idsToReset.length > 0) {
     await supabase
       .from("api_keys")
@@ -62,6 +65,7 @@ export async function getActiveGeminiKeys(
   return usableKeys;
 }
 
+// Tandai key sebagai limited HANYA jika kuota harian beneran 100% habis
 export async function markGeminiKeyLimited(supabase: any, keyId: string) {
   await supabase
     .from("api_keys")
@@ -89,13 +93,16 @@ export async function callGeminiWithRotation<T>(
     } catch (err: any) {
       lastError = err;
 
+      // HANYA ubah status ke 'limited' (merah) jika MURNI Kuota Harian (PerDay) dari Google yang habis 100%!
       if (err instanceof GeminiQuotaError) {
+        console.log(`[GeminiRotation] Key ${key.id.slice(0, 8)} kuota harian habis. Tandai limited di DB...`);
         await markGeminiKeyLimited(supabase, key.id);
+      } else {
+        // Error biasa/rate-limit sesaat -> Rotasi ke key berikutnya tanpa merubah warna indikator di DB
+        console.log(`[GeminiRotation] Key ${key.id.slice(0, 8)} sibuk/error biasa. Rotasi ke key berikutnya...`);
       }
-
-      console.log(`[GeminiRotation] Key ${key.id.slice(0, 8)} gagal/limit. Mencoba key berikutnya...`);
     }
   }
 
-  throw lastError || new Error("Semua API Key Gemini sedang sibuk/limit. Coba lagi dalam beberapa saat.");
+  throw lastError || new Error("Semua API Key Gemini sedang sibuk. Coba lagi dalam beberapa saat.");
 }
