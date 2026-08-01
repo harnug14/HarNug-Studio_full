@@ -1,5 +1,20 @@
 import { SceneSpecification, PromptComposerResult } from "../types";
 
+function getSafeString(val: unknown, fallback: string = "-"): string {
+  if (typeof val === "string" && val.trim().length > 0) return val.trim();
+  return fallback;
+}
+
+/**
+ * PROMPT COMPOSER HARDENING:
+ * Helper cleanFluff MURNI merapikan spasi ganda, newline berlebih, dan trim().
+ * DILARANG MEMOTONG ATAU MENGUBAH NAMA ENTITAS DENGAN REGEX DICTIONARY!
+ */
+function cleanFluff(text: unknown): string {
+  const safe = getSafeString(text, "-");
+  return safe.replace(/\s+/g, " ").trim();
+}
+
 /**
  * STEP 5: PROMPT COMPOSER MODULE (INFRASTRUCTURE ADAPTER)
  * ADR RULE: "Prompt Composer decides how to speak to the AI. Prompt Composer never changes intent."
@@ -16,11 +31,19 @@ export function composePrompt(
   visualStyle: string = "Sinematik 3D, Unreal Engine 5",
   vendor: string = "Google Flow"
 ): PromptComposerResult {
-  // 1. VALIDATION
   const errors: string[] = [];
-  if (!spec) errors.push("SceneSpecification kosong");
-  if (!spec?.focus) errors.push("Fokus visual utama kosong");
-  if (!spec?.camera) errors.push("Spesifikasi kamera kosong");
+
+  if (!spec) {
+    errors.push("SceneSpecification null atau undefined");
+    return {
+      compiledPrompt: "",
+      vendor,
+      isValidationPassed: false,
+      validationErrors: errors,
+    };
+  }
+
+  if (!getSafeString(spec.focus, "")) errors.push("Fokus visual utama kosong");
 
   if (errors.length > 0) {
     return {
@@ -31,7 +54,6 @@ export function composePrompt(
     };
   }
 
-  // 2. CONSTRAINT INJECTION (Mandatory Technical Constraints)
   const mandatoryConstraints = [
     "Full body visible",
     "Clean silhouette",
@@ -42,26 +64,22 @@ export function composePrompt(
     "Consistent appearance",
   ];
 
-  // 3. VENDOR TRANSLATION & PROMPT NORMALIZATION
-  const subject = spec.subject?.character || "Subjek utama";
-  const action = spec.action || "Posisi keyframe statis";
-  const focus = spec.focus || "Fokus visual utama";
-  const cameraShot = spec.camera?.shotSize || "Medium Shot";
-  const cameraAngle = spec.camera?.angle || "Eye Level";
-  const cameraMotion = spec.camera?.movement || "Static Hold";
-  const location = spec.environment?.location || "Latar lokasi era sejarah";
+  const subject = getSafeString(spec.subject?.character, "Subjek utama");
+  const action = getSafeString(spec.action, "Posisi keyframe statis");
+  const focus = getSafeString(spec.focus, "Fokus visual utama");
+  const cameraShot = getSafeString(spec.camera?.shotSize, "Medium Shot");
+  const cameraAngle = getSafeString(spec.camera?.angle, "Eye Level");
+  const cameraMotion = getSafeString(spec.camera?.movement, "Static Hold");
+  const location = getSafeString(spec.environment?.location, "Latar lokasi era sejarah");
   const timeWeather = [spec.environment?.time, spec.environment?.weather].filter(Boolean).join(", ") || "Lighting alami";
-  const objectProp = spec.subject?.object || "Objek pendukung adegan";
+  const objectProp = getSafeString(spec.subject?.object, "Objek pendukung adegan");
 
-  const continuityText = spec.continuity
-    ? `Character ID: ${spec.continuity.characterId || "Char_01"}, Costume: ${spec.continuity.costumeId || "Costume_01"}, Env: ${spec.continuity.environmentId || "Env_01"}`
-    : "Pertahankan identitas karakter dan latar utama";
+  const continuityText = `Character ID: ${getSafeString(spec.continuity?.characterId, "Char_01")}, Costume: ${getSafeString(spec.continuity?.costumeId, "Costume_01")}, Env: ${getSafeString(spec.continuity?.environmentId, "Env_01")}`;
 
-  const doNotChangeText = spec.continuity?.previousShotScene
+  const doNotChangeText = typeof spec.continuity?.previousShotScene === "number"
     ? `Pertahankan kontinuitas visual dan warna dari Shot #${spec.continuity.previousShotScene}`
     : "Latar dan gaya visual konsisten";
 
-  // 4. PROMPT COMPRESSION & STRUCTURED FORMAT (12-Block Priority Order)
   const structuredBlocks = [
     `SUBJEK UTAMA:\n${cleanFluff(subject)}`,
     `AKSI:\n${cleanFluff(action)}`,
@@ -71,7 +89,7 @@ export function composePrompt(
     `LOKASI:\n${cleanFluff(location)}`,
     `ERA / WAKTU:\n${cleanFluff(timeWeather)}`,
     `OBJEK PENTING:\n${cleanFluff(objectProp)}`,
-    `LIGHTING:\nAtmospheric lighting, ${spec.camera?.lightingMood || "Sinematik dramatis"}`,
+    `LIGHTING:\nAtmospheric lighting, ${cleanFluff(spec.camera?.lightingMood || "Sinematik dramatis")}`,
     `GERAK KAMERA:\n${cameraMotion}`,
     `KONTINUITAS:\n${continuityText}`,
     `JANGAN UBAH:\n${doNotChangeText}`,
@@ -79,22 +97,9 @@ export function composePrompt(
     `STYLE:\n${cleanFluff(visualStyle)}`,
   ];
 
-  const compiledPrompt = structuredBlocks.join("\n\n");
-
   return {
-    compiledPrompt,
+    compiledPrompt: structuredBlocks.join("\n\n"),
     vendor,
     isValidationPassed: true,
   };
-}
-
-/**
- * Helper: Prompt Compression untuk membersihkan kata-kata mubazir / fluff words
- */
-function cleanFluff(text: string): string {
-  if (!text) return "-";
-  return text
-    .replace(/\b(sangat|amat|sekali|yang|dan|dengan|secara|terlihat|tampak)\b/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
 }

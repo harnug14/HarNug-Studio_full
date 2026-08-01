@@ -1,3 +1,8 @@
+/**
+ * VISUAL DIRECTOR ENGINE V4 — DOMAIN TYPES
+ * Architecture Freeze v1.0 — Immutable Data Contracts
+ */
+
 export interface StoryWorldContext {
   storySummary: string;
   primaryEra: string;
@@ -65,14 +70,14 @@ export interface SceneSpecification {
   scene: number;
   beat: VisualBeatType;
   subject: {
-    character?: string;
-    object?: string;
+    character: string;
+    object: string;
   };
   action: string;
   environment: {
     location: string;
     time: string;
-    weather?: string;
+    weather: string;
   };
   camera: DirectorialSpec;
   focus: string;
@@ -80,7 +85,7 @@ export interface SceneSpecification {
     characterId?: string;
     costumeId?: string;
     environmentId?: string;
-    previousShotScene?: number;
+    previousShotScene?: number | null;
   };
   constraints: string[];
   assetReferences: {

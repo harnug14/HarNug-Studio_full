@@ -6,12 +6,13 @@ import { formulateDirectorialIntent } from "@/lib/visual/directorial/directorial
 import { resolveProductionResources } from "@/lib/visual/production/production-resources";
 import { composePrompt } from "@/lib/visual/composer/prompt-composer";
 import { executeGoogleFlow } from "@/lib/visual/execution/google-flow-adapter";
+import { DirectorialSpec } from "@/lib/visual/types";
 
-/**
- * STEP 7: ORCHESTRATOR ROUTE (SLIM CONTROLLER ~130 LINES)
- * ADR RULE: Pure Orchestrator. Zero Business Logic.
- * Pipeline: Story World -> Visual Beat Planner -> Directorial Intent -> Production Resources -> Prompt Composer -> Execution
- */
+function getSafeString(val: unknown, fallback: string = ""): string {
+  if (typeof val === "string") return val.trim();
+  return fallback;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServerClient();
@@ -23,99 +24,125 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Belum login" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const {
-      action = "legacy",
-      naskahId = null,
-      judulNaskah = "",
-      isiNaskah = "",
-      visualStyle = "Sinematik 3D, Unreal Engine 5",
-      bridgePoseLevel = "Seimbang (Key Pose + Transisi Mikro)",
-      storyUnderstanding = null,
-      sceneItem = null,
-      scenes = [],
-      existingAssetLibrary = [],
-    } = body;
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Format payload JSON request tidak valid" }, { status: 400 });
+    }
+
+    const action = getSafeString(body?.action, "legacy");
+    const VALID_ACTIONS = ["plan", "direct-scene", "save"];
+
+    if (!VALID_ACTIONS.includes(action)) {
+      return NextResponse.json({ error: `Action '${action}' tidak valid` }, { status: 400 });
+    }
+
+    const isiNaskah = getSafeString(body?.isiNaskah, "");
+    const judulNaskah = getSafeString(body?.judulNaskah, "");
+    const visualStyle = getSafeString(body?.visualStyle, "Sinematik 3D, Unreal Engine 5");
+    const bridgePoseLevel = getSafeString(body?.bridgePoseLevel, "Seimbang (Key Pose + Transisi Mikro)");
+    const naskahId = body?.naskahId ?? null;
+
+    const existingAssetLibrary = Array.isArray(body?.existingAssetLibrary) ? body.existingAssetLibrary : [];
+    const scenes = Array.isArray(body?.scenes) ? body.scenes : [];
+    const sceneItem = body?.sceneItem && typeof body.sceneItem === "object" ? body.sceneItem : null;
+    const storyUnderstanding = body?.storyUnderstanding && typeof body.storyUnderstanding === "object" ? body.storyUnderstanding : null;
+    const previousDirectorialSpec = body?.previousDirectorialSpec && typeof body.previousDirectorialSpec === "object" ? (body.previousDirectorialSpec as DirectorialSpec) : undefined;
 
     // 1. ACTION PLAN: Story World -> Visual Beat Planner
     if (action === "plan") {
-      if (!isiNaskah.trim()) {
-        return NextResponse.json({ error: "Isi naskah tidak boleh kosong" }, { status: 400 });
+      if (!isiNaskah) {
+        return NextResponse.json({ error: "Isi naskah wajib diisi" }, { status: 400 });
       }
 
-      // Step 1: Story World
-      const storyWorld = await extractStoryWorld(supabase, {
-        judulNaskah,
-        isiNaskah,
-        visualStyle,
-        bridgePoseLevel,
-      });
+      try {
+        const storyWorld = await extractStoryWorld(supabase, {
+          judulNaskah,
+          isiNaskah,
+          visualStyle,
+          bridgePoseLevel,
+        });
 
-      // Step 2: Visual Beat Planner
-      const beatPlan = await planVisualBeats(supabase, storyWorld, isiNaskah);
+        const beatPlan = await planVisualBeats(supabase, storyWorld, isiNaskah);
 
-      return NextResponse.json({
-        data: {
-          judul: `Visual Package - ${judulNaskah || "Tanpa Judul"}`,
-          storyUnderstanding: storyWorld,
-          scenes: beatPlan.shots,
-        },
-      });
+        return NextResponse.json({
+          data: {
+            judul: `Visual Package - ${judulNaskah || "Tanpa Judul"}`,
+            storyUnderstanding: storyWorld,
+            scenes: beatPlan.shots,
+          },
+        });
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : "Gagal memproses Beat Planner";
+        console.error("[RouteOrchestrator] Error on plan:", errMsg);
+        return NextResponse.json({ error: errMsg }, { status: 422 });
+      }
     }
 
     // 2. ACTION DIRECT-SCENE: Directorial Intent -> Production Resources -> Prompt Composer -> Execution
     if (action === "direct-scene") {
       if (!sceneItem) {
-        return NextResponse.json({ error: "Detail shot (sceneItem) diperlukan" }, { status: 400 });
+        return NextResponse.json({ error: "Detail shot (sceneItem) wajib disertakan" }, { status: 400 });
       }
 
       const currentStoryWorld = storyUnderstanding || {
         storySummary: "Ringkasan narasi",
         primaryEra: "Era Sejarah",
         wordCount: 150,
+        coreIdea: "Gagasan utama",
+        storyGoal: "Tujuan cerita",
+        narrativeCanonFacts: ["Fakta cerita"],
       };
 
-      // Step 3: Directorial Intent
-      const directorialSpec = await formulateDirectorialIntent(supabase, currentStoryWorld, sceneItem);
+      try {
+        const directorialSpec = await formulateDirectorialIntent(
+          supabase,
+          currentStoryWorld,
+          sceneItem,
+          previousDirectorialSpec
+        );
 
-      // Step 4: Production Resources
-      const productionResult = await resolveProductionResources(
-        supabase,
-        currentStoryWorld,
-        sceneItem,
-        directorialSpec,
-        existingAssetLibrary
-      );
+        const productionResult = await resolveProductionResources(
+          supabase,
+          currentStoryWorld,
+          sceneItem,
+          directorialSpec,
+          existingAssetLibrary
+        );
 
-      // Step 5: Prompt Composer V3 (Visual Instruction Composer)
-      const composedPromptResult = composePrompt(
-        productionResult.sceneSpecification,
-        visualStyle,
-        "Google Flow"
-      );
+        const composedPromptResult = composePrompt(
+          productionResult.sceneSpecification,
+          visualStyle,
+          "Google Flow"
+        );
 
-      // Step 6: Execution Adapter
-      const executionResult = await executeGoogleFlow({
-        compiledPrompt: composedPromptResult.compiledPrompt,
-        assetDecision: productionResult.assetDecision,
-        sceneSpecification: productionResult.sceneSpecification,
-        visualStyle,
-      });
-
-      return NextResponse.json({
-        data: {
-          scene: productionResult.scene,
-          visualBeatType: productionResult.sceneSpecification.beat,
-          naskahChunk: productionResult.sceneSpecification.naskahChunk,
-          primaryVisualFocus: productionResult.sceneSpecification.focus,
+        const executionResult = await executeGoogleFlow({
+          compiledPrompt: composedPromptResult.compiledPrompt,
           assetDecision: productionResult.assetDecision,
           sceneSpecification: productionResult.sceneSpecification,
-          promptCompiler: {
-            compiledPrompt: executionResult.outputPrompt || composedPromptResult.compiledPrompt,
+          visualStyle,
+        });
+
+        return NextResponse.json({
+          data: {
+            scene: productionResult.scene,
+            visualBeatType: productionResult.sceneSpecification.beat,
+            naskahChunk: productionResult.sceneSpecification.naskahChunk,
+            primaryVisualFocus: productionResult.sceneSpecification.focus,
+            assetDecision: productionResult.assetDecision,
+            sceneSpecification: productionResult.sceneSpecification,
+            promptCompiler: {
+              compiledPrompt: executionResult.outputPrompt || composedPromptResult.compiledPrompt,
+            },
+            executionResult,
           },
-          executionResult,
-        },
-      });
+        });
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : "Gagal memproses Direct Scene";
+        console.error("[RouteOrchestrator] Error on direct-scene:", errMsg);
+        return NextResponse.json({ error: errMsg }, { status: 422 });
+      }
     }
 
     // 3. ACTION SAVE: Save package & compile asset library to Supabase
@@ -125,31 +152,32 @@ export async function POST(req: NextRequest) {
       const compiledAssetLibrary: any[] = [];
       const assetMap = new Map<string, any>();
 
-      (scenes || []).forEach((sc: any) => {
+      scenes.forEach((sc: any) => {
+        if (!sc || typeof sc !== "object") return;
         const ad = sc.assetDecision || {};
         if (ad.createdAsset && ad.createdAsset.assetId) {
-          const aid = ad.createdAsset.assetId;
+          const aid = String(ad.createdAsset.assetId);
           if (!assetMap.has(aid)) {
             assetMap.set(aid, {
               assetId: aid,
-              assetName: ad.createdAsset.assetName || `Aset Beat #${sc.scene}`,
-              assetType: ad.createdAsset.assetType || "Environment",
-              createdFromScene: sc.scene,
-              usedInScenes: [sc.scene],
-              assetStatus: ad.assetStatus || "NEW",
+              assetName: getSafeString(ad.createdAsset.assetName, `Aset Beat #${sc.scene}`),
+              assetType: getSafeString(ad.createdAsset.assetType, "Environment"),
+              createdFromScene: sc.scene ?? 1,
+              usedInScenes: [sc.scene ?? 1],
+              assetStatus: getSafeString(ad.assetStatus, "NEW"),
             });
           } else {
             const existing = assetMap.get(aid);
-            if (!existing.usedInScenes.includes(sc.scene)) {
-              existing.usedInScenes.push(sc.scene);
+            if (Array.isArray(existing.usedInScenes) && !existing.usedInScenes.includes(sc.scene)) {
+              existing.usedInScenes.push(sc.scene ?? 1);
             }
           }
         } else if (ad.targetAssetId) {
-          const aid = ad.targetAssetId;
+          const aid = String(ad.targetAssetId);
           if (assetMap.has(aid)) {
             const existing = assetMap.get(aid);
-            if (!existing.usedInScenes.includes(sc.scene)) {
-              existing.usedInScenes.push(sc.scene);
+            if (Array.isArray(existing.usedInScenes) && !existing.usedInScenes.includes(sc.scene)) {
+              existing.usedInScenes.push(sc.scene ?? 1);
             }
           }
         }
@@ -162,7 +190,7 @@ export async function POST(req: NextRequest) {
         styleTag: visualStyle,
         bridgePoseLevel,
         storyUnderstanding: storyUnderstanding || {},
-        scenes: scenes || [],
+        scenes,
         assetLibrary: compiledAssetLibrary,
       };
 
@@ -185,8 +213,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ error: "Action tidak dikenal" }, { status: 400 });
-  } catch (err: any) {
-    console.error("Visual orchestrator error:", err);
-    return NextResponse.json({ error: err.message || "Gagal membuat visual package" }, { status: 500 });
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : "Internal Server Error";
+    console.error("[RouteOrchestrator] Critical Exception:", errMsg);
+    return NextResponse.json({ error: "Terjadi kesalahan internal pada server" }, { status: 500 });
   }
 }

@@ -5,6 +5,8 @@ import {
   VisualBeatShot,
   DirectorialSpec,
   ProductionResourcesResult,
+  SceneSpecification,
+  AssetDecision,
 } from "../types";
 
 const GEMINI_FALLBACK_MODELS = [
@@ -16,6 +18,11 @@ const GEMINI_FALLBACK_MODELS = [
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function getSafeString(val: unknown, fallback: string = ""): string {
+  if (typeof val === "string") return val.trim();
+  return fallback;
+}
+
 /**
  * STEP 4: PRODUCTION RESOURCES MODULE
  * ADR RULE: "Production Resources decides what visual resources should be used."
@@ -23,12 +30,17 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * DILARANG MEMBAHAS: Prompt / Vendor AI / Sintaks Prompt -> Wewenang Prompt Composer & Execution!
  */
 export async function resolveProductionResources(
-  supabase: any,
+  supabase: unknown,
   storyWorld: StoryWorldContext,
   beatShot: VisualBeatShot,
   directorialSpec: DirectorialSpec,
-  existingAssetLibrary: any[] = []
+  existingAssetLibrary: unknown[] = []
 ): Promise<ProductionResourcesResult> {
+  const safeAssetLib = Array.isArray(existingAssetLibrary) ? existingAssetLibrary : [];
+  const sceneNum = typeof beatShot?.scene === "number" ? beatShot.scene : 1;
+  const safeEra = getSafeString(storyWorld?.primaryEra, "Era Sejarah");
+  const safeFocus = getSafeString(beatShot?.primaryVisualFocus, "Fokus Visual Utama");
+
   const systemPrompt = `Kamu adalah HARNUG STUDIO V4 — PRODUCTION RESOURCES MODULE (ART DEPARTMENT & ASSET MANAGER).
 
 ADR RULE: Production Resources decides what visual resources should be used.
@@ -36,22 +48,22 @@ Tugasmu MURNI mengevaluasi Keputusan Aset dan menyusun data MURNI "SCENE SPECIFI
 
 DILARANG SAMA SEKALI MEMBUAT PROMPT NARATIF, PROMPT TEXT VENDOR, ATAU SINTAKS PROMPT AI!
 
-HIRARKI DECISION TREE (PILIH SALAH SATU):
+HIRARKI DECISION TREE:
 1. REUSED: Shot hanya berupa pergerakan kamera (Pan, Tilt, Zoom, Parallax) dari aset sebelumnya.
 2. POSE_SWAP: Karakter, Latar, Kamera SAMA, tetapi pose/ekspresi berubah. Sebutkan targetAssetId.
-3. NEW: Sudut pandang, lokasi, subjek, atau objek utama berubah total dan belum ada di Asset Library.
+3. NEW: Sudut pandang, lokasi, subjek, atau objek utama berubah total.
 
-ASSET LIBRARY TERSEDIA SAAT INI:
-${JSON.stringify(existingAssetLibrary, null, 2)}
+ASSET LIBRARY TERSEDIA:
+${JSON.stringify(safeAssetLib, null, 2)}
 
 FORMAT JSON OUTPUT (MURNI DOMAIN SCENE SPECIFICATION):
 {
-  "scene": ${beatShot.scene},
+  "scene": ${sceneNum},
   "assetDecision": {
     "assetStatus": "REUSED" | "POSE_SWAP" | "NEW",
     "targetAssetId": "Asset_001",
     "newAssetReason": "Alasan jika NEW",
-    "productionInstruction": "Instruksi pergerakan kamera CapCut jika REUSED",
+    "productionInstruction": "Instruksi CapCut jika REUSED",
     "createdAsset": {
       "assetId": "Asset_001",
       "assetName": "Nama Deskriptif Aset",
@@ -59,25 +71,25 @@ FORMAT JSON OUTPUT (MURNI DOMAIN SCENE SPECIFICATION):
     }
   },
   "sceneSpecification": {
-    "scene": ${beatShot.scene},
-    "beat": "${beatShot.visualBeatType}",
+    "scene": ${sceneNum},
+    "beat": "${beatShot?.visualBeatType ?? "Action"}",
     "subject": {
       "character": "Deskripsi terstruktur subjek karakter utama",
       "object": "Deskripsi terstruktur objek/prop utama"
     },
     "action": "Aksi fisik tunggal yang dilakukan",
     "environment": {
-      "location": "Lokasi spesifik era ${storyWorld.primaryEra}",
+      "location": "Lokasi spesifik era ${safeEra}",
       "time": "Waktu (pagi, siang, malam)",
       "weather": "Kondisi pencahayaan"
     },
-    "camera": ${JSON.stringify(directorialSpec)},
-    "focus": "${beatShot.primaryVisualFocus.replace(/"/g, "'")}",
+    "camera": ${JSON.stringify(directorialSpec ?? {})},
+    "focus": "${safeFocus.replace(/"/g, "'")}",
     "continuity": {
       "characterId": "Char_01",
       "costumeId": "Costume_01",
       "environmentId": "Env_01",
-      "previousShotScene": ${beatShot.scene > 1 ? beatShot.scene - 1 : null}
+      "previousShotScene": ${sceneNum > 1 ? sceneNum - 1 : null}
     },
     "constraints": [
       "Full body visible",
@@ -91,20 +103,20 @@ FORMAT JSON OUTPUT (MURNI DOMAIN SCENE SPECIFICATION):
       "environmentAnchor": "Anchor_Env_01",
       "propAnchor": "Anchor_Prop_01"
     },
-    "narrativePurpose": "${beatShot.narrativePurpose.replace(/"/g, "'")}",
-    "expectedDuration": "${beatShot.expectedDuration}",
-    "importance": "${beatShot.importance}",
-    "naskahChunk": "${beatShot.naskahChunk.replace(/"/g, "'")}"
+    "narrativePurpose": "${getSafeString(beatShot?.narrativePurpose, "Tujuan visual").replace(/"/g, "'")}",
+    "expectedDuration": "${getSafeString(beatShot?.expectedDuration, "2-3s")}",
+    "importance": "${beatShot?.importance ?? "High"}",
+    "naskahChunk": "${getSafeString(beatShot?.naskahChunk, "").replace(/"/g, "'")}"
   }
 }`;
 
-  const userPrompt = `Evaluasi Aset dan susun DOMAIN SCENE SPECIFICATION untuk Shot #${beatShot.scene} (Tipe Beat: ${beatShot.visualBeatType}) dengan fokus visual: "${beatShot.primaryVisualFocus}" (format JSON murni).`;
+  const userPrompt = `Evaluasi Aset dan susun DOMAIN SCENE SPECIFICATION untuk Shot #${sceneNum} (Tipe Beat: ${beatShot?.visualBeatType ?? "Action"}) dengan fokus visual: "${safeFocus}" (format JSON murni).`;
 
-  let lastError: any = null;
+  let lastError: unknown = null;
 
   for (const currentModel of GEMINI_FALLBACK_MODELS) {
     try {
-      const rawResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
+      const rawResponse = await callGeminiWithRotation(supabase, async (apiKey: string) => {
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
           {
@@ -124,37 +136,91 @@ FORMAT JSON OUTPUT (MURNI DOMAIN SCENE SPECIFICATION):
         }
 
         const json = await response.json();
-        return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
       });
 
       if (rawResponse) {
-        const parsed = parseJsonResponse(rawResponse, {});
-        return {
-          scene: beatShot.scene,
-          assetDecision: parsed.assetDecision || { assetStatus: "NEW" },
-          sceneSpecification: parsed.sceneSpecification || {
-            scene: beatShot.scene,
-            beat: beatShot.visualBeatType,
-            subject: { character: "Karakter utama" },
-            action: beatShot.primaryVisualFocus,
-            environment: { location: storyWorld.primaryEra, time: "Pagi" },
-            camera: directorialSpec,
-            focus: beatShot.primaryVisualFocus,
-            continuity: {},
-            constraints: ["Full body visible", "One visual focus"],
-            assetReferences: {},
-            narrativePurpose: beatShot.narrativePurpose,
-            expectedDuration: beatShot.expectedDuration,
-            importance: beatShot.importance,
-            naskahChunk: beatShot.naskahChunk,
-          },
-        };
+        try {
+          const parsed = parseJsonResponse(rawResponse, {});
+          const rawDecision = parsed?.assetDecision ?? {};
+          const rawSpec = parsed?.sceneSpecification ?? {};
+
+          const assetDecision: AssetDecision = {
+            assetStatus: (["REUSED", "POSE_SWAP", "NEW"].includes(rawDecision?.assetStatus)
+              ? rawDecision.assetStatus
+              : "NEW") as AssetDecision["assetStatus"],
+            targetAssetId: getSafeString(rawDecision?.targetAssetId, undefined),
+            newAssetReason: getSafeString(rawDecision?.newAssetReason, undefined),
+            productionInstruction: getSafeString(rawDecision?.productionInstruction, undefined),
+            createdAsset: rawDecision?.createdAsset
+              ? {
+                  assetId: getSafeString(rawDecision.createdAsset?.assetId, `Asset_00${sceneNum}`),
+                  assetName: getSafeString(rawDecision.createdAsset?.assetName, `Aset Beat #${sceneNum}`),
+                  assetType: (["Character", "Environment", "Prop"].includes(rawDecision.createdAsset?.assetType)
+                    ? rawDecision.createdAsset.assetType
+                    : "Environment") as "Character" | "Environment" | "Prop",
+                }
+              : undefined,
+          };
+
+          // HARDENING SCENE SPECIFICATION (NO UNDEFINED NESTED PROPERTIES)
+          const sceneSpecification: SceneSpecification = {
+            scene: sceneNum,
+            beat: beatShot?.visualBeatType ?? "Action",
+            subject: {
+              character: getSafeString(rawSpec?.subject?.character, "Subjek karakter utama"),
+              object: getSafeString(rawSpec?.subject?.object, "Objek utama adegan"),
+            },
+            action: getSafeString(rawSpec?.action, safeFocus),
+            environment: {
+              location: getSafeString(rawSpec?.environment?.location, safeEra),
+              time: getSafeString(rawSpec?.environment?.time, "Pagi"),
+              weather: getSafeString(rawSpec?.environment?.weather, "Cerah"),
+            },
+            camera: {
+              shotSize: directorialSpec?.shotSize ?? "Medium Shot",
+              angle: directorialSpec?.angle ?? "Eye Level",
+              movement: directorialSpec?.movement ?? "Static Hold",
+              lightingMood: directorialSpec?.lightingMood ?? "Atmospheric sinematik",
+              compositionGoal: directorialSpec?.compositionGoal ?? "Clean visual focus",
+              emotionalEmphasis: directorialSpec?.emotionalEmphasis ?? safeFocus,
+            },
+            focus: safeFocus,
+            continuity: {
+              characterId: getSafeString(rawSpec?.continuity?.characterId, "Char_01"),
+              costumeId: getSafeString(rawSpec?.continuity?.costumeId, "Costume_01"),
+              environmentId: getSafeString(rawSpec?.continuity?.environmentId, "Env_01"),
+              previousShotScene: typeof rawSpec?.continuity?.previousShotScene === "number" ? rawSpec.continuity.previousShotScene : null,
+            },
+            constraints: Array.isArray(rawSpec?.constraints) && rawSpec.constraints.length > 0
+              ? rawSpec.constraints.map((c: unknown) => getSafeString(c)).filter(Boolean)
+              : ["Full body visible", "One visual focus", "Clean background"],
+            assetReferences: {
+              characterAnchor: getSafeString(rawSpec?.assetReferences?.characterAnchor, "Anchor_Char_01"),
+              environmentAnchor: getSafeString(rawSpec?.assetReferences?.environmentAnchor, "Anchor_Env_01"),
+              propAnchor: getSafeString(rawSpec?.assetReferences?.propAnchor, "Anchor_Prop_01"),
+            },
+            narrativePurpose: getSafeString(beatShot?.narrativePurpose, "Tujuan visual"),
+            expectedDuration: getSafeString(beatShot?.expectedDuration, "2-3s"),
+            importance: beatShot?.importance ?? "High",
+            naskahChunk: getSafeString(beatShot?.naskahChunk, ""),
+          };
+
+          return {
+            scene: sceneNum,
+            assetDecision,
+            sceneSpecification,
+          };
+        } catch (parseErr) {
+          console.error("[ProductionResources] JSON Parse Error:", parseErr);
+        }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err;
       await delay(1000);
     }
   }
 
-  throw new Error(`[ProductionResources] Gagal mengevaluasi sumber daya untuk Shot #${beatShot.scene}: ${lastError?.message || "Internal Error"}`);
+  const errMsg = lastError instanceof Error ? lastError.message : "Internal Error";
+  throw new Error(`[ProductionResources] Gagal mengevaluasi sumber daya untuk Shot #${sceneNum}: ${errMsg}`);
 }

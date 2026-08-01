@@ -1,6 +1,6 @@
 import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
-import { StoryWorldContext, BeatPlannerResult, VisualBeatShot } from "../types";
+import { StoryWorldContext, BeatPlannerResult, VisualBeatShot, VisualBeatType } from "../types";
 
 const GEMINI_FALLBACK_MODELS = [
   "gemini-3.6-flash",
@@ -11,21 +11,41 @@ const GEMINI_FALLBACK_MODELS = [
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function getSafeString(val: unknown, fallback: string = ""): string {
+  if (typeof val === "string") return val.trim();
+  return fallback;
+}
+
+const VALID_BEAT_TYPES: Set<string> = new Set([
+  "Establishing", "Action", "Reaction", "Detail", "Insert", "Reveal", "Transition", "Emphasis", "Payoff"
+]);
+
+function normalizeBeatType(val: unknown): VisualBeatType {
+  const str = getSafeString(val, "Action");
+  for (const bt of Array.from(VALID_BEAT_TYPES)) {
+    if (str.toLowerCase().includes(bt.toLowerCase())) {
+      return bt as VisualBeatType;
+    }
+  }
+  return "Action";
+}
+
 /**
  * STEP 2: VISUAL BEAT PLANNER MODULE
  * ADR RULE: "Visual Beat Planner decides what must be shown."
  * Tanggung Jawab: Memecah naskah menjadi Visual Beats padat sinematik (1 Shot = 1 Fokus Visual Utama).
- * DILARANG MEMBAHAS: Kamera (Sudut, Zoom, Motion) -> Kamera wewenang Directorial Intent!
- * DILARANG MEMBAHAS: Prompt / Vendor AI / Aset.
+ * HARD INVARIANTS:
+ * 1. Rule 3: 1 Shot = 1 Visual Focus
+ * 2. Beat Density Target: Total Shots >= minTargetShots
  */
 export async function planVisualBeats(
-  supabase: any,
+  supabase: unknown,
   storyWorld: StoryWorldContext,
   isiNaskah: string
 ): Promise<BeatPlannerResult> {
-  const wordCount = storyWorld.wordCount || isiNaskah.trim().split(/\s+/).filter(Boolean).length;
+  const safeNaskah = getSafeString(isiNaskah, "");
+  const wordCount = storyWorld?.wordCount || (safeNaskah ? safeNaskah.split(/\s+/).filter(Boolean).length : 0);
 
-  // Hitung Target Kepadatan Minimal (Beat Density Target)
   let minTargetShots = 18;
   if (wordCount < 100) {
     minTargetShots = Math.max(8, Math.floor(wordCount / 7));
@@ -49,22 +69,22 @@ DILARANG SAMA SEKALI MEMBAHAS:
 - Aset (Reuse, Pose Swap, New) -> Aset wewenang Production Resources!
 - Prompt / Vendor AI
 
-10 ATURAN BEAT PLANNER:
-1. BEAT CLASSIFICATION (Wajib pilih 1 dari 9 tipe):
-   "Establishing", "Action", "Reaction", "Detail", "Insert", "Reveal", "Transition", "Emphasis", "Payoff".
-2. ONE BEAT = ONE FOCUS: 1 shot hanya 1 fokus visual utama.
-3. NO SENTENCE LOCK: 1 kalimat boleh dipecah jadi banyak beat.
-4. CAUSE -> EFFECT SPLIT: Sebab dan akibat WAJIB dipisah menjadi 2 shot berbeda.
-5. REACTION PRIORITY: Aksi penting wajib diikuti reaction shot.
-6. INSERT/DETAIL DETECTION: Objek penting (jam, lilin, bambu, paku, jendela, dll.) otomatis mendapat shot Detail/Insert.
-7. HOOK EXPANSION: 5-10 detik pertama naskah dibuat lebih padat.
-8. TRANSITION BEAT: Perpindahan era/lokasi selalu mendapat shot Transition/Establishing baru.
-9. RHYTHM RULE: Dilarang lebih dari 2 shot berturut-turut dengan tipe beat yang sama.
-10. BEAT DENSITY TARGET: Minimal ${minTargetShots} SHOT.
+HARD INVARIANTS:
+1. ONE BEAT = ONE FOCUS: 1 shot HANYA BISA MEMILIKI 1 FOKUS VISUAL UTAMA.
+2. NO SENTENCE LOCK: 1 kalimat boleh dipecah menjadi banyak beat.
+3. CAUSE -> EFFECT SPLIT: Sebab dan akibat WAJIB dipisah menjadi 2 shot berbeda.
+4. BEAT DENSITY TARGET: Minimal ${minTargetShots} SHOT.
+
+KLASIFIKASI BEAT DOMAIN (Pilih tipe murni yang paling jujur sesuai adegan):
+- "Establishing", "Action", "Reaction", "Detail", "Insert", "Reveal", "Transition", "Emphasis", "Payoff".
+
+ATURAN KEJUJUAN DOMAIN:
+- visualBeatType ADALAH FAKTA DOMAIN IMMUTABLE.
+- DILARANG MEMALSUKAN visualBeatType demi variasi ritme!
 
 KONTEKS STORY WORLD:
-Summary: ${storyWorld.storySummary}
-Era Utama: ${storyWorld.primaryEra}
+Summary: ${storyWorld?.storySummary ?? "Ringkasan cerita"}
+Era Utama: ${storyWorld?.primaryEra ?? "Era Sejarah"}
 
 FORMAT JSON OUTPUT (MURNI BAHASA INDONESIA):
 {
@@ -82,7 +102,7 @@ FORMAT JSON OUTPUT (MURNI BAHASA INDONESIA):
   ]
 }`;
 
-  const baseUserPrompt = `Naskah (${wordCount} kata):\n"${isiNaskah}"\n\nLakukan VISUAL BEAT PLANNING padat. Target minimal: ${minTargetShots} SHOT (format JSON murni).`;
+  const baseUserPrompt = `Naskah (${wordCount} kata):\n"${safeNaskah}"\n\nLakukan VISUAL BEAT PLANNING padat. Target minimal: ${minTargetShots} SHOT (format JSON murni).`;
 
   let resultShots: VisualBeatShot[] = [];
   let planAttempts = 0;
@@ -95,11 +115,11 @@ FORMAT JSON OUTPUT (MURNI BAHASA INDONESIA):
         ? baseUserPrompt
         : `${baseUserPrompt}\n\n⚠️ RE-PLANNING REQUIRED! Hasil sebelumnya hanya ${resultShots.length} shot. TARGET MINIMAL WAJIB ADALAH ${minTargetShots} SHOT. Pecah aksi, reaksi, dan objek insert menjadi shot terpisah!`;
 
-    let lastError: any = null;
+    let lastError: unknown = null;
 
     for (const currentModel of GEMINI_FALLBACK_MODELS) {
       try {
-        const rawResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
+        const rawResponse = await callGeminiWithRotation(supabase, async (apiKey: string) => {
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
             {
@@ -119,15 +139,38 @@ FORMAT JSON OUTPUT (MURNI BAHASA INDONESIA):
           }
 
           const json = await response.json();
-          return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+          return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
         });
 
         if (rawResponse) {
-          const parsed = parseJsonResponse(rawResponse, { shots: [] });
-          resultShots = Array.isArray(parsed.shots) ? parsed.shots : [];
-          break;
+          try {
+            const parsed = parseJsonResponse(rawResponse, {});
+            
+            // DEFENSIVE MULTI-KEY ARRAY RESOLUTION
+            const rawShots = 
+              (Array.isArray(parsed?.shots) && parsed.shots) ||
+              (Array.isArray(parsed?.scenes) && parsed.scenes) ||
+              (Array.isArray(parsed?.visualBeats) && parsed.visualBeats) ||
+              (Array.isArray(parsed?.data) && parsed.data) ||
+              (Array.isArray(parsed) && parsed) ||
+              [];
+
+            resultShots = rawShots.map((item: any, idx: number) => ({
+              scene: typeof item?.scene === "number" ? item.scene : idx + 1,
+              visualBeatType: normalizeBeatType(item?.visualBeatType),
+              naskahChunk: getSafeString(item?.naskahChunk, "Potongan adegan"),
+              primaryVisualFocus: getSafeString(item?.primaryVisualFocus, item?.naskahChunk ?? "Fokus visual"),
+              narrativePurpose: getSafeString(item?.narrativePurpose, "Tujuan visual naratif"),
+              expectedDuration: getSafeString(item?.expectedDuration, "2-3s"),
+              importance: (["Critical", "High", "Medium", "Low"].includes(item?.importance) ? item.importance : "High") as "Critical" | "High" | "Medium" | "Low",
+            }));
+
+            if (resultShots.length > 0) break;
+          } catch (parseErr) {
+            console.error("[BeatPlanner] JSON Parse Error:", parseErr);
+          }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         lastError = err;
         await delay(1000);
       }

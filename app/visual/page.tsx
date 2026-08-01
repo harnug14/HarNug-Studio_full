@@ -82,18 +82,6 @@ function resolveAssetLibrary(c: any): any[] {
   return [];
 }
 
-function getBeatBadgeStyle(beatType: string) {
-  const type = (beatType || "").toLowerCase();
-  if (type.includes("establishing")) return { bg: "rgba(6,182,212,0.15)", border: "rgba(6,182,212,0.4)", color: "#22d3ee" };
-  if (type.includes("action")) return { bg: "rgba(34,197,94,0.15)", border: "rgba(34,197,94,0.4)", color: "#4ade80" };
-  if (type.includes("reaction")) return { bg: "rgba(245,158,11,0.15)", border: "rgba(245,158,11,0.4)", color: "#fbbf24" };
-  if (type.includes("detail") || type.includes("insert")) return { bg: "rgba(168,85,247,0.15)", border: "rgba(168,85,247,0.4)", color: "#c084fc" };
-  if (type.includes("reveal")) return { bg: "rgba(236,72,153,0.15)", border: "rgba(236,72,153,0.4)", color: "#f472b6" };
-  if (type.includes("transition")) return { bg: "rgba(239,68,68,0.15)", border: "rgba(239,68,68,0.4)", color: "#f87171" };
-  if (type.includes("emphasis") || type.includes("payoff")) return { bg: "rgba(234,179,8,0.15)", border: "rgba(234,179,8,0.4)", color: "#facc15" };
-  return { bg: "rgba(255,255,255,0.08)", border: "rgba(255,255,255,0.15)", color: "var(--text-secondary)" };
-}
-
 function VisualContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -117,19 +105,24 @@ function VisualContent() {
 
   async function fetchVisual() {
     setLoading(true);
-    const res = await fetch("/api/visual");
-    const json = await res.json();
-    if (json.data) setItems(json.data);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/visual");
+      const json = await res.json();
+      if (Array.isArray(json?.data)) setItems(json.data);
+    } catch (e) {
+      console.error("[VisualUI] Fetch error:", e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function fetchNaskahList() {
     try {
       const res = await fetch("/api/naskah");
       const json = await res.json();
-      if (json.data) setNaskahList(json.data);
+      if (Array.isArray(json?.data)) setNaskahList(json.data);
     } catch (e) {
-      console.error(e);
+      console.error("[VisualUI] Naskah list error:", e);
     }
   }
 
@@ -147,9 +140,9 @@ function VisualContent() {
 
   function handleSelectNaskah(id: string) {
     setSelectedNaskahId(id);
-    const n = naskahList.find((x) => x.id === id);
+    const n = Array.isArray(naskahList) ? naskahList.find((x) => x.id === id) : null;
     if (n) {
-      setJudulNaskah(n.judul);
+      setJudulNaskah(n.judul || "");
       setIsiNaskah(n.isi_naskah || "");
     }
   }
@@ -157,15 +150,15 @@ function VisualContent() {
   async function handleGenerateVisual(e: React.FormEvent) {
     e.preventDefault();
     let textToUse = isiNaskah;
-    if (!textToUse && selectedNaskahId) {
+    if (!textToUse && selectedNaskahId && Array.isArray(naskahList)) {
       const n = naskahList.find((x) => x.id === selectedNaskahId);
       if (n) textToUse = n.isi_naskah || "";
     }
-    if (!textToUse.trim()) return alert("Isi naskah tidak boleh kosong");
+    if (!textToUse || !textToUse.trim()) return alert("Isi naskah tidak boleh kosong");
 
     setGenerating(true);
     setGenError("");
-    setProgressMsg("📖 Step 1 & 2: Story World & Visual Beat Planning...");
+    setProgressMsg("📖 Story World & Visual Beat Planning...");
 
     try {
       const planRes = await fetch("/api/visual/generate", {
@@ -185,7 +178,7 @@ function VisualContent() {
       if (planJson.error) throw new Error(planJson.error);
 
       const { storyUnderstanding, scenes: plannedScenes } = planJson.data || {};
-      if (!plannedScenes || plannedScenes.length === 0) {
+      if (!Array.isArray(plannedScenes) || plannedScenes.length === 0) {
         throw new Error("Gagal memecah adegan naskah.");
       }
 
@@ -193,6 +186,7 @@ function VisualContent() {
       const globalAssetLibrary: any[] = [];
       const INTER_SCENE_DELAY_MS = 1000;
       const MAX_SCENE_RETRIES = 2;
+      let lastDirectorialSpec: any = undefined;
 
       for (let i = 0; i < plannedScenes.length; i++) {
         const sceneItem = plannedScenes[i];
@@ -201,7 +195,7 @@ function VisualContent() {
           await new Promise((r) => setTimeout(r, INTER_SCENE_DELAY_MS));
         }
 
-        setProgressMsg(`🎬 Step 3-6: Directorial Intent -> Production Resources -> Prompt Composer V3 Shot #${i + 1} dari ${plannedScenes.length}...`);
+        setProgressMsg(`🎬 Directing Shot #${i + 1} dari ${plannedScenes.length}...`);
 
         for (let attempt = 0; attempt <= MAX_SCENE_RETRIES; attempt++) {
           try {
@@ -215,6 +209,7 @@ function VisualContent() {
                 visualStyle,
                 bridgePoseLevel,
                 existingAssetLibrary: globalAssetLibrary,
+                previousDirectorialSpec: lastDirectorialSpec,
               }),
             });
             const sceneJson = await sceneRes.json();
@@ -222,6 +217,7 @@ function VisualContent() {
             if (sceneJson.data) {
               const sd = sceneJson.data;
               directedScenes.push(sd);
+              lastDirectorialSpec = sd.sceneSpecification?.camera;
 
               const ad = sd.assetDecision || {};
               if (ad.createdAsset && ad.createdAsset.assetId) {
@@ -280,19 +276,19 @@ function VisualContent() {
   }
 
   function handleCopyPrompts(scenes: any[]) {
-    if (!scenes || !Array.isArray(scenes)) return;
+    if (!Array.isArray(scenes)) return;
     const prompts = scenes
       .map((s, idx) => {
         const ad = s.assetDecision || {};
         const p = s.promptCompiler?.compiledPrompt || s.prompt || s.deskripsiVisual;
         if (ad.assetStatus === "REUSED") {
-          return `--- Shot #${s.scene || idx + 1} [${s.visualBeatType || "Beat"}] (REUSED: ${ad.targetAssetId || "Aset Lama"}) ---\nInstruksi Kamera: ${ad.productionInstruction || "Gunakan pergerakan kamera CapCut"}`;
+          return `--- Shot #${s.scene || idx + 1} (REUSED: ${ad.targetAssetId || "Aset"}) ---\nInstruksi Kamera: ${ad.productionInstruction || "Gunakan pergerakan kamera CapCut"}`;
         }
-        return `--- Shot #${s.scene || idx + 1} [${s.visualBeatType || "Beat"}] (${ad.assetStatus || "NEW"}) ---\n${p}`;
+        return `--- Shot #${s.scene || idx + 1} (${ad.assetStatus || "NEW"}) ---\n${p}`;
       })
       .join("\n\n=========================================\n\n");
     navigator.clipboard.writeText(prompts);
-    alert("Semua Prompt Composer V3 disalin ke clipboard!");
+    alert("Semua Prompt disalin ke clipboard!");
   }
 
   return (
@@ -300,7 +296,7 @@ function VisualContent() {
       <div className="page-header" style={{ marginBottom: 24 }}>
         <h1 className="page-title">Visual Director Engine V4 🎬</h1>
         <p className="page-subtitle">
-          Architecture Freeze v1.0 — Decoupled Modular Pipeline (DDD Architecture).
+          Architecture Freeze v1.0 — Presentation Isolation Principle.
         </p>
       </div>
 
@@ -310,7 +306,7 @@ function VisualContent() {
             <label className="form-label">Pilih Script Naskah *</label>
             <select value={selectedNaskahId} onChange={(e) => handleSelectNaskah(e.target.value)} className="select-field">
               <option value="">-- Pilih dari Daftar Naskah --</option>
-              {naskahList.map((n) => (
+              {Array.isArray(naskahList) && naskahList.map((n) => (
                 <option key={n.id} value={n.id}>
                   {n.judul}
                 </option>
@@ -355,7 +351,7 @@ function VisualContent() {
                 <span className="spinner" /> {progressMsg || "Memproses Storyboard..."}
               </span>
             ) : (
-              <>🎬 Buat Storyboard (Visual Director Pipeline V4)</>
+              <>🎬 Buat Storyboard</>
             )}
           </button>
         </form>
@@ -393,7 +389,7 @@ function VisualContent() {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {items.map((item) => {
+          {Array.isArray(items) && items.map((item) => {
             const isExpanded = expandedId === item.id;
             const content = resolveContent(item.isi_visual);
             const scenes = resolveScenes(content);
@@ -426,7 +422,7 @@ function VisualContent() {
                   </div>
                 </div>
 
-                {/* UI STORYBOARD SINEMATIK V4 ARCHITECTURE FREEZE V1.0 */}
+                {/* PRESENTATION ISOLATION PRINCIPLE (FROZEN UI) */}
                 {isExpanded && (
                   <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                     {hasScenes ? (
@@ -435,19 +431,9 @@ function VisualContent() {
                           {scenes.map((s: any, sIdx: number) => {
                             const num = s.scene || sIdx + 1;
                             const ad = s.assetDecision || {};
-                            const spec = s.sceneSpecification || {};
-                            const beatType = spec.beat || s.visualBeatType || "Beat";
-                            const beatBadge = getBeatBadgeStyle(beatType);
                             const status = ad.assetStatus || "NEW";
                             const pc = s.promptCompiler || {};
                             const prompt = pc.compiledPrompt || s.prompt;
-
-                            let assetBadgeStyle = { bg: "rgba(34,197,94,0.15)", border: "rgba(34,197,94,0.4)", text: "#4ade80", label: "NEW ASSET" };
-                            if (status === "REUSED") {
-                              assetBadgeStyle = { bg: "rgba(59,130,246,0.15)", border: "rgba(59,130,246,0.4)", text: "#60a5fa", label: `REUSED (${ad.targetAssetId || "Aset"})` };
-                            } else if (status === "POSE_SWAP") {
-                              assetBadgeStyle = { bg: "rgba(245,158,11,0.15)", border: "rgba(245,158,11,0.4)", text: "#fbbf24", label: `POSE SWAP (${ad.targetAssetId || "Aset"})` };
-                            }
 
                             return (
                               <div
@@ -462,44 +448,14 @@ function VisualContent() {
                                   gap: 10,
                                 }}
                               >
+                                {/* 1. SHOT NUMBER */}
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <span style={{ fontWeight: 700, fontSize: 15, color: "var(--accent-primary)" }}>Shot #{num}</span>
-                                    <span
-                                      style={{
-                                        fontSize: 11,
-                                        fontWeight: 600,
-                                        padding: "2px 8px",
-                                        borderRadius: 4,
-                                        background: beatBadge.bg,
-                                        border: `1px solid ${beatBadge.border}`,
-                                        color: beatBadge.color,
-                                      }}
-                                    >
-                                      {beatType}
-                                    </span>
-                                  </div>
-                                  <span
-                                    style={{
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      padding: "3px 8px",
-                                      borderRadius: 4,
-                                      background: assetBadgeStyle.bg,
-                                      border: `1px solid ${assetBadgeStyle.border}`,
-                                      color: assetBadgeStyle.text,
-                                    }}
-                                  >
-                                    {assetBadgeStyle.label}
+                                  <span style={{ fontWeight: 700, fontSize: 15, color: "var(--accent-primary)" }}>
+                                    Shot #{String(num).padStart(2, "0")}
                                   </span>
                                 </div>
 
-                                {s.primaryVisualFocus && (
-                                  <div style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0", background: "rgba(255,255,255,0.04)", padding: "6px 10px", borderRadius: 4 }}>
-                                    🎯 Fokus Visual: {s.primaryVisualFocus}
-                                  </div>
-                                )}
-
+                                {/* 2. POTONGAN NASKAH */}
                                 {s.naskahChunk && (
                                   <div
                                     style={{
@@ -515,20 +471,22 @@ function VisualContent() {
                                   </div>
                                 )}
 
+                                {/* 3. PROMPT atau 4. PRODUCTION INSTRUCTION */}
                                 {status === "REUSED" ? (
                                   <div style={{ background: "rgba(59,130,246,0.1)", padding: 12, borderRadius: 6, border: "1px solid rgba(59,130,246,0.3)", marginTop: 4 }}>
                                     <div style={{ fontSize: 11, fontWeight: 700, color: "#60a5fa", marginBottom: 4 }}>
-                                      🎬 INSTRUKSI PRODUKSI / RE-FRAMING (TANPA GENERATE PROMPT BARU)
+                                      PRODUCTION INSTRUCTION (REUSE_ASSET)
                                     </div>
                                     <div style={{ fontSize: 12, color: "#e0f2fe", lineHeight: 1.5 }}>
-                                      {ad.productionInstruction || "Manfaatkan pergerakan kamera CapCut (Pan/Tilt/Zoom) dari aset sebelumnya."}
+                                      Aset: {ad.targetAssetId || "Asset_001"}<br />
+                                      Instruksi: {ad.productionInstruction || "Keyframe kamera maju perlahan."}
                                     </div>
                                   </div>
                                 ) : (
                                   <div style={{ background: "rgba(0,0,0,0.4)", padding: 12, borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)", marginTop: 4 }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                                       <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-primary)" }}>
-                                        PROMPT COMPOSER V3 (VISUAL INSTRUCTION)
+                                        PROMPT
                                       </span>
                                       <button
                                         onClick={() => {
@@ -547,32 +505,6 @@ function VisualContent() {
                             );
                           })}
                         </div>
-
-                        {/* PANEL ASSET LIBRARY */}
-                        {assetLib.length > 0 && (
-                          <div style={{ marginTop: 16, background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "var(--radius-md)", padding: 16 }}>
-                            <h4 style={{ fontSize: 14, fontWeight: 700, color: "var(--accent-primary)", marginBottom: 12 }}>
-                              📦 GLOBAL ASSET LIBRARY ({assetLib.length} Aset Terdaftar)
-                            </h4>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-                              {assetLib.map((ast: any, aIdx: number) => (
-                                <div key={aIdx} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", padding: 10, borderRadius: 6 }}>
-                                  <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text-primary)" }}>
-                                    {ast.assetId}: {ast.assetName}
-                                  </div>
-                                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>
-                                    Tipe: {ast.assetType} | Dibuat di Shot #{ast.createdFromScene}
-                                  </div>
-                                  {ast.usedInScenes && ast.usedInScenes.length > 0 && (
-                                    <div style={{ fontSize: 10, color: "var(--accent-primary)", marginTop: 4 }}>
-                                      Dipakai di Shot: #{ast.usedInScenes.join(", #")}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     ) : (
                       <div style={{ padding: 16, fontSize: 13, color: "var(--text-secondary)", textAlign: "center" }}>

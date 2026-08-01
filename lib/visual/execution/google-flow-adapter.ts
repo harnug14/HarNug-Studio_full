@@ -9,36 +9,36 @@ import { ExecutionPayload, ExecutionResult } from "../types";
 export async function executeGoogleFlow(
   payload: ExecutionPayload
 ): Promise<ExecutionResult> {
-  const { compiledPrompt, assetDecision, sceneSpecification } = payload;
-  const sceneNum = sceneSpecification.scene;
+  const sceneNum = typeof payload?.sceneSpecification?.scene === "number" ? payload.sceneSpecification.scene : 1;
 
   try {
-    // Jika Aset berstatus REUSED: Tidak perlu eksekusi prompt baru ke vendor AI
-    if (assetDecision.assetStatus === "REUSED") {
+    if (!payload?.sceneSpecification) {
+      throw new Error("Payload sceneSpecification null atau undefined");
+    }
+
+    if (payload.assetDecision?.assetStatus === "REUSED") {
       return {
         scene: sceneNum,
         status: "Skipped",
         vendor: "Google Flow (CapCut Reframing)",
-        productionInstruction:
-          assetDecision.productionInstruction ||
-          "Gunakan pergerakan kamera CapCut (Pan/Tilt/Zoom) dari aset sebelumnya.",
+        productionInstruction: payload.assetDecision?.productionInstruction ?? "Gunakan pergerakan kamera CapCut (Pan/Tilt/Zoom) dari aset sebelumnya.",
       };
     }
 
-    // Eksekusi Vendor Google Flow Driver Paket Aset
     return {
       scene: sceneNum,
       status: "Succeeded",
       vendor: "Google Flow",
-      outputPrompt: compiledPrompt,
-      productionInstruction: assetDecision.newAssetReason || undefined,
+      outputPrompt: payload.compiledPrompt ?? "",
+      productionInstruction: payload.assetDecision?.newAssetReason ?? undefined,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : "Gagal mengeksekusi driver Google Flow";
     return {
       scene: sceneNum,
       status: "Failed",
       vendor: "Google Flow",
-      error: err?.message || "Gagal mengeksekusi driver Google Flow",
+      error: errMsg,
     };
   }
 }
