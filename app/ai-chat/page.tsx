@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import Header from "../components/Header";
+import { User } from "@supabase/supabase-js";
 
 interface ChatMessageItem {
   id?: string;
@@ -51,6 +53,7 @@ function AiChatContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -161,6 +164,7 @@ function AiChatContent() {
         router.push("/login");
         return;
       }
+      setUser(user);
       setAuthLoading(false);
     }
     checkAuth();
@@ -890,7 +894,7 @@ function AiChatContent() {
 
             <div style={{ flex: 1 }} />
 
-            <div style={{ width: 36, flexShrink: 0 }} />
+            <Header user={user} />
           </div>
 
           <div className="chat-messages-area" style={{ flex: "1 1 auto", overflowY: "auto", overflowX: "hidden", padding: "24px", display: "flex", flexDirection: "column", minHeight: 0 }}>

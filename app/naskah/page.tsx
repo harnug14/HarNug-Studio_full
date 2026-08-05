@@ -71,10 +71,15 @@ function NaskahContent() {
 
   async function fetchNaskah() {
     setLoading(true);
-    const res = await fetch("/api/naskah");
-    const json = await res.json();
-    if (json.data) setItems(json.data);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/naskah");
+      const json = await res.json();
+      if (json.data) setItems(json.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function fetchTopikList() {
@@ -145,7 +150,6 @@ function NaskahContent() {
         setGenError(json.error);
       } else {
         fetchNaskah();
-        // Clear fields
         setSelectedTopikId("");
         setJudulTopik("");
         setCatatanTopik("");
@@ -270,42 +274,42 @@ function NaskahContent() {
 
   return (
     <div className="animate-fade-in">
-      <div className="page-header" style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Script Draft & Fact Check</h1>
+      <div style={{ marginBottom: 24 }}>
+        <h1 className="page-title">Script</h1>
         <p className="page-subtitle">
-          Susun naskah utuh YouTube Shorts dengan struktur linear, lakukan verifikasi konsistensi internal, dan terjemahkan ke bahasa Inggris.
+          Penyusunan naskah YouTube Shorts, verifikasi verifikasi faktual, dan terjemahan ke bahasa Inggris.
         </p>
       </div>
 
-      {/* Tab Selection */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <button
           onClick={() => setActiveTab("generator")}
-          className={`btn ${activeTab === "generator" ? "btn-primary" : "btn-ghost"}`}
+          className={`btn ${activeTab === "generator" ? "btn-primary" : "btn-secondary"} btn-sm`}
         >
-          ✨ Workflow AI Script Generator
+          AI Script Generator
         </button>
         <button
           onClick={() => setActiveTab("manual")}
-          className={`btn ${activeTab === "manual" ? "btn-primary" : "btn-ghost"}`}
+          className={`btn ${activeTab === "manual" ? "btn-primary" : "btn-secondary"} btn-sm`}
         >
-          ➕ Input Manual
+          Input Manual
         </button>
       </div>
 
-      {/* AI Script Generator Workflow */}
+      {/* AI Generator Form */}
       {activeTab === "generator" && (
-        <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
+        <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
           <form onSubmit={handleGenerateScript}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
-                <label className="form-label">Pilih dari Topic Bank (Opsional)</label>
+                <label className="form-label">Pilih dari Bank Topik (Opsional)</label>
                 <select
                   value={selectedTopikId}
                   onChange={(e) => handleSelectTopik(e.target.value)}
                   className="select-field"
                 >
-                  <option value="">-- Buat Naskah dari Topik Baru / Manual --</option>
+                  <option value="">-- Naskah Baru / Manual --</option>
                   {topikList.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.judul}
@@ -318,7 +322,7 @@ function NaskahContent() {
                 <label className="form-label">Judul Topik Video *</label>
                 <input
                   type="text"
-                  placeholder="Contoh: Mengapa High Heels Dulu Dibuat untuk Pria?"
+                  placeholder="Judul topik..."
                   value={judulTopik}
                   onChange={(e) => setJudulTopik(e.target.value)}
                   required
@@ -327,10 +331,10 @@ function NaskahContent() {
               </div>
             </div>
 
-            <div style={{ marginBottom: 16 }}>
-              <label className="form-label">Catatan / Konteks Topik (Opsional)</label>
+            <div style={{ marginBottom: 12 }}>
+              <label className="form-label">Catatan / Konteks (Opsional)</label>
               <textarea
-                placeholder="Detail fakta khusus atau arah pembahasan yang ingin ditekankan..."
+                placeholder="Detail fakta atau konteks khusus..."
                 value={catatanTopik}
                 onChange={(e) => setCatatanTopik(e.target.value)}
                 rows={2}
@@ -338,9 +342,8 @@ function NaskahContent() {
               />
             </div>
 
-            {/* Channel Profile Selection */}
-            <div style={{ marginBottom: 20 }}>
-              <label className="form-label">Referensi Kalibrasi Naskah (Opsional)</label>
+            <div style={{ marginBottom: 16 }}>
+              <label className="form-label">Referensi Kalibrasi Gaya (Opsional)</label>
               <select
                 value={referenceProfileId}
                 onChange={(e) => setReferenceProfileId(e.target.value)}
@@ -355,9 +358,8 @@ function NaskahContent() {
               </select>
             </div>
 
-            {/* Show Manual Parameters ONLY when Tanpa Referensi is selected */}
             {isManualMode && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                 <div>
                   <label className="form-label">Tone & Gaya Tutur</label>
                   <select
@@ -373,7 +375,7 @@ function NaskahContent() {
                 </div>
 
                 <div>
-                  <label className="form-label">Target Panjang / Durasi</label>
+                  <label className="form-label">Target Durasi</label>
                   <select
                     value={targetPanjang}
                     onChange={(e) => setTargetPanjang(e.target.value)}
@@ -387,72 +389,50 @@ function NaskahContent() {
               </div>
             )}
 
-            <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }}>
-              {generating ? (
-                <><span className="spinner" />Menyusun Script Draft (Hook → Timeline → Ending)...</>
-              ) : (
-                <>🚀 Generate Script Draft</>
-              )}
+            <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
+              {generating ? <><span className="spinner" /> Menyusun Script Draft...</> : "Generate Script Draft"}
             </button>
           </form>
 
           {genError && (
-            <div style={{
-              marginTop: 16,
-              padding: "12px 16px",
-              borderRadius: "var(--radius-md)",
-              background: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid var(--status-error)",
-              color: "var(--status-error)",
-              fontSize: 13
-            }}>
+            <div style={{ marginTop: 12, fontSize: 12, color: "var(--status-error)", background: "rgba(248, 113, 113, 0.1)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
               {genError}
             </div>
           )}
         </div>
       )}
 
-      {/* Manual Add Form */}
+      {/* Manual Form */}
       {activeTab === "manual" && (
-        <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
+        <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
           <form onSubmit={handleManualAdd}>
-            <div style={{ marginBottom: 16 }}>
-              <label className="form-label">Judul naskah</label>
+            <div style={{ marginBottom: 12 }}>
+              <label className="form-label">Judul Naskah *</label>
               <input
                 type="text"
-                placeholder="Contoh: Naskah - Fakta menarik ..."
+                placeholder="Judul naskah..."
                 value={manualJudul}
                 onChange={(e) => setManualJudul(e.target.value)}
                 required
                 className="input-field"
               />
             </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label className="form-label">Isi naskah</label>
+            <div style={{ marginBottom: 16 }}>
+              <label className="form-label">Isi Naskah *</label>
               <textarea
-                placeholder="Isi naskah video..."
+                placeholder="Isi naskah..."
                 value={manualIsi}
                 onChange={(e) => setManualIsi(e.target.value)}
-                rows={6}
+                required
+                rows={5}
                 className="textarea-field"
               />
             </div>
-
-            <button type="submit" disabled={submitting} className="btn btn-primary">
-              {submitting ? <><span className="spinner" />Menyimpan...</> : <>➕ Tambah Naskah Manual</>}
+            <button type="submit" disabled={submitting} className="btn btn-primary btn-sm">
+              {submitting ? <><span className="spinner" /> Menyimpan...</> : "Tambah Naskah Manual"}
             </button>
-
             {message && (
-              <div style={{
-                marginTop: 12,
-                padding: "10px 14px",
-                borderRadius: "var(--radius-md)",
-                fontSize: 13,
-                background: "var(--glass-bg)",
-                border: `1px solid ${message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)"}`,
-                color: message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)",
-              }}>
+              <div style={{ marginTop: 10, fontSize: 12, color: message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)" }}>
                 {message.replace(/^(error:|success:)/, "")}
               </div>
             )}
@@ -461,28 +441,27 @@ function NaskahContent() {
       )}
 
       {/* Script List */}
-      <div className="section-title">Daftar Script Draft & Verified ({items.length})</div>
+      <div className="section-title">
+        Daftar Script ({items.length})
+      </div>
 
       {loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {[1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 100 }} />)}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 90 }} />)}
         </div>
       ) : items.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-state-icon">📜</div>
-          <div className="empty-state-text">Belum ada script tersimpan.</div>
+        <div className="glass-card-static" style={{ padding: 24, textAlign: "center", fontSize: 12, color: "var(--text-tertiary)" }}>
+          Belum ada script tersimpan.
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {items.map((item) => {
             const isEditing = editingId === item.id;
-            const hasEnglish = !!item.english_script;
-            const hasFactCheck = !!item.fact_check_result;
 
             return (
-              <div key={item.id} className="glass-card-static" style={{ padding: 20 }}>
+              <div key={item.id} className="glass-card-static" style={{ padding: 18 }}>
                 {isEditing ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input
                       type="text"
                       value={editJudul}
@@ -494,7 +473,7 @@ function NaskahContent() {
                       <textarea
                         value={editIsi}
                         onChange={(e) => setEditIsi(e.target.value)}
-                        rows={6}
+                        rows={5}
                         className="textarea-field"
                       />
                     </div>
@@ -503,9 +482,8 @@ function NaskahContent() {
                       <textarea
                         value={editEnglishIsi}
                         onChange={(e) => setEditEnglishIsi(e.target.value)}
-                        rows={6}
+                        rows={5}
                         className="textarea-field"
-                        placeholder="Terjemahan bahasa Inggris..."
                       />
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
@@ -514,54 +492,52 @@ function NaskahContent() {
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                       <div>
-                        <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>{item.judul}</h3>
-                        <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                        <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>{item.judul}</h3>
+                        <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
                           <span className={`badge ${item.status === "approved" ? "badge-success" : item.status === "review" ? "badge-warning" : "badge-neutral"}`}>
-                            {item.status === "approved" ? "✓ Verified Script" : item.status === "review" ? "🔍 Needs Review" : "Draft"}
+                            {item.status === "approved" ? "✓ Terverifikasi" : item.status === "review" ? "Perlu Review" : "Draft"}
                           </span>
-                          {hasEnglish && <span className="badge badge-accent">🇺🇸 English Ready</span>}
-                          {hasFactCheck && <span className="badge badge-neutral">🔍 Fact-Checked</span>}
+                          {item.english_script && <span className="badge badge-neutral">English</span>}
+                          {item.fact_check_result && <span className="badge badge-neutral">Fact Checked</span>}
                         </div>
                       </div>
                     </div>
 
-                    {/* Script Preview */}
                     <div style={{
-                      background: "rgba(0, 0, 0, 0.2)",
-                      padding: 14,
+                      background: "var(--bg-tertiary)",
+                      padding: 12,
                       borderRadius: "var(--radius-md)",
-                      fontSize: 13,
-                      lineHeight: 1.6,
+                      fontSize: 12,
+                      lineHeight: 1.5,
                       color: "var(--text-secondary)",
                       whiteSpace: "pre-wrap",
-                      maxHeight: 180,
+                      maxHeight: 140,
                       overflowY: "auto",
-                      marginBottom: 16,
+                      marginBottom: 14,
+                      border: "1px solid var(--border-subtle)",
                     }}>
                       {item.isi_naskah || "(Kosong)"}
                     </div>
 
-                    {/* Action buttons toolbar */}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {/* Toolbar */}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                       <button
                         onClick={() => handleRunFactCheck(item.id)}
                         disabled={factCheckLoading === item.id}
-                        className="btn btn-ghost btn-sm"
-                        style={{ color: "var(--accent-primary)" }}
+                        className="btn btn-secondary btn-sm"
                       >
-                        {factCheckLoading === item.id ? <span className="spinner" /> : "🔍 Fact Check"}
+                        {factCheckLoading === item.id ? <span className="spinner" /> : "Fact Check"}
                       </button>
 
                       <button
                         onClick={() => handleRunTranslation(item.id)}
                         disabled={translateLoading === item.id}
-                        className="btn btn-ghost btn-sm"
-                        style={{ color: "var(--accent-primary)" }}
+                        className="btn btn-secondary btn-sm"
                       >
-                        {translateLoading === item.id ? <span className="spinner" /> : "🌐 Translate to EN"}
+                        {translateLoading === item.id ? <span className="spinner" /> : "Translate EN"}
                       </button>
 
                       {item.fact_check_result && (
@@ -569,16 +545,16 @@ function NaskahContent() {
                           onClick={() => setActiveModalItem({ naskah: item, type: "fact-check" })}
                           className="btn btn-ghost btn-sm"
                         >
-                          📋 Lihat Fact Check Report
+                          Fact Check Report
                         </button>
                       )}
 
-                      {hasEnglish && (
+                      {item.english_script && (
                         <button
                           onClick={() => setActiveModalItem({ naskah: item, type: "translation" })}
                           className="btn btn-ghost btn-sm"
                         >
-                          🇺🇸 Lihat English Script
+                          English Script
                         </button>
                       )}
 
@@ -589,12 +565,12 @@ function NaskahContent() {
                         className="btn btn-primary btn-sm"
                         style={{ marginLeft: "auto" }}
                       >
-                        🎨 Visual Framework (V1.0) →
+                        Visual →
                       </button>
 
                       <button onClick={() => handleDelete(item.id)} className="btn btn-danger btn-sm">Hapus</button>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
             );
@@ -602,97 +578,67 @@ function NaskahContent() {
         </div>
       )}
 
-      {/* Fact Check / Translation Modal */}
+      {/* Modal Detail */}
       {activeModalItem && (
         <div style={{
           position: "fixed",
           inset: 0,
-          background: "rgba(0,0,0,0.75)",
+          background: "rgba(0,0,0,0.7)",
+          backdropFilter: "blur(4px)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           zIndex: 100,
-          padding: 20,
+          padding: 16,
         }}>
-          <div className="glass-card-static" style={{ width: "100%", maxWidth: 640, maxHeight: "85vh", overflowY: "auto", padding: 24 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)" }}>
-                {activeModalItem.type === "fact-check" ? "🔍 Fact Check Report" : "🇺🇸 English Script Version"}
+          <div className="glass-card-static" style={{ width: "100%", maxWidth: 540, maxHeight: "85vh", overflowY: "auto", padding: 22 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>
+                {activeModalItem.type === "fact-check" ? "Fact Check Report" : "English Script"}
               </h3>
-              <button onClick={() => setActiveModalItem(null)} className="btn btn-ghost btn-sm">✕ Tutup</button>
+              <button onClick={() => setActiveModalItem(null)} className="btn btn-ghost btn-sm">✕</button>
             </div>
 
             {activeModalItem.type === "fact-check" && (
               <div>
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                    Status Verifikasi: <span style={{ color: activeModalItem.naskah.fact_check_result?.statusVerification === "Konsisten" ? "var(--status-success)" : "var(--status-error)" }}>
-                      {activeModalItem.naskah.fact_check_result?.statusVerification || "Perlu Review"}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                    Skor Konsistensi Internal: {activeModalItem.naskah.fact_check_result?.internalConsistencyScore || 85}/100
-                  </div>
+                <div style={{ fontSize: 13, marginBottom: 8, color: "var(--text-primary)" }}>
+                  Status: <strong>{activeModalItem.naskah.fact_check_result?.statusVerification || "Perlu Review"}</strong> (Skor: {activeModalItem.naskah.fact_check_result?.internalConsistencyScore || 85}/100)
                 </div>
-
-                <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+                <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 16 }}>
                   {activeModalItem.naskah.fact_check_result?.ringkasanEvaluasi}
                 </p>
-
-                {/* Factual Claims list */}
-                {activeModalItem.naskah.fact_check_result?.factualClaims?.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Ekstraksi Klaim Faktual:</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {activeModalItem.naskah.fact_check_result.factualClaims.map((fc: any, i: number) => (
-                        <div key={i} style={{ background: "rgba(255,255,255,0.03)", padding: 10, borderRadius: 6, fontSize: 12 }}>
-                          <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>• {fc.klaim}</div>
-                          <div style={{ color: fc.status === "Konsisten" ? "var(--status-success)" : "var(--status-error)", marginTop: 2 }}>
-                            Status: {fc.status} ({fc.catatan})
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-                  <button
-                    onClick={() => handleApproveVerified(activeModalItem.naskah.id)}
-                    className="btn btn-primary btn-sm"
-                    style={{ flex: 1, justifyContent: "center" }}
-                  >
-                    ✓ Approve as Verified Script
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleApproveVerified(activeModalItem.naskah.id)}
+                  className="btn btn-primary btn-sm"
+                  style={{ width: "100%" }}
+                >
+                  ✓ Tandai Terverifikasi
+                </button>
               </div>
             )}
 
             {activeModalItem.type === "translation" && (
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
-                  Native American English Voiceover Version:
-                </div>
                 <div style={{
-                  background: "rgba(0, 0, 0, 0.3)",
-                  padding: 16,
+                  background: "var(--bg-tertiary)",
+                  padding: 14,
                   borderRadius: "var(--radius-md)",
-                  fontSize: 14,
-                  lineHeight: 1.6,
+                  fontSize: 13,
+                  lineHeight: 1.5,
                   whiteSpace: "pre-wrap",
                   marginBottom: 16,
+                  border: "1px solid var(--border-subtle)",
                 }}>
                   {activeModalItem.naskah.english_script}
                 </div>
-
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(activeModalItem.naskah.english_script || "");
-                    alert("English Script disalin ke clipboard!");
+                    alert("English Script disalin!");
                   }}
                   className="btn btn-primary btn-sm"
                 >
-                  📋 Salin English Script
+                  Salin English Script
                 </button>
               </div>
             )}
@@ -706,7 +652,7 @@ function NaskahContent() {
 export default function NaskahPage() {
   return (
     <Suspense fallback={
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#050505" }}>
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div className="spinner" style={{ width: 28, height: 28 }} />
       </div>
     }>

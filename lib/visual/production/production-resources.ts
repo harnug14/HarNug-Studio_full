@@ -7,7 +7,9 @@ import {
   ProductionResourcesResult,
   SceneSpecification,
   AssetDecision,
+  CharacterState,
 } from "../types";
+import { describeCharacterState } from "../character-fsm/fsm-engine";
 
 const GEMINI_FALLBACK_MODELS = [
   "gemini-3.6-flash",
@@ -24,29 +26,37 @@ function getSafeString(val: unknown, fallback: string = ""): string {
 }
 
 /**
- * STEP 4: PRODUCTION RESOURCES MODULE
+ * STEP 4: PRODUCTION RESOURCES MODULE (V5 MIGRATION)
  * ADR RULE: "Production Resources decides what visual resources should be used."
- * Tanggung Jawab: Murni mengevaluasi Decision Tree Aset (REUSED/POSE_SWAP/NEW) & menyusun SCENE SPECIFICATION.
- * DILARANG MEMBAHAS: Prompt / Vendor AI / Sintaks Prompt -> Wewenang Prompt Composer & Execution!
+ * GOLDEN RULE #3: Every layer after FSM is READ ONLY.
+ *
+ * Production Resources reads Character State to assign visual assets and build SceneSpecification.
+ * Production Resources NEVER modifies Character State.
  */
 export async function resolveProductionResources(
   supabase: unknown,
   storyWorld: StoryWorldContext,
   beatShot: VisualBeatShot,
   directorialSpec: DirectorialSpec,
-  existingAssetLibrary: unknown[] = []
+  existingAssetLibrary: unknown[] = [],
+  characterState?: CharacterState
 ): Promise<ProductionResourcesResult> {
   const safeAssetLib = Array.isArray(existingAssetLibrary) ? existingAssetLibrary : [];
   const sceneNum = typeof beatShot?.scene === "number" ? beatShot.scene : 1;
   const safeEra = getSafeString(storyWorld?.primaryEra, "Era Sejarah");
   const safeFocus = getSafeString(beatShot?.primaryVisualFocus, "Fokus Visual Utama");
 
-  const systemPrompt = `Kamu adalah HARNUG STUDIO V4 — PRODUCTION RESOURCES MODULE (ART DEPARTMENT & ASSET MANAGER).
+  const characterStateContext = characterState
+    ? `\nCHARACTER STATE FISIK (READ ONLY):\n${describeCharacterState(characterState)}\n`
+    : "";
+
+  const systemPrompt = `Kamu adalah HARNUG STUDIO V5 — PRODUCTION RESOURCES MODULE (ART DEPARTMENT & ASSET MANAGER).
 
 ADR RULE: Production Resources decides what visual resources should be used.
 Tugasmu MURNI mengevaluasi Keputusan Aset dan menyusun data MURNI "SCENE SPECIFICATION".
 
 DILARANG SAMA SEKALI MEMBUAT PROMPT NARATIF, PROMPT TEXT VENDOR, ATAU SINTAKS PROMPT AI!
+${characterStateContext}
 
 HIRARKI DECISION TREE:
 1. REUSED: Shot hanya berupa pergerakan kamera (Pan, Tilt, Zoom, Parallax) dari aset sebelumnya.

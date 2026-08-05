@@ -76,12 +76,6 @@ function resolveScenes(c: any): any[] {
   return [];
 }
 
-function resolveAssetLibrary(c: any): any[] {
-  if (!c || typeof c !== "object") return [];
-  if (Array.isArray(c.assetLibrary)) return c.assetLibrary;
-  return [];
-}
-
 function VisualContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -158,7 +152,7 @@ function VisualContent() {
 
     setGenerating(true);
     setGenError("");
-    setProgressMsg("📖 Story World & Visual Beat Planning...");
+    setProgressMsg("Directing Storyboard & Beats...");
 
     try {
       const planRes = await fetch("/api/visual/generate", {
@@ -187,6 +181,7 @@ function VisualContent() {
       const INTER_SCENE_DELAY_MS = 1000;
       const MAX_SCENE_RETRIES = 2;
       let lastDirectorialSpec: any = undefined;
+      let lastCharacterState: any = undefined;
 
       for (let i = 0; i < plannedScenes.length; i++) {
         const sceneItem = plannedScenes[i];
@@ -195,7 +190,7 @@ function VisualContent() {
           await new Promise((r) => setTimeout(r, INTER_SCENE_DELAY_MS));
         }
 
-        setProgressMsg(`🎬 Directing Shot #${i + 1} dari ${plannedScenes.length}...`);
+        setProgressMsg(`Directing Shot #${i + 1} dari ${plannedScenes.length}...`);
 
         for (let attempt = 0; attempt <= MAX_SCENE_RETRIES; attempt++) {
           try {
@@ -210,6 +205,7 @@ function VisualContent() {
                 bridgePoseLevel,
                 existingAssetLibrary: globalAssetLibrary,
                 previousDirectorialSpec: lastDirectorialSpec,
+                previousCharacterState: lastCharacterState,
               }),
             });
             const sceneJson = await sceneRes.json();
@@ -218,6 +214,7 @@ function VisualContent() {
               const sd = sceneJson.data;
               directedScenes.push(sd);
               lastDirectorialSpec = sd.sceneSpecification?.camera;
+              if (sd.characterState) lastCharacterState = sd.characterState;
 
               const ad = sd.assetDecision || {};
               if (ad.createdAsset && ad.createdAsset.assetId) {
@@ -240,7 +237,7 @@ function VisualContent() {
         }
       }
 
-      setProgressMsg("💾 Menyimpan Storyboard & Global Asset Library...");
+      setProgressMsg("Menyimpan Storyboard Visual...");
 
       const saveRes = await fetch("/api/visual/generate", {
         method: "POST",
@@ -288,21 +285,21 @@ function VisualContent() {
       })
       .join("\n\n=========================================\n\n");
     navigator.clipboard.writeText(prompts);
-    alert("Semua Prompt disalin ke clipboard!");
+    alert("Semua Prompt disalin!");
   }
 
   return (
     <div className="animate-fade-in">
-      <div className="page-header" style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Visual Director Engine V4 🎬</h1>
+      <div style={{ marginBottom: 24 }}>
+        <h1 className="page-title">Visual</h1>
         <p className="page-subtitle">
-          Architecture Freeze v1.0 — Presentation Isolation Principle.
+          Penyusunan Storyboard & Prompt Visual untuk produksi video.
         </p>
       </div>
 
-      <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
+      <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
         <form onSubmit={handleGenerateVisual}>
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 14 }}>
             <label className="form-label">Pilih Script Naskah *</label>
             <select value={selectedNaskahId} onChange={(e) => handleSelectNaskah(e.target.value)} className="select-field">
               <option value="">-- Pilih dari Daftar Naskah --</option>
@@ -314,10 +311,10 @@ function VisualContent() {
             </select>
           </div>
 
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 14 }}>
             <label className="form-label">Teks Naskah Acuan Visual</label>
             <textarea
-              placeholder="Teks naskah yang akan disusun panduan visualnya..."
+              placeholder="Teks naskah yang akan dibuatkan panduan visualnya..."
               value={isiNaskah}
               onChange={(e) => setIsiNaskah(e.target.value)}
               rows={4}
@@ -325,9 +322,9 @@ function VisualContent() {
             />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
             <div>
-              <label className="form-label">Tingkat Transisi Pose Mikro</label>
+              <label className="form-label">Transisi Pose Mikro</label>
               <select value={bridgePoseLevel} onChange={(e) => setBridgePoseLevel(e.target.value)} className="select-field">
                 <option value="Key Poses Only">Key Pose Utuh Saja</option>
                 <option value="Balanced (Key Pose + Bridge Pose Transisi)">Seimbang (Key Pose + Transisi Mikro)</option>
@@ -345,76 +342,61 @@ function VisualContent() {
             </div>
           </div>
 
-          <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }}>
+          <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
             {generating ? (
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span className="spinner" /> {progressMsg || "Memproses Storyboard..."}
               </span>
             ) : (
-              <>🎬 Buat Storyboard</>
+              <>Generate Storyboard</>
             )}
           </button>
         </form>
 
         {genError && (
-          <div
-            style={{
-              marginTop: 16,
-              padding: "14px 18px",
-              borderRadius: "var(--radius-md)",
-              background: "rgba(239,68,68,0.15)",
-              border: "1px solid var(--status-error)",
-              color: "#f87171",
-              fontSize: 13,
-              fontWeight: 600,
-            }}
-          >
-            ⚠️ {genError}
+          <div style={{ marginTop: 14, fontSize: 12, color: "var(--status-error)", background: "rgba(248, 113, 113, 0.1)", padding: "10px 14px", borderRadius: "var(--radius-md)" }}>
+            {genError}
           </div>
         )}
       </div>
 
-      <div className="section-title">Daftar Visual Storyboard Tersimpan ({items.length})</div>
+      <div className="section-title">
+        Daftar Visual Storyboard ({items.length})
+      </div>
 
       {loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {[1, 2].map((i) => (
-            <div key={i} className="skeleton" style={{ height: 100 }} />
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 80 }} />)}
         </div>
       ) : items.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-state-icon">🎬</div>
-          <div className="empty-state-text">Belum ada Visual Storyboard tersimpan.</div>
+        <div className="glass-card-static" style={{ padding: 24, textAlign: "center", fontSize: 12, color: "var(--text-tertiary)" }}>
+          Belum ada Visual Storyboard tersimpan.
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {Array.isArray(items) && items.map((item) => {
             const isExpanded = expandedId === item.id;
             const content = resolveContent(item.isi_visual);
             const scenes = resolveScenes(content);
-            const assetLib = resolveAssetLibrary(content);
-            const hasScenes = scenes.length > 0;
 
             return (
-              <div key={item.id} className="glass-card-static" style={{ padding: 20 }}>
+              <div key={item.id} className="glass-card-static" style={{ padding: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <div>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>{item.judul}</h3>
-                    <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <span className="badge badge-accent">{content.styleTag || "Sinematik 3D"}</span>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 4px 0", color: "var(--text-primary)" }}>{item.judul}</h3>
+                    <div style={{ marginTop: 4, display: "flex", gap: 6 }}>
+                      <span className="badge badge-neutral">{content.styleTag || "Sinematik 3D"}</span>
                       <span className="badge badge-neutral">{scenes.length} Shot Beats</span>
-                      {assetLib.length > 0 && <span className="badge badge-primary">{assetLib.length} Asset Library</span>}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
-                    {hasScenes && (
-                      <button onClick={() => handleCopyPrompts(scenes)} className="btn btn-ghost btn-sm" style={{ color: "var(--accent-primary)" }}>
-                        📋 Salin Semua Prompt
+                    {scenes.length > 0 && (
+                      <button onClick={() => handleCopyPrompts(scenes)} className="btn btn-secondary btn-sm">
+                        Salin Prompts
                       </button>
                     )}
                     <button onClick={() => setExpandedId(isExpanded ? null : item.id)} className="btn btn-primary btn-sm">
-                      {isExpanded ? "Tutup" : "🎬 Lihat Storyboard"}
+                      {isExpanded ? "Tutup" : "Lihat Storyboard"}
                     </button>
                     <button onClick={() => handleDelete(item.id)} className="btn btn-danger btn-sm">
                       Hapus
@@ -422,92 +404,61 @@ function VisualContent() {
                   </div>
                 </div>
 
-                {/* PRESENTATION ISOLATION PRINCIPLE (FROZEN UI) */}
                 {isExpanded && (
-                  <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                    {hasScenes ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 16 }}>
-                          {scenes.map((s: any, sIdx: number) => {
-                            const num = s.scene || sIdx + 1;
-                            const ad = s.assetDecision || {};
-                            const status = ad.assetStatus || "NEW";
-                            const pc = s.promptCompiler || {};
-                            const prompt = pc.compiledPrompt || s.prompt;
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
+                    {scenes.length > 0 ? (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
+                        {scenes.map((s: any, sIdx: number) => {
+                          const num = s.scene || sIdx + 1;
+                          const pc = s.promptCompiler || {};
+                          const prompt = pc.compiledPrompt || s.prompt;
 
-                            return (
-                              <div
-                                key={sIdx}
-                                style={{
-                                  background: "rgba(0,0,0,0.3)",
-                                  border: "1px solid rgba(255,255,255,0.08)",
-                                  borderRadius: "var(--radius-md)",
-                                  padding: 16,
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  gap: 10,
-                                }}
-                              >
-                                {/* 1. SHOT NUMBER */}
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <span style={{ fontWeight: 700, fontSize: 15, color: "var(--accent-primary)" }}>
-                                    Shot #{String(num).padStart(2, "0")}
-                                  </span>
-                                </div>
-
-                                {/* 2. POTONGAN NASKAH */}
-                                {s.naskahChunk && (
-                                  <div
-                                    style={{
-                                      fontSize: 12,
-                                      color: "var(--text-secondary)",
-                                      fontStyle: "italic",
-                                      borderLeft: "2px solid var(--accent-primary)",
-                                      paddingLeft: 8,
-                                      lineHeight: 1.4,
-                                    }}
-                                  >
-                                    &ldquo;{s.naskahChunk}&rdquo;
-                                  </div>
-                                )}
-
-                                {/* 3. PROMPT atau 4. PRODUCTION INSTRUCTION */}
-                                {status === "REUSED" ? (
-                                  <div style={{ background: "rgba(59,130,246,0.1)", padding: 12, borderRadius: 6, border: "1px solid rgba(59,130,246,0.3)", marginTop: 4 }}>
-                                    <div style={{ fontSize: 11, fontWeight: 700, color: "#60a5fa", marginBottom: 4 }}>
-                                      PRODUCTION INSTRUCTION (REUSE_ASSET)
-                                    </div>
-                                    <div style={{ fontSize: 12, color: "#e0f2fe", lineHeight: 1.5 }}>
-                                      Aset: {ad.targetAssetId || "Asset_001"}<br />
-                                      Instruksi: {ad.productionInstruction || "Keyframe kamera maju perlahan."}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div style={{ background: "rgba(0,0,0,0.4)", padding: 12, borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)", marginTop: 4 }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                                      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-primary)" }}>
-                                        PROMPT
-                                      </span>
-                                      <button
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(prompt || "");
-                                          alert(`Prompt Shot #${num} disalin!`);
-                                        }}
-                                        style={{ background: "none", border: "none", color: "var(--accent-primary)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
-                                      >
-                                        📋 Salin
-                                      </button>
-                                    </div>
-                                    <div style={{ fontSize: 12, color: "#e5e7eb", lineHeight: 1.5, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{prompt}</div>
-                                  </div>
-                                )}
+                          return (
+                            <div
+                              key={sIdx}
+                              style={{
+                                background: "var(--bg-tertiary)",
+                                border: "1px solid var(--border-subtle)",
+                                borderRadius: "var(--radius-md)",
+                                padding: 14,
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 10,
+                              }}
+                            >
+                              <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
+                                Shot #{String(num).padStart(2, "0")}
                               </div>
-                            );
-                          })}
-                        </div>
+
+                              {s.naskahChunk && (
+                                <div style={{ fontSize: 12, color: "var(--text-secondary)", fontStyle: "italic", borderLeft: "2px solid var(--border-medium)", paddingLeft: 8 }}>
+                                  &ldquo;{s.naskahChunk}&rdquo;
+                                </div>
+                              )}
+
+                              <div style={{ background: "var(--bg-secondary)", padding: 10, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                                  <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)" }}>PROMPT</span>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(prompt || "");
+                                      alert(`Prompt Shot #${num} disalin!`);
+                                    }}
+                                    style={{ background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", fontSize: 11, fontWeight: 500 }}
+                                  >
+                                    Salin
+                                  </button>
+                                </div>
+                                <div style={{ fontSize: 11, color: "var(--text-primary)", fontFamily: "monospace", whiteSpace: "pre-wrap" }}>
+                                  {prompt}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : (
-                      <div style={{ padding: 16, fontSize: 13, color: "var(--text-secondary)", textAlign: "center" }}>
+                      <div style={{ fontSize: 12, color: "var(--text-tertiary)", textAlign: "center", padding: 12 }}>
                         Data adegan tidak ditemukan.
                       </div>
                     )}
@@ -524,13 +475,11 @@ function VisualContent() {
 
 export default function VisualPage() {
   return (
-    <Suspense
-      fallback={
-        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#050505" }}>
-          <div className="spinner" style={{ width: 28, height: 28 }} />
-        </div>
-      }
-    >
+    <Suspense fallback={
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="spinner" style={{ width: 28, height: 28 }} />
+      </div>
+    }>
       <VisualContent />
     </Suspense>
   );

@@ -31,23 +31,41 @@ export async function POST(
       return NextResponse.json({ error: "Naskah tidak ditemukan" }, { status: 404 });
     }
 
-    const systemPrompt = `You are a World-Class Native English Scriptwriter for YouTube Shorts.
-Your task is to translate and adapt the Indonesian script into dynamic, punchy, natural American English.
+    const systemPrompt = `You are a World-Class Native American Scriptwriter & Voiceover Director for top US YouTube Shorts creators.
+Your task is to translate and adapt the Indonesian script into highly engaging, punchy, and authentic Natural American English.
 
---- CRITICAL TRANSLATION RULES ---
-1. DO NOT do word-for-word Google Translate. Rewrite the script so it feels natively written by a top US YouTube creator.
-2. Use short, crisp sentences with natural rhythm, idioms, and high engagement hooks.
-3. PRESERVE 100% OF ALL SPECIFIC FACTS, YEARS, DATES, NAMES, AND NUMBERS EXACTLY AS IN THE ORIGINAL SCRIPT.
-4. KEEP THE SAME SCENE BREAKDOWN STRUCTURE (1-3 sentences per situation change).
-5. Output ONLY the final English Script text, clean and ready for voiceover audio recording.`;
+--- MANDATORY TRANSLATION QUALITY RULES ---
+1. NATURAL AMERICAN ENGLISH CONVERSATIONAL STYLE (NO LITERAL TRANSLATION):
+   - Translate thoughts, context, and emotion naturally as spoken by top US storytellers (e.g., Vox, Johnny Harris, Magnates Media style).
+   - NEVER perform word-for-word or literal translations from Indonesian phrasing.
+   - Strictly avoid awkward textbook syntax or stiff translation structures.
 
-    const userPrompt = `Indonesian Script to Translate to English:
+2. ELIMINATE ENGLISH AI TEMPLATES & FILLERS:
+   - STRIKTLY PROHIBIT AI TEMPLATE CLICHÉS in the translated English text, such as:
+     * "Have you ever wondered..."
+     * "Did you know that..."
+     * "In this video..."
+     * "Imagine a world where..."
+     * "Little did they know..."
+     * "Stay tuned until the end..."
+     * "Don't forget to like and subscribe..."
+   - Open immediately with a sharp, punchy Hook. Make transitions smooth and natural.
+
+3. PRESERVE 100% FACTS, KNOWLEDGE, NUMBERS, & TIMELINE:
+   - PRESERVE ALL HISTORICAL FACTS, DATES, YEARS, PROPER NAMES, LOCATIONS, KNOWLEDGE, AND STATISTICAL NUMBERS EXACTLY AS THEY ARE IN THE ORIGINAL SCRIPT.
+   - Do NOT change the chronological sequence, pacing, narrative meaning, or storytelling logic.
+
+4. STRUCTURE & OUTPUT FORMAT:
+   - Maintain the line-by-line / paragraph-by-paragraph layout of the original script.
+   - Output ONLY the clean, final American English voiceover script text without markdown conversational intros or meta comments.`;
+
+    const userPrompt = `Indonesian Script to Adapt into Natural American English:
 Title: ${naskah.judul}
 
 Script Body:
 "${naskah.isi_naskah}"
 
-Produce the natural English script version now.`;
+Produce the natural American English voiceover script version now following all translation rules above.`;
 
     const englishScript = await callGeminiWithRotation(supabase, async (apiKey) => {
       const response = await fetch(

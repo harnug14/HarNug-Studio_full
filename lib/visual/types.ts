@@ -38,6 +38,9 @@ export interface VisualBeatShot {
   narrativePurpose: string;
   expectedDuration: string;
   importance: "Critical" | "High" | "Medium" | "Low";
+  primaryAction?: string;
+  targetObject?: string;
+  modifier?: string;
 }
 
 export interface BeatPlannerResult {
@@ -126,4 +129,135 @@ export interface ExecutionResult {
   outputPrompt?: string;
   productionInstruction?: string;
   error?: string;
+}
+
+// ============================================================================
+// VISUAL DIRECTOR ENGINE V5 — CHARACTER FSM DOMAIN TYPES
+// Architecture Migration: Deterministic Character Continuity
+// ============================================================================
+
+/**
+ * Body part position — the set of physically valid states a body part can be in.
+ */
+export type BodyPartPosition =
+  | "Neutral"
+  | "Raised"
+  | "Lowered"
+  | "Extended"
+  | "Bent"
+  | "Open"
+  | "Closed";
+
+/**
+ * Immutable Value Object — single body part physical state.
+ */
+export interface BodyPartState {
+  readonly position: BodyPartPosition;
+  readonly holdingObject: string | null;
+}
+
+/**
+ * Character whole-body transform — pose and facing direction.
+ */
+export interface CharacterTransform {
+  readonly pose: "Standing" | "Sitting" | "Walking" | "Running" | "Leaning" | "Kneeling";
+  readonly facing: "Forward" | "Left" | "Right" | "Back";
+}
+
+/**
+ * GOLDEN RULE #1: Character State is the ONLY source of truth.
+ * GOLDEN RULE #2: Only FSM may write Character State.
+ * GOLDEN RULE #3: Every layer after FSM is READ ONLY.
+ *
+ * Immutable Value Object — complete physical state of the character.
+ * Every field is readonly. A new object must be constructed for each transition.
+ */
+export interface CharacterState {
+  readonly head: BodyPartState;
+  readonly torso: BodyPartState;
+  readonly rightArm: BodyPartState;
+  readonly leftArm: BodyPartState;
+  readonly rightLeg: BodyPartState;
+  readonly leftLeg: BodyPartState;
+  readonly transform: CharacterTransform;
+}
+
+/**
+ * Universal primitive action vocabulary — reusable across all historical topics.
+ */
+export type PrimitiveActionType =
+  | "Raise"
+  | "Lower"
+  | "Grab"
+  | "Release"
+  | "Touch"
+  | "Push"
+  | "Pull"
+  | "Hold"
+  | "Open"
+  | "Close"
+  | "Reach"
+  | "Walk"
+  | "Run"
+  | "Stand"
+  | "Sit"
+  | "Lean"
+  | "Point"
+  | "Turn"
+  | "Kneel"
+  | "Look";
+
+/**
+ * Body part target keys — matching the CharacterState field names.
+ */
+export type BodyPartKey = "head" | "torso" | "rightArm" | "leftArm" | "rightLeg" | "leftLeg";
+
+/**
+ * Structured primitive action with target and modifier.
+ */
+export interface PrimitiveAction {
+  readonly action: PrimitiveActionType;
+  readonly target: BodyPartKey | "transform";
+  readonly modifier: string;
+  readonly object: string | null;
+}
+
+/**
+ * Structured action fields extracted from a VisualBeat for FSM consumption.
+ * This wraps VisualBeatShot with additional structured data without modifying the original type.
+ */
+export interface StructuredBeatAction {
+  readonly beat: VisualBeatShot;
+  readonly primaryAction: string;
+  readonly targetObject: string;
+  readonly modifier: string;
+}
+
+/**
+ * Allowed Mutation Matrix entry — defines which body parts a primitive action may change.
+ */
+export interface ActionMutationRule {
+  readonly allowedTargets: ReadonlyArray<BodyPartKey | "transform">;
+}
+
+/**
+ * Validation error from domain validators.
+ */
+export interface CharacterStateValidationError {
+  readonly code: "ILLEGAL_MUTATION" | "INVALID_BODY_STATE" | "MISSING_BODY_PART" | "INVALID_TRANSITION" | "CONTINUITY_VIOLATION" | "INVALID_ACTION_STATE";
+  readonly message: string;
+  readonly field?: string;
+}
+
+/**
+ * Result of an FSM state transition.
+ */
+export interface FsmTransitionResult {
+  readonly success: boolean;
+  readonly executed: boolean;
+  readonly skippedReason?: string;
+  readonly nextState: CharacterState | null;
+  readonly appliedAction: PrimitiveAction | null;
+  readonly validationErrors: CharacterStateValidationError[];
+  readonly debugLog?: string;
 }

@@ -137,29 +137,49 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const systemPrompt = `Kamu adalah seorang Scriptwriter & Narrative Strategist tingkat dunia untuk YouTube Shorts.
-Tugasmu adalah membuat NASKAH UTUH untuk video YouTube Shorts berdasarkan topik yang diberikan.
+    const systemPrompt = `Kamu adalah Scriptwriter & Narrative Strategist tingkat dunia untuk YouTube Shorts.
+Tugasmu adalah menyusun NASKAH UTUH YouTube Shorts berkualitas tinggi yang mengalir sangat natural, organik, dan berbobot.
 
---- ATURAN STRUKTUR NASKAH (MANDATORI) ---
-1. STRUKTUR UTAMA WAKTU (Linear Forward Timeline):
-   - [HOOK 0-5s]: Kalimat pembuka yang memicu rasa penasaran kuat, tanpa basa-basi.
-   - [TIMELINE / ISI UTAMA]: Alur cerita selalu maju secara kronologis/logis (jangan melompat-lompat).
-   - [ENDING]: Penutup klimaks atau pertanyaan terbuka / punchline yang berkesan.
-   - [SELF REVIEW]: Evaluasi singkat AI terhadap alur naskah ini.
+--- ATURAN MUTLAK KUALITAS PENULISAN (MANDATORI) ---
+1. MENELURUSI DAN MENELIMINASI SEMUA FRASA AI KLISE / TEMPLATE:
+   - DILARANG KERAS MENGGUNAKAN KALIMAT TEMPLATE AI KLISE pada Hook, Transisi, maupun Ending, seperti:
+     * "Pernahkah kamu membayangkan..."
+     * "Tahukah kamu..."
+     * "Di video kali ini..."
+     * "Bayangkan jika..."
+     * "Penasaran kan?"
+     * "Simak sampai habis..."
+     * "Jangan lupa like dan subscribe"
+     * "Siapa sangka..."
+     * "Usut punya usut..."
+     * "Ternyata oh ternyata..."
+   - HOOK (0-5s): Harus langsung masuk ke inti permasalahan, konflik utama, atau kejutan cerita secara natural dan dramatis tanpa diawali pertanyaan klise.
+   - TRANSISI: Alur transisi antar kalimat harus mengalir mulus tanpa kata sambung atau jembatan buatan yang kaku khas AI.
+   - ENDING: Penutup harus tajam, memberikan punchline kuat atau kesimpulan mendalam tanpa ajakan berlangganan generik.
 
-2. ATURAN GAYA & RITME KALIMAT:
-   - Gunakan KALIMAT PENDEK dan JELAS. Jangan gunakan kalimat majemuk panjang yang berbelit-belit.
-   - SETIAP 1-3 KALIMAT HARUS MENANDAI 1 PERUBAHAN SITUASI / PERISTIWA (ini akan menjadi acuan visual storyboard).
-   - Tulis dengan gaya bertutur natural seperti bercerita langsung ke audiens (bukan membaca artikel wikipedia).
-   - Fakta HARUS akurat, spesifik (tahun, nama tokoh, nama lokasi jika ada).
+2. ATURAN DIKSI & LARANGAN KATA INFORMAL SLANG:
+   - DILARANG KERAS MENGGUNAKAN KATA "gue", "gua", "gwe", "lu", "loe", "eloh", MAUPUN VARIASINYA DALAM BENTUK APA PUN.
+   - Gunakan ragam bahasa tutur Indonesia yang natural, hidup, lugas, namun tetap berbobot dan persuasif ("kamu", "Anda", atau tuturan naratif langsung).
 
-3. FORMAT OUTPUT JSON PERSIS TANPA MARKDOWN MARKUP LAIN (pure JSON object):
+3. ADOPSI ALAMI DNA REFERENCE ANALYSIS (APABILA ADA REFERENSI):
+   - Jika contoh naskah referensi diberikan, serap dan adopsi DNA penulisan tersebut secara alami: gaya bahasa, pilihan kata, ritme per kalimat, serta dinamika bertutur khas channel tersebut.
+   - JANGAN pernah merubah pacing, struktur narasi utama, atau alur storytelling cerita yang sudah ada.
+
+4. INTEGRITAS FAKTA & ALUR CERITA:
+   - Pertahankan 100% akurasi fakta sejarah, kronologi waktu, urutan peristiwa, nama tokoh, lokasi, dan makna asli naskah. Dilarang mengubah fakta atau menambah narasi fiktif.
+
+5. STRUKTUR NASKAH SHORTS (Linear Forward Timeline):
+   - [HOOK 0-5s]: Pembuka berdampak tinggi, murni naratif.
+   - [TIMELINE / ISI UTAMA]: Alur cerita selalu maju secara kronologis/logis per 1-3 kalimat untuk menandai perubahan situasi visual.
+   - [ENDING]: Penutup klimaks, punchline kuat, atau kesimpulan berkesan.
+
+6. FORMAT OUTPUT JSON PERSIS (pure JSON object):
 {
   "judul": "Naskah - ${judulTopik.replace(/"/g, "'")}",
-  "isiNaskah": "Naskah lengkap yang siap dibacakan, dari Hook hingga Ending...",
+  "isiNaskah": "Naskah lengkap dari Hook hingga Ending...",
   "hook": "Kalimat Hook saja",
   "ending": "Kalimat Ending saja",
-  "selfReview": "Self review AI mengenai kekuatan naskah, alur kronologis, dan ritme per 1-3 kalimat.",
+  "selfReview": "Evaluasi singkat AI mengenai kekuatan naskah, alur kronologis, dan ritme kalimat.",
   "sumberCatatan": "Catatan fakta/sumber jika ada"
 }`;
 
@@ -170,14 +190,14 @@ Tugasmu adalah membuat NASKAH UTUH untuk video YouTube Shorts berdasarkan topik 
 ${referenceContextText}
 
 Instruksi Tambahan:
-Gunakan contoh-contoh naskah kalibrasi channel di atas untuk mengadopsi tone suara, ritme kalimat, kepanjangan/durasi, serta gaya bertutur channel tersebut secara persis. Buatkan Script Draft terbaik mengikuti aturan di atas sekarang dalam format JSON murni.`
+Gunakan contoh-contoh naskah kalibrasi channel di atas untuk mengadopsi tone suara, ritme kalimat, kepanjangan/durasi, serta gaya bertutur channel tersebut secara persis. Hindari frasa klise AI pada hook/transisi/ending dan DILARANG KERAS menggunakan kata "gue/lu" atau variasinya. Buatkan Script Draft terbaik dalam format JSON murni.`
       : `Detail Topik Naskah (Manual):
 - Judul Topik: ${judulTopik}
 - Catatan / Konteks Topik: ${catatanTopik || "Tidak ada"}
 - Tone Suara: ${tone}
 - Target Panjang / Durasi: ${targetPanjang}
 
-Buatkan Script Draft terbaik mengikuti aturan di atas sekarang dalam format JSON murni.`;
+Buatkan Script Draft terbaik mengikuti aturan kualitas penulisan tinggi di atas sekarang dalam format JSON murni.`;
 
     const rawResponse = await callGeminiApiWithFallback(
       supabase,

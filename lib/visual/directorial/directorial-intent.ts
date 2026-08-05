@@ -1,6 +1,7 @@
 import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
-import { StoryWorldContext, VisualBeatShot, DirectorialSpec } from "../types";
+import { StoryWorldContext, VisualBeatShot, DirectorialSpec, CharacterState } from "../types";
+import { describeCharacterState } from "../character-fsm/fsm-engine";
 
 const GEMINI_FALLBACK_MODELS = [
   "gemini-3.6-flash",
@@ -17,18 +18,21 @@ function getSafeString(val: unknown, fallback: string = ""): string {
 }
 
 /**
- * STEP 3: DIRECTORIAL INTENT MODULE
+ * STEP 3: DIRECTORIAL INTENT MODULE (V5 MIGRATION)
  * ADR RULE: "Directorial Intent decides how it should be seen."
- * Tanggung Jawab: Murni menentukan bahasa sinematografi (Framing, Angle, Motion, Lighting, Composition).
- * SOFT GUIDELINE IMPLEMENTATION (CAMERA RHYTHM ADVISORY):
- * - Jika menerima tipe beat berurutan, variasikan sudut kamera, framing, atau lighting mood
- *   TANPA PERNAH MENGUBAH visualBeatType dari L2.
+ * GOLDEN RULE #4: State Before Presentation. Character moves first. Camera adapts afterwards.
+ * GOLDEN RULE #5: Physical Truth Before Cinematic Truth. Camera changes, Character never changes.
+ * GOLDEN RULE #6: Character -> Camera. Never Camera -> Character.
+ *
+ * Directorial Intent reads Character State and adapts framing/angle to fit physical state.
+ * Directorial Intent NEVER modifies Character State.
  */
 export async function formulateDirectorialIntent(
   supabase: unknown,
   storyWorld: StoryWorldContext,
   beatShot: VisualBeatShot,
-  previousDirectorialSpec?: DirectorialSpec
+  previousDirectorialSpec?: DirectorialSpec,
+  characterState?: CharacterState
 ): Promise<DirectorialSpec> {
   const safeBeatType = getSafeString(beatShot?.visualBeatType, "Action");
   const safeFocus = getSafeString(beatShot?.primaryVisualFocus, beatShot?.naskahChunk ?? "Fokus Visual");
@@ -37,7 +41,11 @@ export async function formulateDirectorialIntent(
     ? `Kamera Shot Sebelumnya: ${previousDirectorialSpec.shotSize}, Angle: ${previousDirectorialSpec.angle}. Variasikan sudut/framing shot ini agar dinamis.`
     : "Shot Pertama dalam adegan.";
 
-  const systemPrompt = `Kamu adalah HARNUG STUDIO V4 — DIRECTORIAL INTENT MODULE (FILM DIRECTOR).
+  const characterStateContext = characterState
+    ? `\nKEBENARAN FISIK KARAKTER (IMMUTABLE CHARACTER STATE - READ ONLY):\n${describeCharacterState(characterState)}\nAturan: Kamera WAJIB menyesuaikan framing dengan pose fisik karakter di atas (Character -> Camera). DILARANG mengubah atau berasumsi pose karakter yang bertentangan dengan Character State!`
+    : "";
+
+  const systemPrompt = `Kamu adalah HARNUG STUDIO V5 — DIRECTORIAL INTENT MODULE (FILM DIRECTOR).
 
 ADR RULE: Directorial Intent decides how it should be seen.
 Tugasmu MURNI menentukan bahasa sinematografi presisi untuk shot ini.
@@ -47,9 +55,14 @@ DILARANG SAMA SEKALI MEMBAHAS:
 - Prompt / Vendor AI -> Wewenang Prompt Composer & Execution!
 - Cerita atau pemecahan shot -> Wewenang Story World & Beat Planner!
 
+GOLDEN RULES CINEMATOGRAPHY:
+1. Physical Truth Before Cinematic Truth: Jika framing konflik dengan posisi fisik, ubah framing kamera, BUKAN posisi karakter.
+2. Character -> Camera: Kamera selalu menyesuaikan dengan fisik karakter.
+
 CAMERA RHYTHM ADVISORY (SOFT GUIDELINE SINEMATOGRAFI):
 - ${previousContext}
 - DILARANG merubah fakta tipe beat L2!
+${characterStateContext}
 
 INPUT SHOT:
 - Tipe Beat L2 (Immutable): "${safeBeatType}"

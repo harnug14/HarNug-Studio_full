@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import Sidebar from "./Sidebar";
+import Header from "./Header";
 import { ThemeProvider } from "./ThemeProvider";
 import { User } from "@supabase/supabase-js";
 
@@ -73,29 +74,37 @@ export default function DashboardLayout({
         <main
           style={{
             flex: 1,
-            padding: isChatPage ? "0" : "32px 40px",
+            padding: isChatPage ? "0" : "12px 24px 32px",
             maxWidth: "100%",
             overflow: "hidden",
             minHeight: "100vh",
             height: isChatPage ? "100vh" : "auto",
+            display: "flex",
+            flexDirection: "column",
           }}
           className={`dashboard-main ${isChatPage ? "is-chat-page" : ""}`}
         >
+          {/* Top-Right Header (Mode Toggle + Google Avatar) */}
+          {!isChatPage && <Header user={user} />}
+
           <div
             style={{
-              maxWidth: isChatPage ? "100%" : 900,
+              maxWidth: isChatPage ? "100%" : 960,
               margin: isChatPage ? 0 : "0 auto",
               height: isChatPage ? "100%" : "auto",
               width: "100%",
+              display: "flex",
+              flexDirection: "column",
+              flex: 1,
             }}
           >
-            {children}
+            <div style={{ flex: 1 }}>{children}</div>
           </div>
         </main>
 
         <style jsx global>{`
           .dashboard-main {
-            margin-left: var(--sidebar-width, 260px);
+            margin-left: var(--sidebar-width, 240px);
             transition: margin-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
           }
 
@@ -106,8 +115,8 @@ export default function DashboardLayout({
 
             .dashboard-main {
               margin-left: 0 !important;
-              padding: 24px 16px !important;
-              padding-top: 64px !important;
+              padding: 12px 12px 24px !important;
+              padding-top: 56px !important;
             }
 
             .dashboard-main.is-chat-page {
@@ -119,7 +128,6 @@ export default function DashboardLayout({
               z-index: 10 !important;
             }
 
-            /* KUNCI ULTIMATE: Sembunyikan TOTAL kedua sidebar (Sidebar Utama & Sidebar Riwayat) saat tertutup agar tidak mengintip 1 pixel pun di tepi kiri HP */
             .sidebar:not(.sidebar-open),
             .chat-sidebar:not(.open) {
               transform: translateX(-110%) !important;

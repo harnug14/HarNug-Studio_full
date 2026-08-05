@@ -3,45 +3,55 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Topik = {
+type TopikCandidate = {
+  judul: string;
+  skor: number;
+  alasanSkor: string;
+  hookFormula: string;
+  retentionAngle: string;
+  targetDurasi: string;
+  kategori: string;
+};
+
+type TopikItem = {
   id: string;
   judul: string;
   catatan: string | null;
-  status: string;
   created_at: string;
-};
-
-type TopicCandidate = {
-  judul: string;
-  penjelasan: string;
-  skor: {
-    relevansi: number;
-    visual: number;
-    struktur: number;
-    hook: number;
-    viral: number;
-    total: number;
-  };
-  alasanKelulusan: string;
-  saved?: boolean;
 };
 
 type ChannelProfile = {
   id: string;
   profile_name: string;
-  channel_link: string | null;
-  channel_analysis_entries?: any[];
 };
 
-export default function TopikPage() {
+export default function TopicPage() {
   const router = useRouter();
-  const [items, setItems] = useState<Topik[]>([]);
+  const [items, setItems] = useState<TopikItem[]>([]);
+  const [channelProfiles, setChannelProfiles] = useState<ChannelProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Manual Add Form State
-  const [judul, setJudul] = useState("");
-  const [catatan, setCatatan] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  // Tab State
+  const [activeTab, setActiveTab] = useState<"generator" | "manual">("generator");
+
+  // AI Generator State
+  const [referenceProfileId, setReferenceProfileId] = useState("");
+  const isManualMode = !referenceProfileId;
+
+  const [kategoriContent, setKategoriContent] = useState("Sains & Fakta Unik");
+  const [targetDurasi, setTargetDurasi] = useState("45-60 detik");
+  const [topikDisukai, setTopikDisukai] = useState("");
+  const [topikDitolak, setTopikDitolak] = useState("");
+  const [jumlahKandidat, setJumlahKandidat] = useState(5);
+
+  const [generating, setGenerating] = useState(false);
+  const [candidates, setCandidates] = useState<TopikCandidate[]>([]);
+  const [genError, setGenError] = useState("");
+
+  // Manual State
+  const [manualJudul, setManualJudul] = useState("");
+  const [manualCatatan, setManualCatatan] = useState("");
+  const [submittingManual, setSubmittingManual] = useState(false);
   const [message, setMessage] = useState("");
 
   // Edit State
@@ -49,31 +59,17 @@ export default function TopikPage() {
   const [editJudul, setEditJudul] = useState("");
   const [editCatatan, setEditCatatan] = useState("");
 
-  // AI Workflow Generator State
-  const [activeTab, setActiveTab] = useState<"generator" | "manual">("generator");
-  const [referenceProfileId, setReferenceProfileId] = useState("");
-  const [channelProfiles, setChannelProfiles] = useState<ChannelProfile[]>([]);
-
-  // Manual parameters — only used when "Tanpa Referensi" is selected
-  const [kategori, setKategori] = useState("Sains & Fakta Unik");
-  const [customKategori, setCustomKategori] = useState("");
-  const [durasi, setDurasi] = useState("45-60 detik");
-  const [topikDisukai, setTopikDisukai] = useState("");
-  const [topikDitolak, setTopikDitolak] = useState("");
-  const [jumlah, setJumlah] = useState(5);
-
-  const [generating, setGenerating] = useState(false);
-  const [candidates, setCandidates] = useState<TopicCandidate[]>([]);
-  const [genError, setGenError] = useState("");
-
-  const isManualMode = !referenceProfileId;
-
   async function fetchTopik() {
     setLoading(true);
-    const res = await fetch("/api/topik");
-    const json = await res.json();
-    if (json.data) setItems(json.data);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/topik");
+      const json = await res.json();
+      if (json.data) setItems(json.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function fetchChannelProfiles() {
@@ -91,47 +87,22 @@ export default function TopikPage() {
     fetchChannelProfiles();
   }, []);
 
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    setSubmitting(true);
-    setMessage("");
-
-    const res = await fetch("/api/topik", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ judul, catatan }),
-    });
-    const json = await res.json();
-
-    if (json.error) {
-      setMessage("error:" + json.error);
-    } else {
-      setJudul("");
-      setCatatan("");
-      setMessage("success:Topik berhasil disimpan");
-      fetchTopik();
-    }
-    setSubmitting(false);
-  }
-
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setGenerating(true);
     setGenError("");
     setCandidates([]);
 
-    const selectedKat = kategori === "Custom" ? customKategori : kategori;
-
     try {
       const res = await fetch("/api/topik/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          kategori: selectedKat,
-          durasi,
+          kategoriContent: isManualMode ? kategoriContent : undefined,
+          targetDurasi: isManualMode ? targetDurasi : undefined,
           topikDisukai,
           topikDitolak,
-          jumlah,
+          jumlahKandidat: Number(jumlahKandidat),
           referenceProfileId: referenceProfileId || null,
         }),
       });
@@ -139,34 +110,63 @@ export default function TopikPage() {
       const json = await res.json();
       if (json.error) {
         setGenError(json.error);
-      } else if (json.data) {
+      } else if (json.data && json.data.candidates) {
+        setCandidates(json.data.candidates);
+      } else if (Array.isArray(json.data)) {
         setCandidates(json.data);
       }
     } catch (err: any) {
-      setGenError(err.message || "Gagal membuat ide topik");
+      setGenError(err.message || "Gagal melakukan analisis generator.");
     } finally {
       setGenerating(false);
     }
   }
 
-  async function handleSaveCandidate(candidate: TopicCandidate, index: number) {
+  async function handleSaveCandidate(candidate: TopikCandidate) {
+    try {
+      const notes = candidate.alasanSkor
+        ? `Skor: ${candidate.skor}/50 | ${candidate.alasanSkor}\nHook: ${candidate.hookFormula}\nAngle: ${candidate.retentionAngle}`
+        : `${(candidate as any).penjelasan || ""}\n\nSkor: ${(candidate as any).skor?.total || candidate.skor}/50`;
+
+      const res = await fetch("/api/topik", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          judul: candidate.judul,
+          catatan: notes,
+        }),
+      });
+      const json = await res.json();
+      if (json.data) {
+        fetchTopik();
+        alert("Topik berhasil disimpan ke Bank Topik!");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleManualSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmittingManual(true);
+    setMessage("");
+
     const res = await fetch("/api/topik", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        judul: candidate.judul,
-        catatan: `${candidate.penjelasan}\n\nSkor: ${candidate.skor.total}/50 | ${candidate.alasanKelulusan}`,
-      }),
+      body: JSON.stringify({ judul: manualJudul, catatan: manualCatatan }),
     });
     const json = await res.json();
-    if (!json.error) {
-      const updated = [...candidates];
-      updated[index].saved = true;
-      setCandidates(updated);
-      fetchTopik();
+
+    if (json.error) {
+      setMessage("error:" + json.error);
     } else {
-      alert("Gagal menyimpan: " + json.error);
+      setManualJudul("");
+      setManualCatatan("");
+      setMessage("success:Topik berhasil ditambahkan");
+      fetchTopik();
     }
+    setSubmittingManual(false);
   }
 
   async function handleDelete(id: string) {
@@ -175,7 +175,7 @@ export default function TopikPage() {
     fetchTopik();
   }
 
-  function startEdit(item: Topik) {
+  function startEdit(item: TopikItem) {
     setEditingId(item.id);
     setEditJudul(item.judul);
     setEditCatatan(item.catatan || "");
@@ -197,41 +197,40 @@ export default function TopikPage() {
     fetchTopik();
   }
 
-  function handleBuatNaskah(item: Topik) {
+  function handleBuatScript(item: TopikItem) {
     router.push(`/naskah?topikId=${item.id}&judul=${encodeURIComponent(item.judul)}`);
   }
 
   return (
     <div className="animate-fade-in">
-      <div className="page-header" style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Topic Framework & Bank</h1>
+      <div style={{ marginBottom: 24 }}>
+        <h1 className="page-title">Topic</h1>
         <p className="page-subtitle">
-          Hasilkan ide topik tervalidasi 50 poin atau kelola Topic Bank Anda untuk tahap produksi selanjutnya.
+          Generate ide topik berpotensi viral (AI 50-Point Framework) atau kelola Bank Topik Anda.
         </p>
       </div>
 
-      {/* Tab Selection */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <button
           onClick={() => setActiveTab("generator")}
-          className={`btn ${activeTab === "generator" ? "btn-primary" : "btn-ghost"}`}
+          className={`btn ${activeTab === "generator" ? "btn-primary" : "btn-secondary"} btn-sm`}
         >
-          ✨ Workflow AI Generator (50 Poin)
+          AI Topic Generator
         </button>
         <button
           onClick={() => setActiveTab("manual")}
-          className={`btn ${activeTab === "manual" ? "btn-primary" : "btn-ghost"}`}
+          className={`btn ${activeTab === "manual" ? "btn-primary" : "btn-secondary"} btn-sm`}
         >
-          ➕ Input Manual
+          Input Manual
         </button>
       </div>
 
-      {/* AI Generator Workflow */}
+      {/* AI Topic Generator Form */}
       {activeTab === "generator" && (
-        <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
+        <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
           <form onSubmit={handleGenerate}>
-            {/* Channel Profile Selector */}
-            <div style={{ marginBottom: isManualMode ? 20 : 20 }}>
+            <div style={{ marginBottom: isManualMode ? 14 : 18 }}>
               <label className="form-label">Referensi Channel (Opsional)</label>
               <select
                 value={referenceProfileId}
@@ -239,244 +238,126 @@ export default function TopikPage() {
                 className="select-field"
               >
                 <option value="">Tanpa Referensi (Framework Murni)</option>
-                {channelProfiles.map((prof) => (
-                  <option key={prof.id} value={prof.id}>
-                    {prof.profile_name}
+                {channelProfiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.profile_name}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Show Manual Parameter Form ONLY when Tanpa Referensi is selected */}
+            {/* Parameter manual HANYA tampil jika "Tanpa Referensi" dipilih */}
             {isManualMode && (
-              <>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 16 }}>
-                  <div>
-                    <label className="form-label">Kategori Content</label>
-                    <select
-                      value={kategori}
-                      onChange={(e) => setKategori(e.target.value)}
-                      className="select-field"
-                    >
-                      <option value="Sains & Fakta Unik">Sains & Fakta Unik</option>
-                      <option value="Fashion & Gaya Hidup">Fashion & Gaya Hidup</option>
-                      <option value="Olahraga & Kesehatan">Olahraga & Kesehatan</option>
-                      <option value="Sejarah & Budaya">Sejarah & Budaya</option>
-                      <option value="Teknologi & Otomotif">Teknologi & Otomotif</option>
-                      <option value="Misteri & Storytelling">Misteri & Storytelling</option>
-                      <option value="Custom">Kategori Custom...</option>
-                    </select>
-                  </div>
-
-                  {kategori === "Custom" && (
-                    <div>
-                      <label className="form-label">Kategori Custom</label>
-                      <input
-                        type="text"
-                        placeholder="Masukkan kategori spesifik..."
-                        value={customKategori}
-                        onChange={(e) => setCustomKategori(e.target.value)}
-                        required
-                        className="input-field"
-                      />
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="form-label">Target Durasi Video</label>
-                    <select
-                      value={durasi}
-                      onChange={(e) => setDurasi(e.target.value)}
-                      className="select-field"
-                    >
-                      <option value="30-45 detik">30-45 detik</option>
-                      <option value="45-60 detik">45-60 detik</option>
-                      <option value="60+ detik">60+ detik</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="form-label">Jumlah Kandidat Target</label>
-                    <select
-                      value={jumlah}
-                      onChange={(e) => setJumlah(Number(e.target.value))}
-                      className="select-field"
-                    >
-                      <option value={3}>3 Kandidat (Cepat)</option>
-                      <option value={5}>5 Kandidat (Standar)</option>
-                      <option value={8}>8 Kandidat (Lengkap)</option>
-                    </select>
-                  </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label className="form-label">Kategori Content</label>
+                  <select
+                    value={kategoriContent}
+                    onChange={(e) => setKategoriContent(e.target.value)}
+                    className="select-field"
+                  >
+                    <option value="Sains & Fakta Unik">Sains & Fakta Unik</option>
+                    <option value="Sejarah & Konspirasi">Sejarah & Konspirasi</option>
+                    <option value="Teknologi & Masa Depan">Teknologi & Masa Depan</option>
+                    <option value="Misteri & Horor">Misteri & Horor</option>
+                    <option value="Pop Culture & Hiburan">Pop Culture & Hiburan</option>
+                  </select>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 20 }}>
-                  <div>
-                    <label className="form-label">Topik Disukai / Fokus (Opsional)</label>
-                    <input
-                      type="text"
-                      placeholder="Contoh: Sabun, Motor, High heels..."
-                      value={topikDisukai}
-                      onChange={(e) => setTopikDisukai(e.target.value)}
-                      className="input-field"
-                    />
-                  </div>
-                  <div>
-                    <label className="form-label">Topik Ditolak / Dihindari (Opsional)</label>
-                    <input
-                      type="text"
-                      placeholder="Contoh: Korupsi, Bencana..."
-                      value={topikDitolak}
-                      onChange={(e) => setTopikDitolak(e.target.value)}
-                      className="input-field"
-                    />
-                  </div>
+                <div>
+                  <label className="form-label">Target Durasi</label>
+                  <select
+                    value={targetDurasi}
+                    onChange={(e) => setTargetDurasi(e.target.value)}
+                    className="select-field"
+                  >
+                    <option value="30-45 detik">30-45 detik</option>
+                    <option value="45-60 detik">45-60 detik</option>
+                    <option value="60+ detik">60+ detik</option>
+                  </select>
                 </div>
-              </>
+
+                <div>
+                  <label className="form-label">Jumlah Kandidat</label>
+                  <select
+                    value={jumlahKandidat}
+                    onChange={(e) => setJumlahKandidat(Number(e.target.value))}
+                    className="select-field"
+                  >
+                    <option value={3}>3 Kandidat</option>
+                    <option value={5}>5 Kandidat</option>
+                    <option value={8}>8 Kandidat</option>
+                  </select>
+                </div>
+              </div>
             )}
 
-            {/* Generate Button */}
-            <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }}>
-              {generating ? (
-                <><span className="spinner" />Menjalankan Validator AI 50 Poin...</>
-              ) : (
-                <>🚀 Generate Candidate Topik</>
-              )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+              <div>
+                <label className="form-label">Topik Disukai / Fokus (Opsional)</label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Otomotif, High heels..."
+                  value={topikDisukai}
+                  onChange={(e) => setTopikDisukai(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+              <div>
+                <label className="form-label">Topik Ditolak (Opsional)</label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Bencana, Korupsi..."
+                  value={topikDitolak}
+                  onChange={(e) => setTopikDitolak(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+            </div>
+
+            <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
+              {generating ? <><span className="spinner" /> Menganalisis 50-Point Viral Potential...</> : "Generate Ide Topik"}
             </button>
           </form>
 
           {genError && (
-            <div style={{
-              marginTop: 16,
-              padding: "12px 16px",
-              borderRadius: "var(--radius-md)",
-              background: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid var(--status-error)",
-              color: "var(--status-error)",
-              fontSize: 13
-            }}>
+            <div style={{ marginTop: 14, fontSize: 12, color: "var(--status-error)", background: "rgba(248, 113, 113, 0.1)", padding: "10px 14px", borderRadius: "var(--radius-md)" }}>
               {genError}
             </div>
           )}
         </div>
       )}
 
-      {/* AI Generated Candidate Cards */}
-      {candidates.length > 0 && (
-        <div style={{ marginBottom: 36 }}>
-          <div className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span>Hasil Candidate Topik (Lolos Skor &gt;= 40/50)</span>
-            <span className="badge badge-success">{candidates.length} Lolos Validasi</span>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginTop: 16 }}>
-            {candidates.map((cand, idx) => (
-              <div key={idx} className="glass-card-static" style={{ padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 10 }}>
-                    <h4 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>
-                      {cand.judul}
-                    </h4>
-                    <span className="badge badge-accent" style={{ fontSize: 13, fontWeight: 700 }}>
-                      {cand.skor?.total || 40}/50
-                    </span>
-                  </div>
-
-                  <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 14 }}>
-                    {cand.penjelasan}
-                  </p>
-
-                  {/* Breakdown Scores */}
-                  {cand.skor && (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4, background: "rgba(255,255,255,0.03)", padding: 8, borderRadius: 8, marginBottom: 12, textAlign: "center" }}>
-                      <div>
-                        <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>Audience</div>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{cand.skor.relevansi}/10</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>Visual</div>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{cand.skor.visual}/10</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>Timeline</div>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{cand.skor.struktur}/10</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>Hook</div>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{cand.skor.hook}/10</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>Viral</div>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{cand.skor.viral}/10</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {cand.alasanKelulusan && (
-                    <div style={{ fontSize: 11, color: "var(--accent-primary)", fontStyle: "italic", marginBottom: 16 }}>
-                      &quot;{cand.alasanKelulusan}&quot;
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => handleSaveCandidate(cand, idx)}
-                  disabled={cand.saved}
-                  className={`btn ${cand.saved ? "btn-ghost" : "btn-primary"} btn-sm`}
-                  style={{ width: "100%", justifyContent: "center" }}
-                >
-                  {cand.saved ? "✓ Tersimpan di Topic Bank" : "💾 Simpan ke Topic Bank"}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Manual Add Form */}
+      {/* Manual Form */}
       {activeTab === "manual" && (
-        <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
-          <form onSubmit={handleAdd}>
-            <div style={{ marginBottom: 16 }}>
-              <label className="form-label">Judul topik</label>
+        <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
+          <form onSubmit={handleManualSubmit}>
+            <div style={{ marginBottom: 12 }}>
+              <label className="form-label">Judul Topik *</label>
               <input
                 type="text"
-                placeholder="Contoh: Fakta unik tentang ..."
-                value={judul}
-                onChange={(e) => setJudul(e.target.value)}
+                placeholder="Judul topik..."
+                value={manualJudul}
+                onChange={(e) => setManualJudul(e.target.value)}
                 required
                 className="input-field"
               />
             </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label className="form-label">Catatan (opsional)</label>
+            <div style={{ marginBottom: 16 }}>
+              <label className="form-label">Catatan (Opsional)</label>
               <textarea
-                placeholder="Catatan tambahan tentang topik ini..."
-                value={catatan}
-                onChange={(e) => setCatatan(e.target.value)}
+                placeholder="Catatan atau ide awal..."
+                value={manualCatatan}
+                onChange={(e) => setManualCatatan(e.target.value)}
                 rows={3}
                 className="textarea-field"
               />
             </div>
-
-            <button type="submit" disabled={submitting} className="btn btn-primary">
-              {submitting ? (
-                <><span className="spinner" />Menyimpan...</>
-              ) : (
-                <>➕ Tambah Topik Manual</>
-              )}
+            <button type="submit" disabled={submittingManual} className="btn btn-primary btn-sm">
+              {submittingManual ? <><span className="spinner" /> Menyimpan...</> : "Simpan Topik"}
             </button>
-
             {message && (
-              <div style={{
-                marginTop: 12,
-                padding: "10px 14px",
-                borderRadius: "var(--radius-md)",
-                fontSize: 13,
-                background: "var(--glass-bg)",
-                border: `1px solid ${message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)"}`,
-                color: message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)",
-              }}>
+              <div style={{ marginTop: 10, fontSize: 12, color: message.startsWith("error:") ? "var(--status-error)" : "var(--status-success)" }}>
                 {message.replace(/^(error:|success:)/, "")}
               </div>
             )}
@@ -484,27 +365,66 @@ export default function TopikPage() {
         </div>
       )}
 
-      {/* Topic Bank List */}
-      <div className="section-title">Topic Bank ({items.length})</div>
+      {/* Hasil Candidates AI Generator */}
+      {candidates.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div className="section-title">
+            Hasil Rekomendasi Topik ({candidates.length})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {candidates.map((cand, idx) => (
+              <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <span className="badge badge-neutral">Skor: {cand.skor || (cand as any).skor?.total}/50</span>
+                      {cand.targetDurasi && <span className="badge badge-neutral">{cand.targetDurasi}</span>}
+                    </div>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)" }}>
+                      {cand.judul}
+                    </h3>
+                    <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: "0 0 8px 0" }}>
+                      {cand.alasanSkor || (cand as any).penjelasan}
+                    </p>
+                    {(cand.hookFormula || cand.retentionAngle) && (
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", gap: 12 }}>
+                        {cand.hookFormula && <span>Hook: {cand.hookFormula}</span>}
+                        {cand.retentionAngle && <span>Angle: {cand.retentionAngle}</span>}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => handleSaveCandidate(cand)} className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
+                    + Simpan ke Bank
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Bank Topik List */}
+      <div className="section-title">
+        Bank Topik ({items.length})
+      </div>
 
       {loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 80 }} />)}
         </div>
       ) : items.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-state-icon">💡</div>
-          <div className="empty-state-text">Belum ada topik tersimpan di Topic Bank.</div>
+        <div className="glass-card-static" style={{ padding: 24, textAlign: "center", fontSize: 12, color: "var(--text-tertiary)" }}>
+          Belum ada topik tersimpan.
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {items.map((item) => {
             const isEditing = editingId === item.id;
 
             return (
-              <div key={item.id} className="glass-card-static" style={{ padding: 18 }}>
+              <div key={item.id} className="glass-card-static" style={{ padding: 16 }}>
                 {isEditing ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input
                       type="text"
                       value={editJudul}
@@ -523,42 +443,30 @@ export default function TopikPage() {
                     </div>
                   </div>
                 ) : (
-                  <>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          onClick={() => handleBuatNaskah(item)}
-                          style={{
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            fontSize: 15,
-                            color: "var(--text-primary)",
-                            transition: "color var(--transition-fast)",
-                          }}
-                          title="Klik untuk lanjut buat naskah dari topik ini"
-                        >
-                          {item.judul}
-                        </div>
-                        {item.catatan && (
-                          <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                            {item.catatan}
-                          </div>
-                        )}
-                        <div style={{ marginTop: 8 }}>
-                          <span className="badge badge-neutral">{item.status || "draft"}</span>
-                        </div>
-                      </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 4px 0", color: "var(--text-primary)" }}>
+                        {item.judul}
+                      </h3>
+                      {item.catatan && (
+                        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                          {item.catatan}
+                        </p>
+                      )}
                     </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                      <button onClick={() => startEdit(item)} className="btn btn-ghost btn-sm">
+
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => handleBuatScript(item)} className="btn btn-primary btn-sm">
+                        Buat Script →
+                      </button>
+                      <button onClick={() => startEdit(item)} className="btn btn-secondary btn-sm">
                         Edit
                       </button>
-                      <button onClick={() => handleBuatNaskah(item)} className="btn btn-ghost btn-sm" style={{ color: "var(--accent-primary)" }}>
-                        📜 Buat Script Draft →
+                      <button onClick={() => handleDelete(item.id)} className="btn btn-danger btn-sm">
+                        Hapus
                       </button>
-                      <button onClick={() => handleDelete(item.id)} className="btn btn-danger btn-sm">Hapus</button>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
             );

@@ -117,19 +117,19 @@ export default function ReferensiPage() {
 
   return (
     <div className="animate-fade-in">
-      <div className="page-header" style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Menu Analisis Channel</h1>
+      <div style={{ marginBottom: 24 }}>
+        <h1 className="page-title">Reference</h1>
         <p className="page-subtitle">
           Simpan profil analisis per channel referensi (5-10 naskah contoh) untuk digunakan sebagai kalibrasi saat generate Topic & Script.
         </p>
       </div>
 
       {/* Create Profile Form */}
-      <div className="glass-card-static" style={{ padding: 24, marginBottom: 32 }}>
-        <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: "var(--text-primary)" }}>
-          ➕ Tambah Profil Channel Referensi Baru
-        </h3>
-        <form onSubmit={handleCreateProfile} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+      <div className="glass-card-static" style={{ padding: 22, marginBottom: 28 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16, color: "var(--text-primary)" }}>
+          Tambah Profil Channel Referensi Baru
+        </div>
+        <form onSubmit={handleCreateProfile} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
           <div>
             <label className="form-label">Nama Profil / Channel *</label>
             <input
@@ -153,7 +153,7 @@ export default function ReferensiPage() {
           </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>
             <button type="submit" disabled={creating} className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }}>
-              {creating ? <><span className="spinner" />Buat Profil...</> : <>Simpan Profil Channel</>}
+              {creating ? <><span className="spinner" /> Membuat Profil...</> : "Simpan Profil Channel"}
             </button>
           </div>
         </form>
@@ -167,12 +167,12 @@ export default function ReferensiPage() {
           {[1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 120 }} />)}
         </div>
       ) : profiles.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-state-icon">📺</div>
-          <div className="empty-state-text">Belum ada profil analisis channel. Buat profil pertama di atas.</div>
+        <div className="glass-card-static" style={{ padding: 32, textAlign: "center" }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>📺</div>
+          <div style={{ fontSize: 13, color: "var(--text-tertiary)" }}>Belum ada profil analisis channel. Buat profil pertama di atas.</div>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
           {profiles.map((prof) => {
             const entries = prof.channel_analysis_entries || [];
             const isSelected = selectedProfileId === prof.id;
@@ -181,47 +181,47 @@ export default function ReferensiPage() {
               <div key={prof.id} className="glass-card-static" style={{ padding: 20, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>{prof.profile_name}</h3>
-                    <span className="badge badge-accent">{entries.length} Entri Naskah</span>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{prof.profile_name}</h3>
+                    <span className="badge badge-neutral">{entries.length} Naskah</span>
                   </div>
 
                   {prof.channel_link && (
                     <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12, wordBreak: "break-all" }}>
-                      🔗 <a href={prof.channel_link} target="_blank" rel="noreferrer" style={{ color: "var(--accent-primary)" }}>{prof.channel_link}</a>
+                      🔗 <a href={prof.channel_link} target="_blank" rel="noreferrer" style={{ color: "var(--text-secondary)", textDecoration: "underline" }}>{prof.channel_link}</a>
                     </div>
                   )}
 
                   {/* Entries summary */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
                     {entries.slice(0, 5).map((entry) => (
-                      <div key={entry.id} style={{ background: "rgba(255,255,255,0.03)", padding: "6px 10px", borderRadius: 6, fontSize: 12 }}>
+                      <div key={entry.id} style={{ background: "var(--bg-tertiary)", padding: "6px 10px", borderRadius: "var(--radius-sm)", fontSize: 12, color: "var(--text-primary)" }}>
                         📄 <strong>{entry.title}</strong>
                       </div>
                     ))}
                     {entries.length > 5 && (
-                      <div style={{ fontSize: 11, color: "var(--text-secondary)", fontStyle: "italic" }}>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", fontStyle: "italic" }}>
                         + {entries.length - 5} entri lainnya...
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <button
                     onClick={() => setSelectedProfileId(isSelected ? null : prof.id)}
-                    className={`btn ${isSelected ? "btn-primary" : "btn-ghost"} btn-sm`}
+                    className={`btn ${isSelected ? "btn-primary" : "btn-secondary"} btn-sm`}
                     style={{ flex: 1, justifyContent: "center" }}
                   >
-                    {isSelected ? "Tutup Edit Entri" : "📝 Kelola 5-10 Entri"}
+                    {isSelected ? "Tutup Edit Entri" : "📝 Kelola Entri"}
                   </button>
                   <button onClick={() => handleDeleteProfile(prof.id)} className="btn btn-danger btn-sm">Hapus</button>
                 </div>
 
                 {/* Expandable Add Entry Form */}
                 {isSelected && (
-                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                    <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--accent-primary)" }}>
-                      Tambah Entri Video/Naskah ke "{prof.profile_name}"
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
+                    <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: "var(--text-primary)" }}>
+                      Tambah Entri Video/Naskah ke &ldquo;{prof.profile_name}&rdquo;
                     </h4>
                     <form onSubmit={handleAddEntry} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                       <input
@@ -231,7 +231,6 @@ export default function ReferensiPage() {
                         onChange={(e) => setEntryTitle(e.target.value)}
                         required
                         className="input-field"
-                        style={{ fontSize: 13 }}
                       />
                       <input
                         type="text"
@@ -239,7 +238,6 @@ export default function ReferensiPage() {
                         value={entryVideoLink}
                         onChange={(e) => setEntryVideoLink(e.target.value)}
                         className="input-field"
-                        style={{ fontSize: 13 }}
                       />
                       <textarea
                         placeholder="Full Script Video Contoh (akan digunakan sebagai kalibrasi gaya naskah)... *"
@@ -248,7 +246,6 @@ export default function ReferensiPage() {
                         required
                         rows={4}
                         className="textarea-field"
-                        style={{ fontSize: 13 }}
                       />
                       <button type="submit" disabled={addingEntry} className="btn btn-primary btn-sm" style={{ justifyContent: "center" }}>
                         {addingEntry ? <span className="spinner" /> : "➕ Tambah Entri Kalibrasi"}

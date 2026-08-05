@@ -6,7 +6,8 @@ import { formulateDirectorialIntent } from "@/lib/visual/directorial/directorial
 import { resolveProductionResources } from "@/lib/visual/production/production-resources";
 import { composePrompt } from "@/lib/visual/composer/prompt-composer";
 import { executeGoogleFlow } from "@/lib/visual/execution/google-flow-adapter";
-import { DirectorialSpec } from "@/lib/visual/types";
+import { DirectorialSpec, CharacterState } from "@/lib/visual/types";
+import { transitionCharacterState } from "@/lib/visual/character-fsm/fsm-engine";
 
 function getSafeString(val: unknown, fallback: string = ""): string {
   if (typeof val === "string") return val.trim();
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
     const sceneItem = body?.sceneItem && typeof body.sceneItem === "object" ? body.sceneItem : null;
     const storyUnderstanding = body?.storyUnderstanding && typeof body.storyUnderstanding === "object" ? body.storyUnderstanding : null;
     const previousDirectorialSpec = body?.previousDirectorialSpec && typeof body.previousDirectorialSpec === "object" ? (body.previousDirectorialSpec as DirectorialSpec) : undefined;
+    const previousCharacterState = body?.previousCharacterState && typeof body.previousCharacterState === "object" ? (body.previousCharacterState as CharacterState) : null;
 
     // 1. ACTION PLAN: Story World -> Visual Beat Planner
     if (action === "plan") {
@@ -80,7 +82,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. ACTION DIRECT-SCENE: Directorial Intent -> Production Resources -> Prompt Composer -> Execution
+    // 2. ACTION DIRECT-SCENE (V5 PIPELINE):
+    // VisualBeat -> FSM -> CharacterState -> DirectorialIntent -> ProductionResources -> PromptComposer -> Execution
     if (action === "direct-scene") {
       if (!sceneItem) {
         return NextResponse.json({ error: "Detail shot (sceneItem) wajib disertakan" }, { status: 400 });
@@ -96,27 +99,50 @@ export async function POST(req: NextRequest) {
       };
 
       try {
+        // STEP A: FINITE STATE MACHINE (FSM) — DETERMINISTIC CHARACTER STATE
+        const structuredAction = {
+          primaryAction: sceneItem?.primaryAction,
+          targetObject: sceneItem?.targetObject,
+          modifier: sceneItem?.modifier,
+        };
+
+        const fsmResult = transitionCharacterState(
+          previousCharacterState,
+          sceneItem,
+          structuredAction,
+          sceneItem
+        );
+
+        const currentCharacterState = fsmResult.nextState;
+
+        // STEP B: DIRECTORIAL INTENT (READ-ONLY CHARACTER STATE)
         const directorialSpec = await formulateDirectorialIntent(
           supabase,
           currentStoryWorld,
           sceneItem,
-          previousDirectorialSpec
+          previousDirectorialSpec,
+          currentCharacterState ?? undefined
         );
 
+        // STEP C: PRODUCTION RESOURCES (READ-ONLY CHARACTER STATE)
         const productionResult = await resolveProductionResources(
           supabase,
           currentStoryWorld,
           sceneItem,
           directorialSpec,
-          existingAssetLibrary
+          existingAssetLibrary,
+          currentCharacterState ?? undefined
         );
 
+        // STEP D: PROMPT COMPOSER (READ-ONLY CHARACTER STATE)
         const composedPromptResult = composePrompt(
           productionResult.sceneSpecification,
           visualStyle,
-          "Google Flow"
+          "Google Flow",
+          currentCharacterState
         );
 
+        // STEP E: EXECUTION
         const executionResult = await executeGoogleFlow({
           compiledPrompt: composedPromptResult.compiledPrompt,
           assetDecision: productionResult.assetDecision,
@@ -130,6 +156,15 @@ export async function POST(req: NextRequest) {
             visualBeatType: productionResult.sceneSpecification.beat,
             naskahChunk: productionResult.sceneSpecification.naskahChunk,
             primaryVisualFocus: productionResult.sceneSpecification.focus,
+            characterState: currentCharacterState,
+            fsmTransition: {
+              executed: fsmResult.executed,
+              success: fsmResult.success,
+              skippedReason: fsmResult.skippedReason,
+              appliedAction: fsmResult.appliedAction,
+              validationErrors: fsmResult.validationErrors,
+              debugLog: fsmResult.debugLog,
+            },
             assetDecision: productionResult.assetDecision,
             sceneSpecification: productionResult.sceneSpecification,
             promptCompiler: {
