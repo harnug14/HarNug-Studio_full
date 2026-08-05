@@ -165,7 +165,7 @@ export default function TopicPage() {
       const json = await res.json();
       if (json.data) {
         fetchTopik();
-        alert("Topik berhasil disimpan ke Bank Topik!");
+        alert("Topik berhasil disimpan ke Daftar Topic!");
       }
     } catch (e) {
       console.error(e);
@@ -232,7 +232,7 @@ export default function TopicPage() {
       {/* Subtitle Halaman */}
       <div style={{ marginBottom: 16 }}>
         <p className="page-subtitle">
-          Generate ide topik berpotensi viral (AI 50-Point Framework) atau kelola Bank Topik Anda.
+          Generate ide topik berpotensi viral (AI 50-Point Framework) atau kelola Daftar Topic Anda.
         </p>
       </div>
 
@@ -273,7 +273,7 @@ export default function TopicPage() {
             </div>
 
             {isManualMode && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 14 }}>
                 <div>
                   <label className="form-label">Kategori Content</label>
                   <select
@@ -317,7 +317,7 @@ export default function TopicPage() {
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 18 }}>
               <div>
                 <label className="form-label">Topik Disukai / Fokus (Opsional)</label>
                 <input
@@ -399,28 +399,30 @@ export default function TopicPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {candidates.map((cand, idx) => (
               <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                       <span className="badge badge-neutral">Skor: {cand.skor || (cand as any).skor?.total}/50</span>
                       {cand.targetDurasi && <span className="badge badge-neutral">{cand.targetDurasi}</span>}
                     </div>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)" }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)", lineHeight: 1.35 }}>
                       {cleanTitle(cand.judul)}
                     </h3>
                     <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: "0 0 8px 0" }}>
                       {cand.alasanSkor || (cand as any).penjelasan}
                     </p>
                     {(cand.hookFormula || cand.retentionAngle) && (
-                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", gap: 12 }}>
+                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", gap: 12, flexWrap: "wrap" }}>
                         {cand.hookFormula && <span>Hook: {cand.hookFormula}</span>}
                         {cand.retentionAngle && <span>Angle: {cand.retentionAngle}</span>}
                       </div>
                     )}
                   </div>
-                  <button onClick={() => handleSaveCandidate(cand)} className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}>
-                    + Simpan ke Bank
-                  </button>
+                  <div>
+                    <button onClick={() => handleSaveCandidate(cand)} className="btn btn-secondary btn-sm">
+                      + Simpan ke Daftar Topic
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -428,9 +430,9 @@ export default function TopicPage() {
         </div>
       )}
 
-      {/* Bank Topik List */}
+      {/* Daftar Topic List */}
       <div className="section-title">
-        Bank Topik ({items.length})
+        Daftar Topic ({items.length})
       </div>
 
       {loading ? (
@@ -468,9 +470,10 @@ export default function TopicPage() {
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)" }}>
+                  /* Layout Vertikal Rapi: Teks 100% Penuh Lebar di Atas, Tombol di Bawahnya */
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{ width: "100%" }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)", lineHeight: 1.35 }}>
                         {cleanTitle(item.judul)}
                       </h3>
                       {item.catatan && (
@@ -480,7 +483,7 @@ export default function TopicPage() {
                       )}
                     </div>
 
-                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", paddingTop: 4 }}>
                       <button onClick={() => handleBuatScript(item)} className="btn btn-primary btn-sm">
                         Buat Script →
                       </button>
