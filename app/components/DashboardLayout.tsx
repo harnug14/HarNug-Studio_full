@@ -74,7 +74,7 @@ export default function DashboardLayout({
         <main
           style={{
             flex: 1,
-            padding: isChatPage ? "0" : "12px 24px 32px",
+            padding: isChatPage ? "0" : "2px 20px 20px",
             maxWidth: "100%",
             overflow: "hidden",
             minHeight: "100vh",
@@ -84,15 +84,14 @@ export default function DashboardLayout({
           }}
           className={`dashboard-main ${isChatPage ? "is-chat-page" : ""}`}
         >
-          {/* Top-Right Header (Mode Toggle + Google Avatar) */}
           {!isChatPage && <Header user={user} />}
 
           <div
             style={{
-              maxWidth: isChatPage ? "100%" : 960,
-              margin: isChatPage ? 0 : "0 auto",
-              height: isChatPage ? "100%" : "auto",
+              maxWidth: "100%",
               width: "100%",
+              margin: 0,
+              height: isChatPage ? "100%" : "auto",
               display: "flex",
               flexDirection: "column",
               flex: 1,
@@ -115,8 +114,8 @@ export default function DashboardLayout({
 
             .dashboard-main {
               margin-left: 0 !important;
-              padding: 12px 12px 24px !important;
-              padding-top: 56px !important;
+              padding: 2px 12px 20px !important;
+              padding-top: 40px !important;
             }
 
             .dashboard-main.is-chat-page {

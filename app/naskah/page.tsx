@@ -27,6 +27,15 @@ type ChannelProfile = {
   channel_analysis_entries?: any[];
 };
 
+function cleanTitle(text: string) {
+  if (!text) return "";
+  let cleaned = text;
+  cleaned = cleaned.replace(/^visual\s*package\s*[-:]\s*/i, "");
+  cleaned = cleaned.replace(/^(naskah|visual|topik|topic)\s*[-:]\s*/i, "");
+  cleaned = cleaned.replace(/^naskah\s*[-:]\s*/i, "");
+  return cleaned.trim();
+}
+
 function NaskahContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -38,10 +47,9 @@ function NaskahContent() {
   const [channelProfiles, setChannelProfiles] = useState<ChannelProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Tab & Generator state
   const [activeTab, setActiveTab] = useState<"generator" | "manual">("generator");
   const [selectedTopikId, setSelectedTopikId] = useState(queryTopikId || "");
-  const [judulTopik, setJudulTopik] = useState(queryJudul || "");
+  const [judulTopik, setJudulTopik] = useState(queryJudul ? cleanTitle(queryJudul) : "");
   const [catatanTopik, setCatatanTopik] = useState("");
   const [tone, setTone] = useState("Natural & Antusias");
   const [targetPanjang, setTargetPanjang] = useState("45-60 detik (130-160 kata)");
@@ -52,20 +60,16 @@ function NaskahContent() {
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
 
-  // Manual Add State
   const [manualJudul, setManualJudul] = useState("");
   const [manualIsi, setManualIsi] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
-  // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editJudul, setEditJudul] = useState("");
   const [editIsi, setEditIsi] = useState("");
   const [editEnglishIsi, setEditEnglishIsi] = useState("");
 
-  // Modal / Detail state
-  const [factCheckLoading, setFactCheckLoading] = useState<string | null>(null);
   const [translateLoading, setTranslateLoading] = useState<string | null>(null);
   const [activeModalItem, setActiveModalItem] = useState<{ naskah: Naskah; type: "fact-check" | "translation" } | null>(null);
 
@@ -109,9 +113,30 @@ function NaskahContent() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash && items.length > 0) {
+      const targetId = window.location.hash.replace("#", "");
+      if (targetId) {
+        setTimeout(() => {
+          const el = document.getElementById(targetId);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.style.transition = "border-color 0.5s ease, box-shadow 0.5s ease";
+            el.style.borderColor = "#38bdf8";
+            el.style.boxShadow = "0 0 12px rgba(56, 189, 248, 0.3)";
+            setTimeout(() => {
+              el.style.borderColor = "var(--border-subtle)";
+              el.style.boxShadow = "none";
+            }, 2500);
+          }
+        }, 300);
+      }
+    }
+  }, [items]);
+
+  useEffect(() => {
     if (queryTopikId && queryJudul) {
       setSelectedTopikId(queryTopikId);
-      setJudulTopik(queryJudul);
+      setJudulTopik(cleanTitle(queryJudul));
     }
   }, [queryTopikId, queryJudul]);
 
@@ -119,7 +144,7 @@ function NaskahContent() {
     setSelectedTopikId(id);
     const t = topikList.find((x) => x.id === id);
     if (t) {
-      setJudulTopik(t.judul);
+      setJudulTopik(cleanTitle(t.judul));
       setCatatanTopik(t.catatan || "");
     }
   }
@@ -137,7 +162,7 @@ function NaskahContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           topikId: selectedTopikId || null,
-          judulTopik,
+          judulTopik: cleanTitle(judulTopik),
           catatanTopik,
           tone,
           targetPanjang,
@@ -169,7 +194,7 @@ function NaskahContent() {
     const res = await fetch("/api/naskah", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ judul: manualJudul, isiNaskah: manualIsi }),
+      body: JSON.stringify({ judul: cleanTitle(manualJudul), isiNaskah: manualIsi }),
     });
     const json = await res.json();
 
@@ -182,26 +207,6 @@ function NaskahContent() {
       fetchNaskah();
     }
     setSubmitting(false);
-  }
-
-  async function handleRunFactCheck(naskahId: string) {
-    setFactCheckLoading(naskahId);
-    try {
-      const res = await fetch(`/api/naskah/${naskahId}/fact-check`, { method: "POST" });
-      const json = await res.json();
-      if (json.error) {
-        alert("Fact Check error: " + json.error);
-      } else {
-        fetchNaskah();
-        if (json.data) {
-          setActiveModalItem({ naskah: json.data, type: "fact-check" });
-        }
-      }
-    } catch (err: any) {
-      alert("Fact Check gagal: " + err.message);
-    } finally {
-      setFactCheckLoading(null);
-    }
   }
 
   async function handleRunTranslation(naskahId: string) {
@@ -224,16 +229,6 @@ function NaskahContent() {
     }
   }
 
-  async function handleApproveVerified(naskahId: string) {
-    await fetch(`/api/naskah/${naskahId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "approved" }),
-    });
-    setActiveModalItem(null);
-    fetchNaskah();
-  }
-
   async function handleDelete(id: string) {
     if (!confirm("Yakin mau hapus naskah ini?")) return;
     await fetch(`/api/naskah/${id}`, { method: "DELETE" });
@@ -242,7 +237,7 @@ function NaskahContent() {
 
   function startEdit(item: Naskah) {
     setEditingId(item.id);
-    setEditJudul(item.judul);
+    setEditJudul(cleanTitle(item.judul));
     setEditIsi(item.isi_naskah || "");
     setEditEnglishIsi(item.english_script || "");
   }
@@ -259,7 +254,7 @@ function NaskahContent() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        judul: editJudul,
+        judul: cleanTitle(editJudul),
         isiNaskah: editIsi,
         englishScript: editEnglishIsi,
       }),
@@ -269,15 +264,15 @@ function NaskahContent() {
   }
 
   function handleBuatVisual(item: Naskah) {
-    router.push(`/visual?naskahId=${item.id}&judul=${encodeURIComponent(item.judul)}`);
+    router.push(`/visual?naskahId=${item.id}&judul=${encodeURIComponent(cleanTitle(item.judul))}`);
   }
 
   return (
     <div className="animate-fade-in">
-      <div style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Script</h1>
+      {/* Subtitle Halaman */}
+      <div style={{ marginBottom: 16 }}>
         <p className="page-subtitle">
-          Penyusunan naskah YouTube Shorts, verifikasi verifikasi faktual, dan terjemahan ke bahasa Inggris.
+          Penyusunan naskah YouTube Shorts dan terjemahan ke bahasa Inggris.
         </p>
       </div>
 
@@ -312,7 +307,7 @@ function NaskahContent() {
                   <option value="">-- Naskah Baru / Manual --</option>
                   {topikList.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.judul}
+                      {cleanTitle(t.judul)}
                     </option>
                   ))}
                 </select>
@@ -459,7 +454,7 @@ function NaskahContent() {
             const isEditing = editingId === item.id;
 
             return (
-              <div key={item.id} className="glass-card-static" style={{ padding: 18 }}>
+              <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18 }}>
                 {isEditing ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input
@@ -495,13 +490,14 @@ function NaskahContent() {
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                       <div>
-                        <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>{item.judul}</h3>
+                        <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>
+                          {cleanTitle(item.judul)}
+                        </h3>
                         <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
                           <span className={`badge ${item.status === "approved" ? "badge-success" : item.status === "review" ? "badge-warning" : "badge-neutral"}`}>
                             {item.status === "approved" ? "✓ Terverifikasi" : item.status === "review" ? "Perlu Review" : "Draft"}
                           </span>
                           {item.english_script && <span className="badge badge-neutral">English</span>}
-                          {item.fact_check_result && <span className="badge badge-neutral">Fact Checked</span>}
                         </div>
                       </div>
                     </div>
@@ -525,29 +521,12 @@ function NaskahContent() {
                     {/* Toolbar */}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                       <button
-                        onClick={() => handleRunFactCheck(item.id)}
-                        disabled={factCheckLoading === item.id}
-                        className="btn btn-secondary btn-sm"
-                      >
-                        {factCheckLoading === item.id ? <span className="spinner" /> : "Fact Check"}
-                      </button>
-
-                      <button
                         onClick={() => handleRunTranslation(item.id)}
                         disabled={translateLoading === item.id}
                         className="btn btn-secondary btn-sm"
                       >
                         {translateLoading === item.id ? <span className="spinner" /> : "Translate EN"}
                       </button>
-
-                      {item.fact_check_result && (
-                        <button
-                          onClick={() => setActiveModalItem({ naskah: item, type: "fact-check" })}
-                          className="btn btn-ghost btn-sm"
-                        >
-                          Fact Check Report
-                        </button>
-                      )}
 
                       {item.english_script && (
                         <button
@@ -594,28 +573,10 @@ function NaskahContent() {
           <div className="glass-card-static" style={{ width: "100%", maxWidth: 540, maxHeight: "85vh", overflowY: "auto", padding: 22 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>
-                {activeModalItem.type === "fact-check" ? "Fact Check Report" : "English Script"}
+                English Script
               </h3>
               <button onClick={() => setActiveModalItem(null)} className="btn btn-ghost btn-sm">✕</button>
             </div>
-
-            {activeModalItem.type === "fact-check" && (
-              <div>
-                <div style={{ fontSize: 13, marginBottom: 8, color: "var(--text-primary)" }}>
-                  Status: <strong>{activeModalItem.naskah.fact_check_result?.statusVerification || "Perlu Review"}</strong> (Skor: {activeModalItem.naskah.fact_check_result?.internalConsistencyScore || 85}/100)
-                </div>
-                <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 16 }}>
-                  {activeModalItem.naskah.fact_check_result?.ringkasanEvaluasi}
-                </p>
-                <button
-                  onClick={() => handleApproveVerified(activeModalItem.naskah.id)}
-                  className="btn btn-primary btn-sm"
-                  style={{ width: "100%" }}
-                >
-                  ✓ Tandai Terverifikasi
-                </button>
-              </div>
-            )}
 
             {activeModalItem.type === "translation" && (
               <div>

@@ -19,6 +19,15 @@ type Naskah = {
   status: string;
 };
 
+function cleanTitle(text: string) {
+  if (!text) return "";
+  let cleaned = text;
+  cleaned = cleaned.replace(/^visual\s*package\s*[-:]\s*/i, "");
+  cleaned = cleaned.replace(/^(naskah|visual|topik|topic)\s*[-:]\s*/i, "");
+  cleaned = cleaned.replace(/^naskah\s*[-:]\s*/i, "");
+  return cleaned.trim();
+}
+
 function parseStringIfJson(str: any): any {
   if (typeof str !== "string") return str;
   const trimmed = str.trim();
@@ -87,7 +96,7 @@ function VisualContent() {
   const [loading, setLoading] = useState(true);
 
   const [selectedNaskahId, setSelectedNaskahId] = useState(queryNaskahId || "");
-  const [judulNaskah, setJudulNaskah] = useState(queryJudul || "");
+  const [judulNaskah, setJudulNaskah] = useState(queryJudul ? cleanTitle(queryJudul) : "");
   const [isiNaskah, setIsiNaskah] = useState("");
   const [visualStyle, setVisualStyle] = useState("Sinematik 3D, Unreal Engine 5");
   const [bridgePoseLevel, setBridgePoseLevel] = useState("Seimbang (Key Pose + Transisi Mikro)");
@@ -126,9 +135,30 @@ function VisualContent() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash && items.length > 0) {
+      const targetId = window.location.hash.replace("#", "");
+      if (targetId) {
+        setTimeout(() => {
+          const el = document.getElementById(targetId);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.style.transition = "border-color 0.5s ease, box-shadow 0.5s ease";
+            el.style.borderColor = "#38bdf8";
+            el.style.boxShadow = "0 0 12px rgba(56, 189, 248, 0.3)";
+            setTimeout(() => {
+              el.style.borderColor = "var(--border-subtle)";
+              el.style.boxShadow = "none";
+            }, 2500);
+          }
+        }, 300);
+      }
+    }
+  }, [items]);
+
+  useEffect(() => {
     if (queryNaskahId && queryJudul) {
       setSelectedNaskahId(queryNaskahId);
-      setJudulNaskah(queryJudul);
+      setJudulNaskah(cleanTitle(queryJudul));
     }
   }, [queryNaskahId, queryJudul]);
 
@@ -136,7 +166,7 @@ function VisualContent() {
     setSelectedNaskahId(id);
     const n = Array.isArray(naskahList) ? naskahList.find((x) => x.id === id) : null;
     if (n) {
-      setJudulNaskah(n.judul || "");
+      setJudulNaskah(cleanTitle(n.judul || ""));
       setIsiNaskah(n.isi_naskah || "");
     }
   }
@@ -161,7 +191,7 @@ function VisualContent() {
         body: JSON.stringify({
           action: "plan",
           naskahId: selectedNaskahId || null,
-          judulNaskah,
+          judulNaskah: cleanTitle(judulNaskah),
           isiNaskah: textToUse,
           visualStyle,
           bridgePoseLevel,
@@ -245,7 +275,7 @@ function VisualContent() {
         body: JSON.stringify({
           action: "save",
           naskahId: selectedNaskahId || null,
-          judulNaskah,
+          judulNaskah: cleanTitle(judulNaskah),
           visualStyle,
           bridgePoseLevel,
           storyUnderstanding,
@@ -290,8 +320,8 @@ function VisualContent() {
 
   return (
     <div className="animate-fade-in">
-      <div style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Visual</h1>
+      {/* Subtitle Halaman */}
+      <div style={{ marginBottom: 16 }}>
         <p className="page-subtitle">
           Penyusunan Storyboard & Prompt Visual untuk produksi video.
         </p>
@@ -305,7 +335,7 @@ function VisualContent() {
               <option value="">-- Pilih dari Daftar Naskah --</option>
               {Array.isArray(naskahList) && naskahList.map((n) => (
                 <option key={n.id} value={n.id}>
-                  {n.judul}
+                  {cleanTitle(n.judul)}
                 </option>
               ))}
             </select>
@@ -380,10 +410,12 @@ function VisualContent() {
             const scenes = resolveScenes(content);
 
             return (
-              <div key={item.id} className="glass-card-static" style={{ padding: 18 }}>
+              <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                   <div>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 4px 0", color: "var(--text-primary)" }}>{item.judul}</h3>
+                    <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 4px 0", color: "var(--text-primary)" }}>
+                      {cleanTitle(item.judul)}
+                    </h3>
                     <div style={{ marginTop: 4, display: "flex", gap: 6 }}>
                       <span className="badge badge-neutral">{content.styleTag || "Sinematik 3D"}</span>
                       <span className="badge badge-neutral">{scenes.length} Shot Beats</span>

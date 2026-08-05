@@ -117,8 +117,8 @@ export default function ReferensiPage() {
 
   return (
     <div className="animate-fade-in">
-      <div style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Reference</h1>
+      {/* Subtitle Halaman */}
+      <div style={{ marginBottom: 16 }}>
         <p className="page-subtitle">
           Simpan profil analisis per channel referensi (5-10 naskah contoh) untuk digunakan sebagai kalibrasi saat generate Topic & Script.
         </p>

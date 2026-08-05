@@ -25,16 +25,23 @@ type ChannelProfile = {
   profile_name: string;
 };
 
+function cleanTitle(text: string) {
+  if (!text) return "";
+  let cleaned = text;
+  cleaned = cleaned.replace(/^visual\s*package\s*[-:]\s*/i, "");
+  cleaned = cleaned.replace(/^(naskah|visual|topik|topic)\s*[-:]\s*/i, "");
+  cleaned = cleaned.replace(/^naskah\s*[-:]\s*/i, "");
+  return cleaned.trim();
+}
+
 export default function TopicPage() {
   const router = useRouter();
   const [items, setItems] = useState<TopikItem[]>([]);
   const [channelProfiles, setChannelProfiles] = useState<ChannelProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Tab State
   const [activeTab, setActiveTab] = useState<"generator" | "manual">("generator");
 
-  // AI Generator State
   const [referenceProfileId, setReferenceProfileId] = useState("");
   const isManualMode = !referenceProfileId;
 
@@ -48,13 +55,11 @@ export default function TopicPage() {
   const [candidates, setCandidates] = useState<TopikCandidate[]>([]);
   const [genError, setGenError] = useState("");
 
-  // Manual State
   const [manualJudul, setManualJudul] = useState("");
   const [manualCatatan, setManualCatatan] = useState("");
   const [submittingManual, setSubmittingManual] = useState(false);
   const [message, setMessage] = useState("");
 
-  // Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editJudul, setEditJudul] = useState("");
   const [editCatatan, setEditCatatan] = useState("");
@@ -86,6 +91,27 @@ export default function TopicPage() {
     fetchTopik();
     fetchChannelProfiles();
   }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash && items.length > 0) {
+      const targetId = window.location.hash.replace("#", "");
+      if (targetId) {
+        setTimeout(() => {
+          const el = document.getElementById(targetId);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.style.transition = "border-color 0.5s ease, box-shadow 0.5s ease";
+            el.style.borderColor = "#38bdf8";
+            el.style.boxShadow = "0 0 12px rgba(56, 189, 248, 0.3)";
+            setTimeout(() => {
+              el.style.borderColor = "var(--border-subtle)";
+              el.style.boxShadow = "none";
+            }, 2500);
+          }
+        }, 300);
+      }
+    }
+  }, [items]);
 
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
@@ -132,7 +158,7 @@ export default function TopicPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          judul: candidate.judul,
+          judul: cleanTitle(candidate.judul),
           catatan: notes,
         }),
       });
@@ -154,7 +180,7 @@ export default function TopicPage() {
     const res = await fetch("/api/topik", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ judul: manualJudul, catatan: manualCatatan }),
+      body: JSON.stringify({ judul: cleanTitle(manualJudul), catatan: manualCatatan }),
     });
     const json = await res.json();
 
@@ -177,7 +203,7 @@ export default function TopicPage() {
 
   function startEdit(item: TopikItem) {
     setEditingId(item.id);
-    setEditJudul(item.judul);
+    setEditJudul(cleanTitle(item.judul));
     setEditCatatan(item.catatan || "");
   }
 
@@ -191,20 +217,20 @@ export default function TopicPage() {
     await fetch(`/api/topik/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ judul: editJudul, catatan: editCatatan }),
+      body: JSON.stringify({ judul: cleanTitle(editJudul), catatan: editCatatan }),
     });
     cancelEdit();
     fetchTopik();
   }
 
   function handleBuatScript(item: TopikItem) {
-    router.push(`/naskah?topikId=${item.id}&judul=${encodeURIComponent(item.judul)}`);
+    router.push(`/naskah?topikId=${item.id}&judul=${encodeURIComponent(cleanTitle(item.judul))}`);
   }
 
   return (
     <div className="animate-fade-in">
-      <div style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Topic</h1>
+      {/* Subtitle Halaman */}
+      <div style={{ marginBottom: 16 }}>
         <p className="page-subtitle">
           Generate ide topik berpotensi viral (AI 50-Point Framework) atau kelola Bank Topik Anda.
         </p>
@@ -246,7 +272,6 @@ export default function TopicPage() {
               </select>
             </div>
 
-            {/* Parameter manual HANYA tampil jika "Tanpa Referensi" dipilih */}
             {isManualMode && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
                 <div>
@@ -381,7 +406,7 @@ export default function TopicPage() {
                       {cand.targetDurasi && <span className="badge badge-neutral">{cand.targetDurasi}</span>}
                     </div>
                     <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)" }}>
-                      {cand.judul}
+                      {cleanTitle(cand.judul)}
                     </h3>
                     <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: "0 0 8px 0" }}>
                       {cand.alasanSkor || (cand as any).penjelasan}
@@ -422,7 +447,7 @@ export default function TopicPage() {
             const isEditing = editingId === item.id;
 
             return (
-              <div key={item.id} className="glass-card-static" style={{ padding: 16 }}>
+              <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18 }}>
                 {isEditing ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input
@@ -443,13 +468,13 @@ export default function TopicPage() {
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 4px 0", color: "var(--text-primary)" }}>
-                        {item.judul}
+                      <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)" }}>
+                        {cleanTitle(item.judul)}
                       </h3>
                       {item.catatan && (
-                        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                        <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
                           {item.catatan}
                         </p>
                       )}

@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type ChannelData = {
   title: string;
   thumbnail: string;
+  banner?: string;
+  bannerUrl?: string;
   subscriberCount: string;
   viewCount: string;
   videoCount: string;
@@ -23,6 +26,7 @@ type SavedItem = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [topicCount, setTopicCount] = useState(0);
   const [scriptCount, setScriptCount] = useState(0);
   const [visualCount, setVisualCount] = useState(0);
@@ -31,9 +35,7 @@ export default function DashboardPage() {
   const [scriptsList, setScriptsList] = useState<SavedItem[]>([]);
   const [visualsList, setVisualsList] = useState<SavedItem[]>([]);
 
-  // Index untuk pergantian item
   const [itemIndex, setItemIndex] = useState(0);
-  // State untuk pause pergantian otomatis saat kursor berada di atas card
   const [isHovered, setIsHovered] = useState(false);
 
   const [channelInput, setChannelInput] = useState("");
@@ -44,17 +46,15 @@ export default function DashboardPage() {
 
   const [isEditingChannel, setIsEditingChannel] = useState(false);
 
-  // Helper untuk membersihkan imbuhan berlebih seperti "Visual Package - Naskah - ", "Topik - ", dll.
   function cleanTitle(text: string) {
     if (!text) return "";
-    return text
-      .replace(/^visual\s*package\s*[-:]\s*/i, "")
-      .replace(/^(naskah|visual|topik)\s*[-:]\s*/i, "")
-      .replace(/^naskah\s*[-:]\s*/i, "")
-      .trim();
+    let cleaned = text;
+    cleaned = cleaned.replace(/^visual\s*package\s*[-:]\s*/i, "");
+    cleaned = cleaned.replace(/^(naskah|visual|topik|topic)\s*[-:]\s*/i, "");
+    cleaned = cleaned.replace(/^naskah\s*[-:]\s*/i, "");
+    return cleaned.trim();
   }
 
-  // Timer jeda 3.5 detik (Otomatis pause jika kursor sedang di atas card)
   useEffect(() => {
     if (isHovered) return;
     const timer = setInterval(() => {
@@ -167,7 +167,10 @@ export default function DashboardPage() {
     return val.toLocaleString("id-ID");
   }
 
-  // Filter & Urutkan murni video terpopuler berdasarkan View Count tertinggi (Top 5)
+  function navigateToItem(targetPath: string, itemId: string) {
+    window.location.href = `${targetPath}#${itemId}`;
+  }
+
   const mostPopularVideos = channelData?.topVideos && channelData.topVideos.length > 0
     ? [...channelData.topVideos]
         .sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0))
@@ -180,15 +183,16 @@ export default function DashboardPage() {
       : [...mostPopularVideos, ...mostPopularVideos]
     : [];
 
-  // Item aktif yang sedang ditampilkan
   const activeTopic = topicsList.length > 0 ? topicsList[itemIndex % topicsList.length] : null;
   const activeScript = scriptsList.length > 0 ? scriptsList[itemIndex % scriptsList.length] : null;
   const activeVisual = visualsList.length > 0 ? visualsList[itemIndex % visualsList.length] : null;
 
+  const bannerImage = channelData?.banner || channelData?.bannerUrl || null;
+
   return (
     <div>
       <style>{`
-        @keyframes fadeInSlide {
+        @keyframes pureOpacityFade {
           0% { opacity: 0; }
           100% { opacity: 1; }
         }
@@ -198,14 +202,8 @@ export default function DashboardPage() {
           100% { transform: translate3d(-50%, 0, 0); }
         }
 
-        /* Pure Opacity Fade (Tanpa transform agar teks 100% Tajam tanpa Blur) */
-        @keyframes pureFadeIn {
-          0% { opacity: 0; }
-          100% { opacity: 1; }
-        }
-
         .dashboard-container {
-          animation: fadeInSlide 0.25s ease-out forwards;
+          animation: pureOpacityFade 0.2s ease-out forwards;
         }
 
         .marquee-wrapper {
@@ -242,12 +240,13 @@ export default function DashboardPage() {
           border-color: var(--border-medium);
         }
 
-        /* Container Preview Teks dengan Custom Scrollbar & Crisp Font Rendering */
         .preview-box-scrollable {
           margin-top: 12px;
           padding-top: 10px;
+          padding-bottom: 8px;
           border-top: 1px solid var(--border-subtle);
-          max-height: 110px;
+          min-height: 85px;
+          max-height: 120px;
           overflow-y: auto;
           padding-right: 4px;
           -webkit-font-smoothing: antialiased;
@@ -266,10 +265,20 @@ export default function DashboardPage() {
           background: transparent;
         }
 
-        .sharp-fade-item {
-          animation: pureFadeIn 0.25s ease-out forwards;
+        .sharp-fade-text {
+          animation: pureOpacityFade 0.3s ease-out forwards;
           -webkit-font-smoothing: antialiased;
           -moz-osx-font-smoothing: grayscale;
+        }
+
+        .clickable-title {
+          cursor: pointer;
+          color: var(--text-primary);
+          transition: color 0.2s ease;
+        }
+        .clickable-title:hover {
+          color: #38bdf8;
+          text-decoration: underline;
         }
 
         .dashboard-stats-grid {
@@ -286,7 +295,7 @@ export default function DashboardPage() {
           display: flex;
           flex-direction: column;
           gap: 12px;
-          margin-bottom: 16px;
+          margin-bottom: 12px;
         }
         @media (min-width: 640px) {
           .channel-header-wrapper {
@@ -298,16 +307,15 @@ export default function DashboardPage() {
       `}</style>
 
       <div className="dashboard-container">
-        {/* Header */}
-        <div style={{ marginBottom: 24 }}>
-          <h1 className="page-title">Dashboard</h1>
+        {/* Subtitle Halaman Memutar Langsung di Paling Atas */}
+        <div style={{ marginBottom: 12 }}>
           <p className="page-subtitle">
             Ringkasan profil channel YouTube & statistik aset tersimpan.
           </p>
         </div>
 
-        {/* SECTION 1: Profil Channel YouTube */}
-        <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
+        {/* SECTION 1: Profil Channel YouTube (Kotak Utama Langsung Menempel di Atas) */}
+        <div className="glass-card-static" style={{ padding: 20, marginBottom: 20 }}>
           <div className="channel-header-wrapper">
             <div>
               <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 2px 0", color: "var(--text-primary)" }}>
@@ -320,7 +328,6 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            {/* Action Button: Disconnect / Change Channel */}
             {channelData && !isEditingChannel && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
@@ -339,9 +346,8 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Form Input */}
           {(isEditingChannel || !channelData) && !loadingChannel && (
-            <form onSubmit={handleSearchChannel} style={{ display: "flex", gap: 10, maxWidth: 520, marginBottom: 20, flexWrap: "wrap" }}>
+            <form onSubmit={handleSearchChannel} style={{ display: "flex", gap: 10, maxWidth: 520, marginBottom: 16, flexWrap: "wrap" }}>
               <input
                 type="text"
                 placeholder="Channel ID (UC...) atau @handle YouTube..."
@@ -366,29 +372,40 @@ export default function DashboardPage() {
             </form>
           )}
 
-          {/* Error message */}
           {channelError && (
             <div style={{ fontSize: 12, color: "var(--status-error)", background: "rgba(248, 113, 113, 0.1)", padding: 12, borderRadius: "var(--radius-md)", marginBottom: 16 }}>
               {channelError}
             </div>
           )}
 
-          {/* Loading skeleton */}
           {loadingChannel ? (
-            <div className="skeleton" style={{ height: 130 }} />
+            <div className="skeleton" style={{ height: 160 }} />
           ) : channelData ? (
             <div>
-              {/* Channel Info Banner */}
+              {/* Foto Sampul / Banner YouTube */}
+              <div
+                style={{
+                  width: "100%",
+                  aspectRatio: "6.3 / 1",
+                  maxHeight: 180,
+                  borderRadius: "var(--radius-md)",
+                  overflow: "hidden",
+                  border: "1px solid var(--border-subtle)",
+                  marginBottom: 16,
+                  background: bannerImage
+                    ? `url(${bannerImage}) center 35% / cover no-repeat`
+                    : "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+                }}
+              />
+
+              {/* Info Channel & Foto Profil */}
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 16,
-                  padding: 16,
-                  background: "var(--bg-tertiary)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--border-subtle)",
-                  marginBottom: 20,
+                  padding: "4px 0 16px 0",
+                  marginBottom: 16,
                 }}
               >
                 {channelData.thumbnail ? (
@@ -397,10 +414,17 @@ export default function DashboardPage() {
                     alt={channelData.title}
                     referrerPolicy="no-referrer"
                     crossOrigin="anonymous"
-                    style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "1px solid var(--border-medium)", flexShrink: 0 }}
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: "50%",
+                      objectFit: "cover",
+                      border: "1px solid var(--border-medium)",
+                      flexShrink: 0,
+                    }}
                   />
                 ) : (
-                  <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", flexShrink: 0 }}>
+                  <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--bg-elevated)", border: "1px solid var(--border-medium)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", flexShrink: 0 }}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   </div>
                 )}
@@ -417,12 +441,12 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Video Terpopuler (Slider Horizontal) */}
-              {displayVideos.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>
-                    Video Terpopuler
-                  </div>
+              {/* Video Terpopuler */}
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>
+                  Video Terpopuler
+                </div>
+                {displayVideos.length > 0 ? (
                   <div className="marquee-wrapper">
                     <div className="marquee-track">
                       {displayVideos.map((vid, idx) => (
@@ -458,11 +482,14 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div style={{ padding: "14px", background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)", border: "1px dashed var(--border-subtle)", fontSize: 12, color: "var(--text-tertiary)", textAlign: "center" }}>
+                    Belum ada video terpublikasi di channel YouTube ini.
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
-            /* Empty State yang Bersih */
             <div
               style={{
                 padding: "28px 16px",
@@ -501,9 +528,17 @@ export default function DashboardPage() {
             style={{ padding: 20 }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
+            onTouchStart={() => setIsHovered(true)}
+            onTouchEnd={() => setIsHovered(false)}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>Topic</span>
+              <span
+                onClick={() => router.push("/topik")}
+                className="clickable-title"
+                style={{ fontSize: 13, fontWeight: 600 }}
+              >
+                Topic
+              </span>
               <span style={{ color: "var(--text-tertiary)", display: "flex" }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
               </span>
@@ -512,12 +547,16 @@ export default function DashboardPage() {
               {loadingCounts ? "..." : topicCount}
             </div>
 
-            {/* Preview Area (100% Tajam, Scrollable, Pause saat Hover) */}
             {activeTopic && (
               <div className="preview-box-scrollable">
-                <div key={`${activeTopic.id}-${itemIndex}`} className="sharp-fade-item">
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, lineHeight: 1.3 }}>
-                    {activeTopic.title}
+                <div key={activeTopic.id} className="sharp-fade-text">
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, lineHeight: 1.35 }}>
+                    <span
+                      onClick={() => navigateToItem("/topik", activeTopic.id)}
+                      className="clickable-title"
+                    >
+                      {activeTopic.title}
+                    </span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.45 }}>
                     {activeTopic.excerpt}
@@ -533,9 +572,17 @@ export default function DashboardPage() {
             style={{ padding: 20 }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
+            onTouchStart={() => setIsHovered(true)}
+            onTouchEnd={() => setIsHovered(false)}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>Script</span>
+              <span
+                onClick={() => router.push("/naskah")}
+                className="clickable-title"
+                style={{ fontSize: 13, fontWeight: 600 }}
+              >
+                Script
+              </span>
               <span style={{ color: "var(--text-tertiary)", display: "flex" }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
               </span>
@@ -544,12 +591,16 @@ export default function DashboardPage() {
               {loadingCounts ? "..." : scriptCount}
             </div>
 
-            {/* Preview Area (100% Tajam, Scrollable, Pause saat Hover) */}
             {activeScript && (
               <div className="preview-box-scrollable">
-                <div key={`${activeScript.id}-${itemIndex}`} className="sharp-fade-item">
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, lineHeight: 1.3 }}>
-                    {activeScript.title}
+                <div key={activeScript.id} className="sharp-fade-text">
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, lineHeight: 1.35 }}>
+                    <span
+                      onClick={() => navigateToItem("/naskah", activeScript.id)}
+                      className="clickable-title"
+                    >
+                      {activeScript.title}
+                    </span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.45 }}>
                     {activeScript.excerpt}
@@ -565,9 +616,17 @@ export default function DashboardPage() {
             style={{ padding: 20 }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
+            onTouchStart={() => setIsHovered(true)}
+            onTouchEnd={() => setIsHovered(false)}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>Visual</span>
+              <span
+                onClick={() => router.push("/visual")}
+                className="clickable-title"
+                style={{ fontSize: 13, fontWeight: 600 }}
+              >
+                Visual
+              </span>
               <span style={{ color: "var(--text-tertiary)", display: "flex" }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2" ry="2"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
               </span>
@@ -576,12 +635,16 @@ export default function DashboardPage() {
               {loadingCounts ? "..." : visualCount}
             </div>
 
-            {/* Preview Area (100% Tajam, Scrollable, Pause saat Hover) */}
             {activeVisual && (
               <div className="preview-box-scrollable">
-                <div key={`${activeVisual.id}-${itemIndex}`} className="sharp-fade-item">
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 4, lineHeight: 1.3 }}>
-                    {activeVisual.title}
+                <div key={activeVisual.id} className="sharp-fade-text">
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, lineHeight: 1.35 }}>
+                    <span
+                      onClick={() => navigateToItem("/visual", activeVisual.id)}
+                      className="clickable-title"
+                    >
+                      {activeVisual.title}
+                    </span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.45 }}>
                     {activeVisual.excerpt}
