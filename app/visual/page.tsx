@@ -98,8 +98,7 @@ function VisualContent() {
   const [selectedNaskahId, setSelectedNaskahId] = useState(queryNaskahId || "");
   const [judulNaskah, setJudulNaskah] = useState(queryJudul ? cleanTitle(queryJudul) : "");
   const [isiNaskah, setIsiNaskah] = useState("");
-  const [visualStyle, setVisualStyle] = useState("Sinematik 3D, Unreal Engine 5");
-  const [bridgePoseLevel, setBridgePoseLevel] = useState("Seimbang (Key Pose + Transisi Mikro)");
+  const [visualStyle, setVisualStyle] = useState("3D Unreal Engine 5");
 
   const [generating, setGenerating] = useState(false);
   const [progressMsg, setProgressMsg] = useState("");
@@ -194,7 +193,6 @@ function VisualContent() {
           judulNaskah: cleanTitle(judulNaskah),
           isiNaskah: textToUse,
           visualStyle,
-          bridgePoseLevel,
         }),
       });
 
@@ -232,7 +230,6 @@ function VisualContent() {
                 storyUnderstanding,
                 sceneItem,
                 visualStyle,
-                bridgePoseLevel,
                 existingAssetLibrary: globalAssetLibrary,
                 previousDirectorialSpec: lastDirectorialSpec,
                 previousCharacterState: lastCharacterState,
@@ -277,7 +274,6 @@ function VisualContent() {
           naskahId: selectedNaskahId || null,
           judulNaskah: cleanTitle(judulNaskah),
           visualStyle,
-          bridgePoseLevel,
           storyUnderstanding,
           scenes: directedScenes,
         }),
@@ -352,24 +348,12 @@ function VisualContent() {
             />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
-            <div>
-              <label className="form-label">Transisi Pose Mikro</label>
-              <select value={bridgePoseLevel} onChange={(e) => setBridgePoseLevel(e.target.value)} className="select-field">
-                <option value="Key Poses Only">Key Pose Utuh Saja</option>
-                <option value="Balanced (Key Pose + Bridge Pose Transisi)">Seimbang (Key Pose + Transisi Mikro)</option>
-                <option value="High Motion (Detail Transisi Ekstra)">Gerakan Tinggi (Ekstra Transisi)</option>
-              </select>
-            </div>
-            <div>
-              <label className="form-label">Gaya Visual</label>
-              <select value={visualStyle} onChange={(e) => setVisualStyle(e.target.value)} className="select-field">
-                <option value="3D Game AAA, Unreal Engine 5 Cinematic">Sinematik 3D, Unreal Engine 5</option>
-                <option value="Stylized Realistic 3D, PBR Material">Realistis 3D PBR</option>
-                <option value="Cyberpunk 3D Cinematic, Octane Render">Cyberpunk 3D Sinematik</option>
-                <option value="Anime Stylized 3D, Shaded UE5">Anime 3D Stylized</option>
-              </select>
-            </div>
+          <div style={{ marginBottom: 18 }}>
+            <label className="form-label">Gaya Visual</label>
+            <select value={visualStyle} onChange={(e) => setVisualStyle(e.target.value)} className="select-field">
+              <option value="3D Unreal Engine 5">3D Unreal Engine 5</option>
+              <option value="3D Realistic Human">3D Realistic Human</option>
+            </select>
           </div>
 
           <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
@@ -417,7 +401,7 @@ function VisualContent() {
                       {cleanTitle(item.judul)}
                     </h3>
                     <div style={{ marginTop: 4, display: "flex", gap: 6 }}>
-                      <span className="badge badge-neutral">{content.styleTag || "Sinematik 3D"}</span>
+                      <span className="badge badge-neutral">{content.styleTag || "3D Unreal Engine 5"}</span>
                       <span className="badge badge-neutral">{scenes.length} Shot Beats</span>
                     </div>
                   </div>

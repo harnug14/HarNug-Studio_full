@@ -307,14 +307,13 @@ export default function DashboardPage() {
       `}</style>
 
       <div className="dashboard-container">
-        {/* Subtitle Halaman Memutar Langsung di Paling Atas */}
         <div style={{ marginBottom: 12 }}>
           <p className="page-subtitle">
             Ringkasan profil channel YouTube & statistik aset tersimpan.
           </p>
         </div>
 
-        {/* SECTION 1: Profil Channel YouTube (Kotak Utama Langsung Menempel di Atas) */}
+        {/* SECTION 1: Profil Channel YouTube */}
         <div className="glass-card-static" style={{ padding: 20, marginBottom: 20 }}>
           <div className="channel-header-wrapper">
             <div>
@@ -382,18 +381,17 @@ export default function DashboardPage() {
             <div className="skeleton" style={{ height: 160 }} />
           ) : channelData ? (
             <div>
-              {/* Foto Sampul / Banner YouTube */}
+              {/* Foto Banner YouTube — Presisi Native Rasio 6.25 / 1 tanpa batas tinggi kaku */}
               <div
                 style={{
                   width: "100%",
-                  aspectRatio: "6.3 / 1",
-                  maxHeight: 180,
+                  aspectRatio: "6.25 / 1",
                   borderRadius: "var(--radius-md)",
                   overflow: "hidden",
                   border: "1px solid var(--border-subtle)",
                   marginBottom: 16,
                   background: bannerImage
-                    ? `url(${bannerImage}) center 35% / cover no-repeat`
+                    ? `url(${bannerImage}) center center / cover no-repeat`
                     : "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
                 }}
               />

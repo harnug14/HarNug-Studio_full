@@ -14,6 +14,16 @@ function getSafeString(val: unknown, fallback: string = ""): string {
   return fallback;
 }
 
+// ATURAN PERMANEN ENGINE HARNUG STUDIO UNTUK KEPUTUSAN ASET VISUAL
+const ENGINE_AUTOMATIC_TRANSITION_RULES = `
+AUTOMATIC DIRECTORIAL & ASSET DECISION RULES:
+- RULE 1: Jika pose karakter sama dan hanya framing/sudut kamera yang berubah -> REUSE ASSET (Instruksi kamera dikerjakan di CapCut, JANGAN buat prompt/aset baru).
+- RULE 2: Jika hanya terjadi perubahan mikro/kecil (kepala menoleh, tangan bergerak sedikit, ekspresi berubah) -> Gunakan Google Flow Edit (JANGAN buat aset baru).
+- RULE 3: Jika pose berubah besar (contoh: berdiri -> duduk, jalan -> berlari, jongkok -> berdiri, mengangkat barang, berlutut, dll) -> BUAT ASET BARU (NEW ASSET).
+- RULE 4: Jika fokus visual berpindah (contoh: karakter -> objek, objek -> karakter, wide scene -> close object) -> BUAT ASET BARU (NEW ASSET).
+- RULE 5: Jika hanya zoom, pan, tilt, camera move, atau crop -> JANGAN render ulang, gunakan aset yang sudah ada (REUSED ASSET).
+`;
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServerClient();
@@ -41,8 +51,7 @@ export async function POST(req: NextRequest) {
 
     const isiNaskah = getSafeString(body?.isiNaskah, "");
     const judulNaskah = getSafeString(body?.judulNaskah, "");
-    const visualStyle = getSafeString(body?.visualStyle, "Sinematik 3D, Unreal Engine 5");
-    const bridgePoseLevel = getSafeString(body?.bridgePoseLevel, "Seimbang (Key Pose + Transisi Mikro)");
+    const visualStyle = getSafeString(body?.visualStyle, "3D Unreal Engine 5");
     const naskahId = body?.naskahId ?? null;
 
     const existingAssetLibrary = Array.isArray(body?.existingAssetLibrary) ? body.existingAssetLibrary : [];
@@ -63,7 +72,7 @@ export async function POST(req: NextRequest) {
           judulNaskah,
           isiNaskah,
           visualStyle,
-          bridgePoseLevel,
+          bridgePoseLevel: ENGINE_AUTOMATIC_TRANSITION_RULES,
         });
 
         const beatPlan = await planVisualBeats(supabase, storyWorld, isiNaskah);
@@ -82,8 +91,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. ACTION DIRECT-SCENE (V5 PIPELINE):
-    // VisualBeat -> FSM -> CharacterState -> DirectorialIntent -> ProductionResources -> PromptComposer -> Execution
+    // 2. ACTION DIRECT-SCENE (V5 PIPELINE)
     if (action === "direct-scene") {
       if (!sceneItem) {
         return NextResponse.json({ error: "Detail shot (sceneItem) wajib disertakan" }, { status: 400 });
@@ -99,7 +107,7 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        // STEP A: FINITE STATE MACHINE (FSM) — DETERMINISTIC CHARACTER STATE
+        // STEP A: FINITE STATE MACHINE (FSM)
         const structuredAction = {
           primaryAction: sceneItem?.primaryAction,
           targetObject: sceneItem?.targetObject,
@@ -115,7 +123,7 @@ export async function POST(req: NextRequest) {
 
         const currentCharacterState = fsmResult.nextState;
 
-        // STEP B: DIRECTORIAL INTENT (READ-ONLY CHARACTER STATE)
+        // STEP B: DIRECTORIAL INTENT
         const directorialSpec = await formulateDirectorialIntent(
           supabase,
           currentStoryWorld,
@@ -124,7 +132,7 @@ export async function POST(req: NextRequest) {
           currentCharacterState ?? undefined
         );
 
-        // STEP C: PRODUCTION RESOURCES (READ-ONLY CHARACTER STATE)
+        // STEP C: PRODUCTION RESOURCES (Memakai Aturan Otomatis RULE 1 - 5)
         const productionResult = await resolveProductionResources(
           supabase,
           currentStoryWorld,
@@ -134,7 +142,7 @@ export async function POST(req: NextRequest) {
           currentCharacterState ?? undefined
         );
 
-        // STEP D: PROMPT COMPOSER (READ-ONLY CHARACTER STATE)
+        // STEP D: PROMPT COMPOSER
         const composedPromptResult = composePrompt(
           productionResult.sceneSpecification,
           visualStyle,
@@ -180,7 +188,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. ACTION SAVE: Save package & compile asset library to Supabase
+    // 3. ACTION SAVE
     if (action === "save") {
       const defaultTitle = judulNaskah ? `Visual Package - ${judulNaskah}` : "Visual Package";
 
@@ -223,7 +231,6 @@ export async function POST(req: NextRequest) {
       const packageData = {
         judul: defaultTitle,
         styleTag: visualStyle,
-        bridgePoseLevel,
         storyUnderstanding: storyUnderstanding || {},
         scenes,
         assetLibrary: compiledAssetLibrary,
