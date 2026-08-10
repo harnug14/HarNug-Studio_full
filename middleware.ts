@@ -24,7 +24,7 @@ export async function middleware(request: NextRequest) {
             request,
           });
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value)
           );
         },
       },
@@ -51,6 +51,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|auth/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    /*
+     * MURNI MEM-BYPASS /api, /auth/callback, DAN /login AGAR MIDDLEWARE TIDAK MENCEGAT API & OAUTH
+     */
+    "/((?!_next/static|_next/image|favicon.ico|api|auth/callback|login|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
