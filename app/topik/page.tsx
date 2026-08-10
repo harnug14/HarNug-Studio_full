@@ -119,15 +119,10 @@ export default function TopicPage() {
     setGenError("");
     setCandidates([]);
 
-    // AbortController untuk mencegah PWA HP crash akibat timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
-
     try {
       const res = await fetch("/api/topik/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
         body: JSON.stringify({
           kategori: isManualMode ? kategoriContent : undefined,
           durasi: isManualMode ? targetDurasi : undefined,
@@ -138,11 +133,9 @@ export default function TopicPage() {
         }),
       });
 
-      clearTimeout(timeoutId);
-
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `Server error (${res.status}). Silakan coba lagi.`);
+        throw new Error(errJson.error || `Server Error (${res.status}). Silakan coba lagi.`);
       }
 
       const json = await res.json();
@@ -156,13 +149,8 @@ export default function TopicPage() {
         setGenError("Gagal mengambil ide topik. Silakan coba lagi.");
       }
     } catch (err: any) {
-      clearTimeout(timeoutId);
       console.error("[TopicUI] Generate error:", err);
-      if (err.name === "AbortError") {
-        setGenError("Proses pembuatan topik memakan waktu terlalu lama. Silakan tekan tombol Generate sekali lagi.");
-      } else {
-        setGenError(err.message || "Koneksi terputus. Silakan coba lagi.");
-      }
+      setGenError(err.message || "Gagal membuat ide topik. Silakan coba lagi.");
     } finally {
       setGenerating(false);
     }
