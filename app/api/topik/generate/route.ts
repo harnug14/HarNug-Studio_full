@@ -3,6 +3,10 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 
+// Konfigurasi Vercel Serverless Function (Batas waktu eksekusi diperpanjang hingga 60 detik)
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 // Hirarki Model Gemini (Engine Utama: gemini-3.6-flash | Batas Minimum: gemini-2.5-flash)
 const GEMINI_FALLBACK_MODELS = [
   "gemini-3.6-flash",
