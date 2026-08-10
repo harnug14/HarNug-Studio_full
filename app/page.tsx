@@ -35,7 +35,9 @@ export default function DashboardPage() {
   const [scriptsList, setScriptsList] = useState<SavedItem[]>([]);
   const [visualsList, setVisualsList] = useState<SavedItem[]>([]);
 
+  // Index untuk pergantian item
   const [itemIndex, setItemIndex] = useState(0);
+  // State untuk pause pergantian otomatis saat kursor/sentuhan berada di atas card
   const [isHovered, setIsHovered] = useState(false);
 
   const [channelInput, setChannelInput] = useState("");
@@ -46,6 +48,7 @@ export default function DashboardPage() {
 
   const [isEditingChannel, setIsEditingChannel] = useState(false);
 
+  // Helper untuk membersihkan secara ketat imbuhan "Visual Package - ", "Naskah - ", "Visual - ", "Topik - "
   function cleanTitle(text: string) {
     if (!text) return "";
     let cleaned = text;
@@ -55,6 +58,7 @@ export default function DashboardPage() {
     return cleaned.trim();
   }
 
+  // Timer jeda 3.5 detik (Otomatis pause jika kursor/sentuhan sedang di atas card)
   useEffect(() => {
     if (isHovered) return;
     const timer = setInterval(() => {
@@ -171,6 +175,7 @@ export default function DashboardPage() {
     window.location.href = `${targetPath}#${itemId}`;
   }
 
+  // Filter & Urutkan murni video terpopuler berdasarkan View Count tertinggi (Top 5)
   const mostPopularVideos = channelData?.topVideos && channelData.topVideos.length > 0
     ? [...channelData.topVideos]
         .sort((a, b) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0))
@@ -183,10 +188,12 @@ export default function DashboardPage() {
       : [...mostPopularVideos, ...mostPopularVideos]
     : [];
 
+  // Item aktif yang sedang ditampilkan
   const activeTopic = topicsList.length > 0 ? topicsList[itemIndex % topicsList.length] : null;
   const activeScript = scriptsList.length > 0 ? scriptsList[itemIndex % scriptsList.length] : null;
   const activeVisual = visualsList.length > 0 ? visualsList[itemIndex % visualsList.length] : null;
 
+  // Banner image URL jika tersedia dari channel
   const bannerImage = channelData?.banner || channelData?.bannerUrl || null;
 
   return (
@@ -307,6 +314,7 @@ export default function DashboardPage() {
       `}</style>
 
       <div className="dashboard-container">
+        {/* Subtitle Halaman */}
         <div style={{ marginBottom: 12 }}>
           <p className="page-subtitle">
             Ringkasan profil channel YouTube & statistik aset tersimpan.
@@ -315,6 +323,7 @@ export default function DashboardPage() {
 
         {/* SECTION 1: Profil Channel YouTube */}
         <div className="glass-card-static" style={{ padding: 20, marginBottom: 20 }}>
+          {/* Header Card dengan Subtitle & Tombol Action */}
           <div className="channel-header-wrapper">
             <div>
               <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 2px 0", color: "var(--text-primary)" }}>
@@ -327,6 +336,7 @@ export default function DashboardPage() {
               </p>
             </div>
 
+            {/* Action Button: Disconnect / Change Channel */}
             {channelData && !isEditingChannel && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
@@ -345,6 +355,7 @@ export default function DashboardPage() {
             )}
           </div>
 
+          {/* Form Input saat ganti channel / belum terhubung */}
           {(isEditingChannel || !channelData) && !loadingChannel && (
             <form onSubmit={handleSearchChannel} style={{ display: "flex", gap: 10, maxWidth: 520, marginBottom: 16, flexWrap: "wrap" }}>
               <input
@@ -371,32 +382,35 @@ export default function DashboardPage() {
             </form>
           )}
 
+          {/* Error message */}
           {channelError && (
             <div style={{ fontSize: 12, color: "var(--status-error)", background: "rgba(248, 113, 113, 0.1)", padding: 12, borderRadius: "var(--radius-md)", marginBottom: 16 }}>
               {channelError}
             </div>
           )}
 
+          {/* Loading skeleton */}
           {loadingChannel ? (
             <div className="skeleton" style={{ height: 160 }} />
           ) : channelData ? (
             <div>
-              {/* Foto Banner YouTube — Presisi Native Rasio 6.25 / 1 tanpa batas tinggi kaku */}
+              {/* Foto Sampul / Banner YouTube — Rasio Native 6.3 / 1 */}
               <div
                 style={{
                   width: "100%",
-                  aspectRatio: "6.25 / 1",
+                  aspectRatio: "6.3 / 1",
+                  maxHeight: 180,
                   borderRadius: "var(--radius-md)",
                   overflow: "hidden",
                   border: "1px solid var(--border-subtle)",
                   marginBottom: 16,
                   background: bannerImage
-                    ? `url(${bannerImage}) center center / cover no-repeat`
+                    ? `url(${bannerImage}) center 35% / cover no-repeat`
                     : "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
                 }}
               />
 
-              {/* Info Channel & Foto Profil */}
+              {/* Info Channel & Foto Profil Sejajar Rapi (Murni Tanpa Inner Box) */}
               <div
                 style={{
                   display: "flex",
@@ -439,7 +453,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Video Terpopuler */}
+              {/* Video Terpopuler (Slider Horizontal) */}
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 12 }}>
                   Video Terpopuler
@@ -488,6 +502,7 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : (
+            /* Empty State yang Bersih */
             <div
               style={{
                 padding: "28px 16px",
@@ -545,6 +560,7 @@ export default function DashboardPage() {
               {loadingCounts ? "..." : topicCount}
             </div>
 
+            {/* Preview Area */}
             {activeTopic && (
               <div className="preview-box-scrollable">
                 <div key={activeTopic.id} className="sharp-fade-text">
@@ -589,6 +605,7 @@ export default function DashboardPage() {
               {loadingCounts ? "..." : scriptCount}
             </div>
 
+            {/* Preview Area */}
             {activeScript && (
               <div className="preview-box-scrollable">
                 <div key={activeScript.id} className="sharp-fade-text">
@@ -633,6 +650,7 @@ export default function DashboardPage() {
               {loadingCounts ? "..." : visualCount}
             </div>
 
+            {/* Preview Area */}
             {activeVisual && (
               <div className="preview-box-scrollable">
                 <div key={activeVisual.id} className="sharp-fade-text">
