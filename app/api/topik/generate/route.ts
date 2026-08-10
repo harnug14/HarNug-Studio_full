@@ -132,6 +132,7 @@ export async function POST(req: NextRequest) {
 
       if (channelProfile && channelProfile.channel_analysis_entries?.length) {
         isProfileMode = true;
+        // 100% Seluruh Naskah Contoh Dibaca Penuh Tanpa Pemotongan
         const samples = channelProfile.channel_analysis_entries
           .map((e: any, idx: number) => `Contoh ${idx + 1}: ${e.title}\nNaskah: ${e.full_script}`)
           .join("\n\n---\n\n");
@@ -139,6 +140,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 100% Membaca 50 Riwayat Topik Lama
     const { data: existingTopics } = await supabase
       .from("topik")
       .select("judul, catatan")
@@ -191,7 +193,7 @@ Tugasmu adalah menghasilkan ide topik video YouTube Shorts berkualitas tinggi be
       ? `PROFIL CHANNEL DIPIILIH:${referenceContextText}
 
 Instruksi Tambahan:
-Analisis pola niche, durasi ideal, tone, dan tema dari naskah-naskah contoh channel di atas. Hasilkan 5 kandidat ide topik baru yang SANGAT KONSISTEN dengan pola channel referensi tersebut namun dengan sudut pandang/topik orisinal yang baru.
+Analisis pola niche, durasi ideal, tone, dan tema dari naskah-naskah contoh channel di atas. Hasilkan ${jumlah} kandidat ide topik baru yang SANGAT KONSISTEN dengan pola channel referensi tersebut namun dengan sudut pandang/topik orisinal yang baru.
 
 Tolong hasilkan kandidat ide topik yang lolos validasi skor >= 40/50 poin sekarang dalam format JSON murni.`
       : `Parameter Ideation Topic (Manual):
