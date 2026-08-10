@@ -145,14 +145,14 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0, 0, 0, 0.6)",
-            backdropFilter: "blur(2px)",
-            zIndex: 39,
+            background: "rgba(0, 0, 0, 0.75)",
+            backdropFilter: "blur(4px)",
+            zIndex: 49,
           }}
         />
       )}
 
-      {/* Main Sidebar */}
+      {/* Main Sidebar (Z-Index 50 agar menutup header sepenuhnya di HP) */}
       <aside className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}>
         {/* Header Branding */}
         <div
@@ -164,6 +164,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
             display: "flex",
             alignItems: "center",
             justifyContent: isCollapsed ? "center" : "space-between",
+            background: "var(--bg-primary)",
           }}
         >
           {!isCollapsed && (
@@ -216,6 +217,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
             flex: 1,
             overflowY: "auto",
             padding: "12px 8px",
+            background: "var(--bg-primary)",
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -274,11 +276,11 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           left: 0;
           bottom: 0;
           width: ${isCollapsed ? "64px" : "240px"};
-          background: var(--bg-primary);
+          background: var(--bg-primary) !important;
           border-right: 1px solid var(--border-subtle);
           display: flex;
           flex-direction: column;
-          z-index: 40;
+          z-index: 50 !important;
           transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s ease;
           overflow: hidden;
         }
@@ -293,6 +295,7 @@ export default function Sidebar({ userEmail }: { userEmail?: string }) {
           .sidebar {
             width: 240px !important;
             transform: translateX(-100%);
+            z-index: 50 !important;
           }
           .sidebar-open {
             transform: translateX(0) !important;
