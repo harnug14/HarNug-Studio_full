@@ -133,6 +133,11 @@ export default function TopicPage() {
         }),
       });
 
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Server error (${res.status}). Silakan coba lagi.`);
+      }
+
       const json = await res.json();
       if (json.error) {
         setGenError(json.error);
@@ -140,9 +145,12 @@ export default function TopicPage() {
         setCandidates(json.data.candidates);
       } else if (Array.isArray(json.data)) {
         setCandidates(json.data);
+      } else {
+        setGenError("Gagal mengambil ide topik. Silakan coba lagi.");
       }
     } catch (err: any) {
-      setGenError(err.message || "Gagal melakukan analisis generator.");
+      console.error("[TopicUI] Generate error:", err);
+      setGenError(err.message || "Koneksi terputus. Silakan coba lagi.");
     } finally {
       setGenerating(false);
     }
@@ -347,7 +355,7 @@ export default function TopicPage() {
 
           {genError && (
             <div style={{ marginTop: 14, fontSize: 12, color: "var(--status-error)", background: "rgba(248, 113, 113, 0.1)", padding: "10px 14px", borderRadius: "var(--radius-md)" }}>
-              {genError}
+              ⚠️ {genError}
             </div>
           )}
         </div>
@@ -470,7 +478,6 @@ export default function TopicPage() {
                     </div>
                   </div>
                 ) : (
-                  /* Layout Vertikal Rapi: Teks 100% Penuh Lebar di Atas, Tombol di Bawahnya */
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     <div style={{ width: "100%" }}>
                       <h3 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)", lineHeight: 1.35 }}>
