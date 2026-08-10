@@ -1,11 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
-export default function LoginPage() {
+function LoginContent() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    // Deteksi jika ada pesan error dari redirect callback
+    const urlError = searchParams.get("error");
+    if (urlError) {
+      if (urlError === "auth-failed") {
+        setError("Autentikasi Google gagal atau cookie ditolak oleh browser HP. Silakan coba lagi.");
+      } else {
+        setError(`Error Auth: ${urlError}`);
+      }
+    }
+  }, [searchParams]);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -111,9 +125,10 @@ export default function LoginPage() {
                 fontSize: 12,
                 marginBottom: 20,
                 textAlign: "left",
+                lineHeight: 1.4,
               }}
             >
-              {error}
+              ⚠️ {error}
             </div>
           )}
 
@@ -175,5 +190,19 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="spinner" style={{ width: 28, height: 28 }} />
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }
