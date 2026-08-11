@@ -36,7 +36,6 @@ function cleanTitle(text: string) {
   return cleaned.trim();
 }
 
-// HELPER AMAN UNTUK MEMBACA SKOR ANGKA (MENCEGAH REACT CRASH OBJECT IN JSX)
 function getScoreNumber(skor: any): number {
   if (typeof skor === "number") return skor;
   if (typeof skor === "object" && skor !== null && typeof skor.total === "number") {
@@ -45,7 +44,6 @@ function getScoreNumber(skor: any): number {
   return 0;
 }
 
-// HELPER AMAN UNTUK MEMBACA TEKS PENJELASAN ALASAN
 function getExplanationText(cand: any): string {
   if (cand.alasanSkor) return cand.alasanSkor;
   if (cand.penjelasan) return cand.penjelasan;
@@ -72,6 +70,7 @@ export default function TopicPage() {
 
   const [generating, setGenerating] = useState(false);
   const [candidates, setCandidates] = useState<TopikCandidate[]>([]);
+  const [savingJudul, setSavingJudul] = useState<string | null>(null);
   const [genError, setGenError] = useState("");
 
   const [manualJudul, setManualJudul] = useState("");
@@ -82,6 +81,35 @@ export default function TopicPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editJudul, setEditJudul] = useState("");
   const [editCatatan, setEditCatatan] = useState("");
+
+  // MEMUAT KANDIDAT YANG BELUM DISIMPAN DARI SESSION STORAGE SUSAH PINDAH MENU
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("cached_topic_candidates");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCandidates(parsed);
+          }
+        } catch (e) {
+          console.error("Gagal membaca cache candidates:", e);
+        }
+      }
+    }
+  }, []);
+
+  // FUNGSI UPDATE STATE KANDIDAT DAN SIMPAN KESIMPANAN SESSION STORAGE
+  function updateCandidates(newCandidates: TopikCandidate[]) {
+    setCandidates(newCandidates);
+    if (typeof window !== "undefined") {
+      if (newCandidates.length > 0) {
+        sessionStorage.setItem("cached_topic_candidates", JSON.stringify(newCandidates));
+      } else {
+        sessionStorage.removeItem("cached_topic_candidates");
+      }
+    }
+  }
 
   async function fetchTopik() {
     setLoading(true);
@@ -136,7 +164,6 @@ export default function TopicPage() {
     e.preventDefault();
     setGenerating(true);
     setGenError("");
-    setCandidates([]);
 
     try {
       const res = await fetch("/api/topik/generate", {
@@ -161,9 +188,9 @@ export default function TopicPage() {
       if (json.error) {
         setGenError(json.error);
       } else if (json.data && json.data.candidates && Array.isArray(json.data.candidates)) {
-        setCandidates(json.data.candidates);
+        updateCandidates(json.data.candidates);
       } else if (Array.isArray(json.data)) {
-        setCandidates(json.data);
+        updateCandidates(json.data);
       } else {
         setGenError("Gagal mengambil ide topik. Silakan coba lagi.");
       }
@@ -176,6 +203,7 @@ export default function TopicPage() {
   }
 
   async function handleSaveCandidate(candidate: TopikCandidate) {
+    setSavingJudul(candidate.judul);
     try {
       const numericScore = getScoreNumber(candidate.skor);
       const explanation = getExplanationText(candidate);
@@ -195,10 +223,23 @@ export default function TopicPage() {
       const json = await res.json();
       if (json.data) {
         fetchTopik();
-        alert("Topik berhasil disimpan ke Daftar Topic!");
+        // OTOMATIS HILANGKAN KANDIDAT YANG SUDAH DISIMPAN DARI TAMPILAN
+        const remaining = candidates.filter(
+          (c) => cleanTitle(c.judul) !== cleanTitle(candidate.judul)
+        );
+        updateCandidates(remaining);
       }
     } catch (e) {
       console.error(e);
+      alert("Gagal menyimpan topik. Coba lagi.");
+    } finally {
+      setSavingJudul(null);
+    }
+  }
+
+  function handleClearCandidates() {
+    if (confirm("Bersihkan seluruh hasil rekomendasi yang belum disimpan?")) {
+      updateCandidates([]);
     }
   }
 
@@ -423,13 +464,20 @@ export default function TopicPage() {
       {/* Hasil Candidates AI Generator */}
       {candidates.length > 0 && (
         <div style={{ marginBottom: 24 }}>
-          <div className="section-title">
-            Hasil Rekomendasi Topik ({candidates.length})
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div className="section-title" style={{ margin: 0 }}>
+              Hasil Rekomendasi Topik ({candidates.length})
+            </div>
+            <button onClick={handleClearCandidates} className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+              Bersihkan Hasil
+            </button>
           </div>
+
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {candidates.map((cand, idx) => {
               const numericScore = getScoreNumber(cand.skor);
               const explanationText = getExplanationText(cand);
+              const isSavingThis = savingJudul === cand.judul;
 
               return (
                 <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
@@ -453,8 +501,12 @@ export default function TopicPage() {
                       )}
                     </div>
                     <div>
-                      <button onClick={() => handleSaveCandidate(cand)} className="btn btn-secondary btn-sm">
-                        + Simpan ke Daftar Topic
+                      <button
+                        onClick={() => handleSaveCandidate(cand)}
+                        disabled={isSavingThis}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        {isSavingThis ? <><span className="spinner" /> Menyimpan...</> : "+ Simpan ke Daftar Topic"}
                       </button>
                     </div>
                   </div>
