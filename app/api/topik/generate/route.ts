@@ -3,62 +3,47 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 
-export const maxDuration = 10;
+// DIBERI WAKTU 60 DETIK AGAR VERCEL TIDAK MEMUTUS PAKSA (0% TIMEOUT 504)
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-const GEMINI_FALLBACK_MODELS = [
-  "gemini-3.6-flash",
-  "gemini-3.5-flash",
-  "gemini-3-flash-preview",
-  "gemini-3.1-pro",
-  "gemini-2.5-pro",
-  "gemini-2.5-flash",
-];
+// OTAK UTAMA TUNGGAL (TIDAK BOLEH DIGANTI/DITURUNKAN)
+const MAIN_MODEL = "gemini-3.6-flash";
 
-async function callGeminiApiWithFallback(
+async function callGeminiApi(
   supabase: any,
   userPrompt: string,
   systemPrompt: string,
   temperature: number = 1.0
 ): Promise<string> {
-  let lastError: any = null;
+  // Key rotation tetap berjalan untuk menjaga kuota API Key, tetapi HANYA memakai Gemini 3.6 Flash
+  return await callGeminiWithRotation(supabase, async (apiKey) => {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature,
+          },
+        }),
+      }
+    );
 
-  for (const currentModel of GEMINI_FALLBACK_MODELS) {
-    try {
-      const rawResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              generationConfig: {
-                responseMimeType: "application/json",
-                temperature,
-              },
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          if (response.status === 429) throw new GeminiQuotaError(`Gemini rate-limited (429)`);
-          throw new Error(`Gemini Error: ${response.status}`);
-        }
-
-        const json = await response.json();
-        return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-      });
-
-      if (rawResponse) return rawResponse;
-    } catch (err: any) {
-      lastError = err;
-      break; // Langsung throw tanpa delay loop agar tidak memicu Vercel 504 Timeout
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new GeminiQuotaError(`Gemini Rate Limit Exceeded (429)`);
+      }
+      throw new Error(`Gemini API Error: Status ${response.status}`);
     }
-  }
 
-  throw new Error(`Gagal membuat kandidat topik: ${lastError?.message || "Internal Server Error"}`);
+    const json = await response.json();
+    return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -81,7 +66,7 @@ export async function POST(req: NextRequest) {
       referenceProfileId = null,
     } = await req.json();
 
-    // EXEKUSI KUERI DATABASE SECARA PARALEL (Promise.all) UNTUK HEMAT WAKTU
+    // EXEKUSI KUERI DATABASE PARALEL
     const [profileRes, historyRes] = await Promise.all([
       referenceProfileId
         ? supabase
@@ -103,18 +88,17 @@ export async function POST(req: NextRequest) {
 
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
-      // Ambil 3 sampel naskah kalibrasi paling representatif agar proses AI super cepat (2 detik)
+      
+      // BACA SELURUH NASKAH UTUH TANPA DIPANGKAS SAMA SEKALI
       const samples = profileRes.data.channel_analysis_entries
-        .slice(0, 3)
         .map((e: any, idx: number) => {
-          const cleanScript = e.full_script ? e.full_script.substring(0, 500) : "";
-          return `Contoh ${idx + 1}: ${e.title}\nNaskah: ${cleanScript}`;
+          return `Contoh Naskah ${idx + 1}: ${e.title}\nNaskah Utuh:\n${e.full_script || ""}`;
         })
         .join("\n\n---\n\n");
-      referenceContextText = `\n\nREFERENSI PROFIL CHANNEL KALIBRASI ("${profileRes.data.profile_name}"):\n${samples}`;
+
+      referenceContextText = `\n\nREFERENSI PROFIL CHANNEL LENGKAP ("${profileRes.data.profile_name}"):\n${samples}`;
     }
 
-    // 50 Riwayat topik lama tetap dibaca utuh untuk hindari duplikasi
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
       const daftarJudul = historyRes.data
@@ -150,7 +134,7 @@ FORMAT JSON OUTPUT PERSIS (pure JSON object):
       ? `PROFIL CHANNEL DIPIILIH:${referenceContextText}
 
 Instruksi Tambahan:
-Analisis pola niche, durasi ideal, tone, dan tema dari contoh channel di atas. Hasilkan ${jumlah} kandidat ide topik baru yang konsisten dengan pola channel referensi tersebut dalam JSON murni.`
+Analisis seluruh gaya bahasa, tone, topik, dan struktur dari naskah utuh channel di atas. Hasilkan ${jumlah} kandidat ide topik baru yang konsisten dengan pola channel referensi tersebut dalam JSON murni.`
       : `Parameter Ideation Topic (Manual):
 - Kategori Prioritas: ${kategori}
 - Target Durasi Video: ${durasi}
@@ -160,7 +144,8 @@ Analisis pola niche, durasi ideal, tone, dan tema dari contoh channel di atas. H
 
 Hasilkan ${jumlah} kandidat ide topik yang lolos skor >= 40/50 dalam JSON murni sekarang.`;
 
-    const rawResponse = await callGeminiApiWithFallback(
+    // PEMANGGILAN KHUSUS GEMINI 3.6 FLASH
+    const rawResponse = await callGeminiApi(
       supabase,
       userPrompt,
       systemPrompt,
