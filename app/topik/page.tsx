@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 
 type TopikCandidate = {
   judul: string;
-  skor: number;
-  alasanSkor: string;
-  hookFormula: string;
-  retentionAngle: string;
-  targetDurasi: string;
-  kategori: string;
+  skor: number | { total: number };
+  alasanSkor?: string;
+  penjelasan?: string;
+  alasanKelulusan?: string;
+  hookFormula?: string;
+  retentionAngle?: string;
+  targetDurasi?: string;
+  kategori?: string;
 };
 
 type TopikItem = {
@@ -32,6 +34,23 @@ function cleanTitle(text: string) {
   cleaned = cleaned.replace(/^(naskah|visual|topik|topic)\s*[-:]\s*/i, "");
   cleaned = cleaned.replace(/^naskah\s*[-:]\s*/i, "");
   return cleaned.trim();
+}
+
+// HELPER AMAN UNTUK MEMBACA SKOR ANGKA (MENCEGAH REACT CRASH OBJECT IN JSX)
+function getScoreNumber(skor: any): number {
+  if (typeof skor === "number") return skor;
+  if (typeof skor === "object" && skor !== null && typeof skor.total === "number") {
+    return skor.total;
+  }
+  return 0;
+}
+
+// HELPER AMAN UNTUK MEMBACA TEKS PENJELASAN ALASAN
+function getExplanationText(cand: any): string {
+  if (cand.alasanSkor) return cand.alasanSkor;
+  if (cand.penjelasan) return cand.penjelasan;
+  if (cand.alasanKelulusan) return cand.alasanKelulusan;
+  return "Topik potensial berdasarkan analisis AI.";
 }
 
 export default function TopicPage() {
@@ -141,7 +160,7 @@ export default function TopicPage() {
       const json = await res.json();
       if (json.error) {
         setGenError(json.error);
-      } else if (json.data && json.data.candidates) {
+      } else if (json.data && json.data.candidates && Array.isArray(json.data.candidates)) {
         setCandidates(json.data.candidates);
       } else if (Array.isArray(json.data)) {
         setCandidates(json.data);
@@ -158,9 +177,12 @@ export default function TopicPage() {
 
   async function handleSaveCandidate(candidate: TopikCandidate) {
     try {
-      const notes = candidate.alasanSkor
-        ? `Skor: ${candidate.skor}/50 | ${candidate.alasanSkor}\nHook: ${candidate.hookFormula}\nAngle: ${candidate.retentionAngle}`
-        : `${(candidate as any).penjelasan || ""}\n\nSkor: ${(candidate as any).skor?.total || candidate.skor}/50`;
+      const numericScore = getScoreNumber(candidate.skor);
+      const explanation = getExplanationText(candidate);
+      
+      let notes = `Skor: ${numericScore}/50 | ${explanation}`;
+      if (candidate.hookFormula) notes += `\nHook: ${candidate.hookFormula}`;
+      if (candidate.retentionAngle) notes += `\nAngle: ${candidate.retentionAngle}`;
 
       const res = await fetch("/api/topik", {
         method: "POST",
@@ -405,35 +427,40 @@ export default function TopicPage() {
             Hasil Rekomendasi Topik ({candidates.length})
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {candidates.map((cand, idx) => (
-              <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                      <span className="badge badge-neutral">Skor: {cand.skor || (cand as any).skor?.total}/50</span>
-                      {cand.targetDurasi && <span className="badge badge-neutral">{cand.targetDurasi}</span>}
-                    </div>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)", lineHeight: 1.35 }}>
-                      {cleanTitle(cand.judul)}
-                    </h3>
-                    <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: "0 0 8px 0" }}>
-                      {cand.alasanSkor || (cand as any).penjelasan}
-                    </p>
-                    {(cand.hookFormula || cand.retentionAngle) && (
-                      <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", gap: 12, flexWrap: "wrap" }}>
-                        {cand.hookFormula && <span>Hook: {cand.hookFormula}</span>}
-                        {cand.retentionAngle && <span>Angle: {cand.retentionAngle}</span>}
+            {candidates.map((cand, idx) => {
+              const numericScore = getScoreNumber(cand.skor);
+              const explanationText = getExplanationText(cand);
+
+              return (
+                <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <span className="badge badge-neutral">Skor: {numericScore}/50</span>
+                        {cand.targetDurasi && <span className="badge badge-neutral">{cand.targetDurasi}</span>}
                       </div>
-                    )}
-                  </div>
-                  <div>
-                    <button onClick={() => handleSaveCandidate(cand)} className="btn btn-secondary btn-sm">
-                      + Simpan ke Daftar Topic
-                    </button>
+                      <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)", lineHeight: 1.35 }}>
+                        {cleanTitle(cand.judul)}
+                      </h3>
+                      <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, margin: "0 0 8px 0" }}>
+                        {explanationText}
+                      </p>
+                      {(cand.hookFormula || cand.retentionAngle) && (
+                        <div style={{ fontSize: 11, color: "var(--text-tertiary)", display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          {cand.hookFormula && <span>Hook: {cand.hookFormula}</span>}
+                          {cand.retentionAngle && <span>Angle: {cand.retentionAngle}</span>}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <button onClick={() => handleSaveCandidate(cand)} className="btn btn-secondary btn-sm">
+                        + Simpan ke Daftar Topic
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
