@@ -105,6 +105,9 @@ function VisualContent() {
   const [genError, setGenError] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // SET NASKAH ID YANG SUDAH MEMILIKI VISUAL STORYBOARD
+  const generatedNaskahIds = new Set(items.map((v) => v.sumber_naskah_id).filter(Boolean));
+
   async function fetchVisual() {
     setLoading(true);
     try {
@@ -329,11 +332,14 @@ function VisualContent() {
             <label className="form-label">Pilih Script Naskah *</label>
             <select value={selectedNaskahId} onChange={(e) => handleSelectNaskah(e.target.value)} className="select-field">
               <option value="">-- Pilih dari Daftar Naskah --</option>
-              {Array.isArray(naskahList) && naskahList.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {cleanTitle(n.judul)}
-                </option>
-              ))}
+              {Array.isArray(naskahList) && naskahList.map((n) => {
+                const isGenerated = generatedNaskahIds.has(n.id);
+                return (
+                  <option key={n.id} value={n.id}>
+                    {isGenerated ? `✓ ${cleanTitle(n.judul)}` : cleanTitle(n.judul)}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
