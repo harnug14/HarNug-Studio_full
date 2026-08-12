@@ -99,14 +99,15 @@ function VisualContent() {
   const [judulNaskah, setJudulNaskah] = useState(queryJudul ? cleanTitle(queryJudul) : "");
   const [isiNaskah, setIsiNaskah] = useState("");
   const [visualStyle, setVisualStyle] = useState("3D Unreal Engine 5");
+  const [ageTier, setAgeTier] = useState<"ADULT" | "MIDDLE_AGED" | "ELDERLY" | "CHILD">("ADULT");
 
   const [generating, setGenerating] = useState(false);
   const [progressMsg, setProgressMsg] = useState("");
   const [genError, setGenError] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // SET NASKAH ID YANG SUDAH MEMILIKI VISUAL STORYBOARD
-  const generatedNaskahIds = new Set(items.map((v) => v.sumber_naskah_id).filter(Boolean));
+  // State untuk Tab Prompt aktif per Shot (key: shotIndex, value: 'full' | 'cleanBg' | 'isolated')
+  const [activeTabMap, setActiveTabMap] = useState<Record<string, 'full' | 'cleanBg' | 'isolated'>>({});
 
   async function fetchVisual() {
     setLoading(true);
@@ -137,27 +138,6 @@ function VisualContent() {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.location.hash && items.length > 0) {
-      const targetId = window.location.hash.replace("#", "");
-      if (targetId) {
-        setTimeout(() => {
-          const el = document.getElementById(targetId);
-          if (el) {
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-            el.style.transition = "border-color 0.5s ease, box-shadow 0.5s ease";
-            el.style.borderColor = "#38bdf8";
-            el.style.boxShadow = "0 0 12px rgba(56, 189, 248, 0.3)";
-            setTimeout(() => {
-              el.style.borderColor = "var(--border-subtle)";
-              el.style.boxShadow = "none";
-            }, 2500);
-          }
-        }, 300);
-      }
-    }
-  }, [items]);
-
-  useEffect(() => {
     if (queryNaskahId && queryJudul) {
       setSelectedNaskahId(queryNaskahId);
       setJudulNaskah(cleanTitle(queryJudul));
@@ -184,101 +164,49 @@ function VisualContent() {
 
     setGenerating(true);
     setGenError("");
-    setProgressMsg("Directing Storyboard & Beats...");
+    setProgressMsg("Menjalankan 8-Layer Visual Director Engine...");
 
     try {
-      const planRes = await fetch("/api/visual/generate", {
+      // 1. Eksekusi Engine Pipeline Multi-Shot (Step 15 Orchestrator)
+      const pipelineRes = await fetch("/api/visual/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "plan",
-          naskahId: selectedNaskahId || null,
-          judulNaskah: cleanTitle(judulNaskah),
-          isiNaskah: textToUse,
-          visualStyle,
+          scriptText: textToUse,
+          ageTier,
+          roleType: "GENERIC_EVERYMAN",
+          confidenceScore: 0.95
         }),
       });
 
-      const planJson = await planRes.json();
-      if (planJson.error) throw new Error(planJson.error);
+      const pipelineJson = await pipelineRes.json();
 
-      const { storyUnderstanding, scenes: plannedScenes } = planJson.data || {};
-      if (!Array.isArray(plannedScenes) || plannedScenes.length === 0) {
+      if (!pipelineRes.ok || pipelineJson.error) {
+        throw new Error(
+          pipelineJson.message || pipelineJson.error || "Gagal memproses visual director engine."
+        );
+      }
+
+      const generatedScenes = pipelineJson.scenes || [];
+      if (!Array.isArray(generatedScenes) || generatedScenes.length === 0) {
         throw new Error("Gagal memecah adegan naskah.");
       }
 
-      const directedScenes: any[] = [];
-      const globalAssetLibrary: any[] = [];
-      const INTER_SCENE_DELAY_MS = 1000;
-      const MAX_SCENE_RETRIES = 2;
-      let lastDirectorialSpec: any = undefined;
-      let lastCharacterState: any = undefined;
+      setProgressMsg("Menyimpan Visual Storyboard...");
 
-      for (let i = 0; i < plannedScenes.length; i++) {
-        const sceneItem = plannedScenes[i];
-
-        if (i > 0) {
-          await new Promise((r) => setTimeout(r, INTER_SCENE_DELAY_MS));
-        }
-
-        setProgressMsg(`Directing Shot #${i + 1} dari ${plannedScenes.length}...`);
-
-        for (let attempt = 0; attempt <= MAX_SCENE_RETRIES; attempt++) {
-          try {
-            const sceneRes = await fetch("/api/visual/generate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "direct-scene",
-                storyUnderstanding,
-                sceneItem,
-                visualStyle,
-                existingAssetLibrary: globalAssetLibrary,
-                previousDirectorialSpec: lastDirectorialSpec,
-                previousCharacterState: lastCharacterState,
-              }),
-            });
-            const sceneJson = await sceneRes.json();
-            if (sceneJson.error) throw new Error(sceneJson.error);
-            if (sceneJson.data) {
-              const sd = sceneJson.data;
-              directedScenes.push(sd);
-              lastDirectorialSpec = sd.sceneSpecification?.camera;
-              if (sd.characterState) lastCharacterState = sd.characterState;
-
-              const ad = sd.assetDecision || {};
-              if (ad.createdAsset && ad.createdAsset.assetId) {
-                if (!globalAssetLibrary.some((a) => a.assetId === ad.createdAsset.assetId)) {
-                  globalAssetLibrary.push({
-                    assetId: ad.createdAsset.assetId,
-                    assetName: ad.createdAsset.assetName,
-                    assetType: ad.createdAsset.assetType,
-                    createdFromScene: sd.scene,
-                  });
-                }
-              }
-              break;
-            }
-          } catch (sceneErr: any) {
-            if (attempt >= MAX_SCENE_RETRIES) {
-              directedScenes.push(sceneItem);
-            }
-          }
-        }
-      }
-
-      setProgressMsg("Menyimpan Storyboard Visual...");
-
-      const saveRes = await fetch("/api/visual/generate", {
+      // 2. Simpan hasil generasi ke database via /api/visual
+      const saveRes = await fetch("/api/visual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "save",
-          naskahId: selectedNaskahId || null,
-          judulNaskah: cleanTitle(judulNaskah),
-          visualStyle,
-          storyUnderstanding,
-          scenes: directedScenes,
+          judul: cleanTitle(judulNaskah || "Visual Director Storyboard"),
+          sumber_naskah_id: selectedNaskahId || null,
+          isi_visual: {
+            summaryText: textToUse,
+            styleTag: visualStyle,
+            ageTier,
+            scenes: generatedScenes
+          }
         }),
       });
 
@@ -305,24 +233,31 @@ function VisualContent() {
     if (!Array.isArray(scenes)) return;
     const prompts = scenes
       .map((s, idx) => {
-        const ad = s.assetDecision || {};
-        const p = s.promptCompiler?.compiledPrompt || s.prompt || s.deskripsiVisual;
-        if (ad.assetStatus === "REUSED") {
-          return `--- Shot #${s.scene || idx + 1} (REUSED: ${ad.targetAssetId || "Aset"}) ---\nInstruksi Kamera: ${ad.productionInstruction || "Gunakan pergerakan kamera CapCut"}`;
-        }
-        return `--- Shot #${s.scene || idx + 1} (${ad.assetStatus || "NEW"}) ---\n${p}`;
+        const fullP = s.prompts?.fullScenePrompt || s.prompt || s.deskripsiVisual;
+        const cleanBgP = s.prompts?.cleanBackgroundPrompt;
+        const isolatedP = s.prompts?.isolatedCharacterPrompt;
+
+        let block = `--- Shot #${s.scene || idx + 1} (${s.routingDecision || 'GENERATE'}) ---\n`;
+        block += `[FULL SCENE]\n${fullP}\n`;
+        if (cleanBgP) block += `\n[CLEAN BG EDIT]\n${cleanBgP}\n`;
+        if (isolatedP) block += `\n[GREEN SCREEN EDIT]\n${isolatedP}\n`;
+
+        return block;
       })
-      .join("\n\n=========================================\n\n");
+      .join("\n=========================================\n\n");
     navigator.clipboard.writeText(prompts);
-    alert("Semua Prompt disalin!");
+    alert("Semua Triad Prompt disalin!");
+  }
+
+  function setShotTab(key: string, tab: 'full' | 'cleanBg' | 'isolated') {
+    setActiveTabMap((prev) => ({ ...prev, [key]: tab }));
   }
 
   return (
     <div className="animate-fade-in">
-      {/* Subtitle Halaman */}
       <div style={{ marginBottom: 16 }}>
         <p className="page-subtitle">
-          Penyusunan Storyboard & Prompt Visual untuk produksi video.
+          Penyusunan Storyboard & Prompt Visual untuk produksi video (Unreal Engine 5 & Triad Google Flow Prompts).
         </p>
       </div>
 
@@ -332,14 +267,11 @@ function VisualContent() {
             <label className="form-label">Pilih Script Naskah *</label>
             <select value={selectedNaskahId} onChange={(e) => handleSelectNaskah(e.target.value)} className="select-field">
               <option value="">-- Pilih dari Daftar Naskah --</option>
-              {Array.isArray(naskahList) && naskahList.map((n) => {
-                const isGenerated = generatedNaskahIds.has(n.id);
-                return (
-                  <option key={n.id} value={n.id}>
-                    {isGenerated ? `✓ ${cleanTitle(n.judul)}` : cleanTitle(n.judul)}
-                  </option>
-                );
-              })}
+              {Array.isArray(naskahList) && naskahList.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {cleanTitle(n.judul)}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -354,12 +286,23 @@ function VisualContent() {
             />
           </div>
 
-          <div style={{ marginBottom: 18 }}>
-            <label className="form-label">Gaya Visual</label>
-            <select value={visualStyle} onChange={(e) => setVisualStyle(e.target.value)} className="select-field">
-              <option value="3D Unreal Engine 5">3D Unreal Engine 5</option>
-              <option value="3D Realistic Human">3D Realistic Human</option>
-            </select>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+            <div>
+              <label className="form-label">Usia Karakter (Age Tier)</label>
+              <select value={ageTier} onChange={(e) => setAgeTier(e.target.value as any)} className="select-field">
+                <option value="ADULT">Adult / Dewasa Utama</option>
+                <option value="MIDDLE_AGED">Middle-Aged / Bapak-bapak (45-55 th)</option>
+                <option value="ELDERLY">Elderly / Kakek (Lansia)</option>
+                <option value="CHILD">Child / Anak-anak (8-10 th)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="form-label">Gaya Visual</label>
+              <select value={visualStyle} onChange={(e) => setVisualStyle(e.target.value)} className="select-field">
+                <option value="3D Unreal Engine 5">3D Unreal Engine 5 (9:16 Vertical)</option>
+              </select>
+            </div>
           </div>
 
           <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
@@ -406,8 +349,9 @@ function VisualContent() {
                     <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 4px 0", color: "var(--text-primary)" }}>
                       {cleanTitle(item.judul)}
                     </h3>
-                    <div style={{ marginTop: 4, display: "flex", gap: 6 }}>
+                    <div style={{ marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <span className="badge badge-neutral">{content.styleTag || "3D Unreal Engine 5"}</span>
+                      <span className="badge badge-neutral">{content.ageTier || "ADULT"}</span>
                       <span className="badge badge-neutral">{scenes.length} Shot Beats</span>
                     </div>
                   </div>
@@ -429,11 +373,23 @@ function VisualContent() {
                 {isExpanded && (
                   <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border-subtle)" }}>
                     {scenes.length > 0 ? (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
                         {scenes.map((s: any, sIdx: number) => {
                           const num = s.scene || sIdx + 1;
-                          const pc = s.promptCompiler || {};
-                          const prompt = pc.compiledPrompt || s.prompt;
+                          const shotKey = `${item.id}-${sIdx}`;
+                          const activeTab = activeTabMap[shotKey] || 'full';
+
+                          const prompts = s.prompts || {};
+                          const fullP = prompts.fullScenePrompt || s.prompt || s.deskripsiVisual;
+                          const cleanBgP = prompts.cleanBackgroundPrompt || "Instruksi background plate tidak tersedia.";
+                          const isolatedP = prompts.isolatedCharacterPrompt || "Instruksi isolated green screen tidak tersedia.";
+
+                          const activePromptText =
+                            activeTab === 'full'
+                              ? fullP
+                              : activeTab === 'cleanBg'
+                              ? cleanBgP
+                              : isolatedP;
 
                           return (
                             <div
@@ -448,31 +404,105 @@ function VisualContent() {
                                 gap: 10,
                               }}
                             >
-                              <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
-                                Shot #{String(num).padStart(2, "0")}
+                              {/* Header Shot & Routing Badge */}
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>
+                                  Shot #{String(num).padStart(2, "0")}
+                                </div>
+                                {s.routingDecision && (
+                                  <span className="badge badge-neutral" style={{ fontSize: 10 }}>
+                                    {s.routingDecision}
+                                  </span>
+                                )}
                               </div>
 
+                              {/* Kutipan Naskah (Naskah Chunk) */}
                               {s.naskahChunk && (
-                                <div style={{ fontSize: 12, color: "var(--text-secondary)", fontStyle: "italic", borderLeft: "2px solid var(--border-medium)", paddingLeft: 8 }}>
+                                <div style={{ fontSize: 12, color: "var(--text-secondary)", fontStyle: "italic", borderLeft: "2px solid #38bdf8", paddingLeft: 8 }}>
                                   &ldquo;{s.naskahChunk}&rdquo;
                                 </div>
                               )}
 
+                              {/* Penjelasan Visual Direksi */}
+                              {s.directorNote && (
+                                <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                                  <strong style={{ color: "var(--text-secondary)" }}>Catatan Direksi:</strong> {s.directorNote}
+                                </div>
+                              )}
+
+                              {/* Tab Selector 3 Varian Prompt */}
+                              <div style={{ display: "flex", gap: 4, marginTop: 4, background: "var(--bg-secondary)", padding: 3, borderRadius: "var(--radius-sm)" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setShotTab(shotKey, 'full')}
+                                  style={{
+                                    flex: 1,
+                                    padding: "4px 6px",
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    borderRadius: "var(--radius-xs)",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    background: activeTab === 'full' ? "#38bdf8" : "transparent",
+                                    color: activeTab === 'full' ? "#000" : "var(--text-secondary)"
+                                  }}
+                                >
+                                  Full Scene
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShotTab(shotKey, 'cleanBg')}
+                                  style={{
+                                    flex: 1,
+                                    padding: "4px 6px",
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    borderRadius: "var(--radius-xs)",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    background: activeTab === 'cleanBg' ? "#38bdf8" : "transparent",
+                                    color: activeTab === 'cleanBg' ? "#000" : "var(--text-secondary)"
+                                  }}
+                                >
+                                  Clean BG (Edit)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShotTab(shotKey, 'isolated')}
+                                  style={{
+                                    flex: 1,
+                                    padding: "4px 6px",
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    borderRadius: "var(--radius-xs)",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    background: activeTab === 'isolated' ? "#38bdf8" : "transparent",
+                                    color: activeTab === 'isolated' ? "#000" : "var(--text-secondary)"
+                                  }}
+                                >
+                                  Green Screen (Edit)
+                                </button>
+                              </div>
+
+                              {/* Prompt Display Box */}
                               <div style={{ background: "var(--bg-secondary)", padding: 10, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                                  <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)" }}>PROMPT</span>
+                                  <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-tertiary)" }}>
+                                    {activeTab === 'full' ? 'MASTER PROMPT' : activeTab === 'cleanBg' ? 'INPAINT CLEAN BG PROMPT' : 'INPAINT GREEN SCREEN PROMPT'}
+                                  </span>
                                   <button
                                     onClick={() => {
-                                      navigator.clipboard.writeText(prompt || "");
-                                      alert(`Prompt Shot #${num} disalin!`);
+                                      navigator.clipboard.writeText(activePromptText || "");
+                                      alert(`Prompt Shot #${num} (${activeTab}) disalin!`);
                                     }}
-                                    style={{ background: "none", border: "none", color: "var(--text-primary)", cursor: "pointer", fontSize: 11, fontWeight: 500 }}
+                                    style={{ background: "none", border: "none", color: "#38bdf8", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
                                   >
                                     Salin
                                   </button>
                                 </div>
                                 <div style={{ fontSize: 11, color: "var(--text-primary)", fontFamily: "monospace", whiteSpace: "pre-wrap" }}>
-                                  {prompt}
+                                  {activePromptText}
                                 </div>
                               </div>
                             </div>
