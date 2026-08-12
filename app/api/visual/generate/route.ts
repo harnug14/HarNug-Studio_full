@@ -9,6 +9,10 @@ import { executeGoogleFlow } from "@/lib/visual/execution/google-flow-adapter";
 import { DirectorialSpec, CharacterState } from "@/lib/visual/types";
 import { transitionCharacterState } from "@/lib/visual/character-fsm/fsm-engine";
 
+// VERCEL TIMEOUT PROTECTOR (60 DETIK)
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
 function getSafeString(val: unknown, fallback: string = ""): string {
   if (typeof val === "string") return val.trim();
   return fallback;
