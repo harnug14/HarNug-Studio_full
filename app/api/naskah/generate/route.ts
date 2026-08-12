@@ -3,95 +3,44 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 
-// Hirarki Model Gemini (Engine Utama: gemini-3.6-flash | Batas Minimum: gemini-2.5-flash)
-const GEMINI_FALLBACK_MODELS = [
-  "gemini-3.6-flash",
-  "gemini-3.5-flash",
-  "gemini-3-flash-preview",
-  "gemini-3.1-pro",
-  "gemini-2.5-pro",
-  "gemini-2.5-flash",
-];
+// VERCEL TIMEOUT PROTECTOR (60 DETIK)
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// OTAK UTAMA TUNGGAL (TIDAK BOLEH DIGANTI/DITURUNKAN)
+const MAIN_MODEL = "gemini-3.6-flash";
 
-async function callGeminiApiWithFallback(
+async function callGeminiApi(
   supabase: any,
   userPrompt: string,
   systemPrompt: string
 ): Promise<string> {
-  let lastError: any = null;
-
-  for (const currentModel of GEMINI_FALLBACK_MODELS) {
-    try {
-      const rawResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              generationConfig: {
-                responseMimeType: "application/json",
-              },
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          if (response.status === 429) throw new GeminiQuotaError(`Gemini rate-limited (429)`);
-          throw new Error(`Gemini Error: ${response.status}`);
-        }
-
-        const json = await response.json();
-        return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-      });
-
-      if (rawResponse) return rawResponse;
-    } catch (err: any) {
-      lastError = err;
-      const status = err?.status || err?.response?.status;
-      const isRetryable = status === 503 || status === 429 || err?.message?.includes("503") || err?.message?.includes("429");
-
-      if (isRetryable) {
-        await delay(1500);
-        try {
-          const rawRetryResponse = await callGeminiWithRotation(supabase, async (apiKey) => {
-            const response = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-                  systemInstruction: { parts: [{ text: systemPrompt }] },
-                  generationConfig: {
-                    responseMimeType: "application/json",
-                  },
-                }),
-              }
-            );
-
-            if (!response.ok) {
-              if (response.status === 429) throw new GeminiQuotaError(`Gemini rate-limited (429)`);
-              throw new Error(`Gemini Error: ${response.status}`);
-            }
-
-            const json = await response.json();
-            return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-          });
-
-          if (rawRetryResponse) return rawRetryResponse;
-        } catch (retryErr: any) {
-          lastError = retryErr;
-        }
+  return await callGeminiWithRotation(supabase, async (apiKey) => {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: {
+            responseMimeType: "application/json",
+          },
+        }),
       }
-    }
-  }
+    );
 
-  throw new Error(`Gagal membuat naskah: ${lastError?.message || "Internal Server Error"}`);
+    if (!response.ok) {
+      if (response.status === 429) {
+        throw new GeminiQuotaError(`Gemini Rate Limit Exceeded (429)`);
+      }
+      throw new Error(`Gemini API Error: Status ${response.status}`);
+    }
+
+    const json = await response.json();
+    return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -130,6 +79,7 @@ export async function POST(req: NextRequest) {
 
       if (channelProfile && channelProfile.channel_analysis_entries?.length) {
         isProfileMode = true;
+        // BACA NASKAH UTUH TANPA DIPANGKAS SAMA SEKALI
         const samples = channelProfile.channel_analysis_entries
           .map((e: any, idx: number) => `Contoh Naskah ${idx + 1} (${e.title}):\n"${e.full_script}"`)
           .join("\n\n---\n\n");
@@ -199,7 +149,7 @@ Gunakan contoh-contoh naskah kalibrasi channel di atas untuk mengadopsi tone sua
 
 Buatkan Script Draft terbaik mengikuti aturan kualitas penulisan tinggi di atas sekarang dalam format JSON murni.`;
 
-    const rawResponse = await callGeminiApiWithFallback(
+    const rawResponse = await callGeminiApi(
       supabase,
       userPrompt,
       systemPrompt
