@@ -73,6 +73,9 @@ function NaskahContent() {
   const [translateLoading, setTranslateLoading] = useState<string | null>(null);
   const [activeModalItem, setActiveModalItem] = useState<{ naskah: Naskah; type: "fact-check" | "translation" } | null>(null);
 
+  // SET TOPIK ID YANG SUDAH MEMILIKI NASKAH
+  const generatedTopikIds = new Set(items.map((n) => n.sumber_topik_id).filter(Boolean));
+
   async function fetchNaskah() {
     setLoading(true);
     try {
@@ -305,11 +308,14 @@ function NaskahContent() {
                   className="select-field"
                 >
                   <option value="">-- Naskah Baru / Manual --</option>
-                  {topikList.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {cleanTitle(t.judul)}
-                    </option>
-                  ))}
+                  {topikList.map((t) => {
+                    const isGenerated = generatedTopikIds.has(t.id);
+                    return (
+                      <option key={t.id} value={t.id}>
+                        {isGenerated ? `✓ ${cleanTitle(t.judul)}` : cleanTitle(t.judul)}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
