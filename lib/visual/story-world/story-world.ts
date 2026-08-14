@@ -1,114 +1,191 @@
-import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
-import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
-import { StoryWorldContext, StoryWorldInput } from "../types";
+/**
+ * ========================================================================================
+ * HARNUG STUDIO — VISUAL DIRECTOR ENGINE
+ * File: lib/visual/story-world/story-world.ts
+ * Step: 7 of 15 (Story World Extractor — Contextual Role & Age Hydration)
+ * Status: PRODUCTION-READY (LOCKED)
+ * ========================================================================================
+ * Memproses teks naskah menjadi fakta terstruktur (ExtractedFactPayload) dan
+ * meng-inferensi Usia Karakter (Age Tier) & Peran secara otomatis berbasis konteks naskah.
+ * ========================================================================================
+ */
 
-const GEMINI_FALLBACK_MODELS = [
-  "gemini-3.6-flash",
-  "gemini-3.5-flash",
-  "gemini-3-flash-preview",
-  "gemini-2.5-flash",
-];
+import {
+  ShotId,
+  CharacterId,
+  ObjectId,
+  EnvId,
+  ExtractedFactPayload,
+  ExtractionConfidence,
+  CharacterRoleType,
+  CharacterAgeTier,
+  createCharacterId,
+  createObjectId,
+  createEnvId
+} from '../domain-model';
+import { EXTRACTION_CONFIDENCE_THRESHOLD } from '../config/system-invariants';
+import { FactHydrationOutputDTO } from '../contracts/dto.contract';
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function getSafeString(val: unknown, fallback: string = ""): string {
-  if (typeof val === "string") return val.trim();
-  return fallback;
+export interface UnparsedFactInput {
+  readonly shotId: ShotId;
+  readonly scriptText: string;
+  readonly rawCharacterNames?: ReadonlyArray<string>;
+  readonly rawObjectNames?: ReadonlyArray<string>;
+  readonly rawEnvironmentText?: string;
+  readonly rawConfidenceScore?: number;
 }
 
 /**
- * STEP 1: STORY WORLD MODULE
- * ADR RULE: "Story World decides what exists."
- * Tanggung Jawab: Murni mengekstrak fakta cerita, era sejarah, dan kebenaran naratif (Canon).
- * DILARANG MEMBAHAS: Kamera, Pose, Aset, Prompt, atau Vendor AI.
+ * Story World Fact Extractor & Contextual Hydrator Engine
  */
-export async function extractStoryWorld(
-  supabase: unknown,
-  input: StoryWorldInput
-): Promise<StoryWorldContext> {
-  const safeNaskah = getSafeString(input?.isiNaskah, "");
-  const safeJudul = getSafeString(input?.judulNaskah, "Tanpa Judul");
-  const wordCount = safeNaskah ? safeNaskah.split(/\s+/).filter(Boolean).length : 0;
+export class StoryWorldExtractor {
+  /**
+   * Ekstraksi teks naskah menjadi ExtractedFactPayload dengan otomatisasi Age Tier & Role.
+   */
+  public extractAndHydrateFacts(input: UnparsedFactInput): ExtractedFactPayload {
+    const rawScore = input.rawConfidenceScore ?? 0.85;
+    const confidence: ExtractionConfidence = Math.min(Math.max(rawScore, 0.0), 1.0);
 
-  if (!safeNaskah) {
-    throw new Error("[StoryWorld] Isi naskah tidak boleh kosong");
-  }
+    const textLower = input.scriptText.toLowerCase();
 
-  const systemPrompt = `Kamu adalah HARNUG STUDIO V4 — STORY WORLD MODULE (PURE NARRATIVE TRUTH).
+    // 1. Character Fact Extraction & Automatic Contextual Hydration
+    const characters = (input.rawCharacterNames ?? []).map((name, index) => {
+      const isExplicit = textLower.includes(name.toLowerCase());
+      const roleType = this.inferRoleTypeFromContext(name, textLower);
+      const ageTier = this.inferAgeTierFromContext(name, textLower);
 
-ADR RULE: Story World decides what exists.
-Tugasmu MURNI mengekstrak fakta dunia cerita dari naskah.
-
-DILARANG SAMA SEKALI MEMBAHAS:
-- Kamera (Wide, Close-Up, Zoom, Angle)
-- Pose / Motion / Gerakan
-- Aset / Prompt / Vendor AI
-- Directorial / Sinematografi
-
-FORMAT JSON OUTPUT (MURNI BAHASA INDONESIA):
-{
-  "storySummary": "Ringkasan fakta cerita utama",
-  "primaryEra": "Era sejarah atau setting dunia utama",
-  "coreIdea": "Gagasan inti dunia cerita",
-  "storyGoal": "Tujuan atau konflik utama cerita",
-  "narrativeCanonFacts": [
-    "Fakta 1: Latar era sejarah...",
-    "Fakta 2: Karakter utama..."
-  ]
-}`;
-
-  const userPrompt = `Judul: "${safeJudul}"\nNaskah (${wordCount} kata):\n"${safeNaskah}"\n\nEkstrak fakta Story World murni (format JSON murni).`;
-
-  let lastError: unknown = null;
-
-  for (const currentModel of GEMINI_FALLBACK_MODELS) {
-    try {
-      const rawResponse = await callGeminiWithRotation(supabase, async (apiKey: string) => {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-              systemInstruction: { parts: [{ text: systemPrompt }] },
-              generationConfig: { responseMimeType: "application/json" },
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          if (response.status === 429) throw new GeminiQuotaError("Gemini rate-limited (429)");
-          throw new Error(`Gemini Error: ${response.status}`);
-        }
-
-        const json = await response.json();
-        return json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      return Object.freeze({
+        id: createCharacterId(`char-${index + 1}`),
+        name,
+        roleType,
+        ageTier,
+        action: isExplicit ? 'Present in scene' : 'UNKNOWN'
       });
+    });
 
-      if (rawResponse) {
-        try {
-          const parsed = parseJsonResponse(rawResponse, {});
-          return {
-            storySummary: getSafeString(parsed?.storySummary, "Ringkasan cerita"),
-            primaryEra: getSafeString(parsed?.primaryEra, "Era Sejarah"),
-            wordCount,
-            coreIdea: getSafeString(parsed?.coreIdea, "Gagasan utama"),
-            storyGoal: getSafeString(parsed?.storyGoal, "Tujuan cerita"),
-            narrativeCanonFacts: Array.isArray(parsed?.narrativeCanonFacts)
-              ? parsed.narrativeCanonFacts.map((f: unknown) => getSafeString(f)).filter(Boolean)
-              : ["Fakta cerita awal"],
-          };
-        } catch (parseErr) {
-          console.error("[StoryWorld] JSON Parse Error:", parseErr);
-        }
-      }
-    } catch (err: unknown) {
-      lastError = err;
-      await delay(1000);
+    // Jika tidak ada karakter yang terdeteksi, buat default Everyman Subject dengan Contextual Age
+    if (characters.length === 0) {
+      const fallbackAgeTier = this.inferAgeTierFromContext('subject', textLower);
+      characters.push(
+        Object.freeze({
+          id: createCharacterId('char-main'),
+          name: 'Everyman Subject',
+          roleType: 'GENERIC_EVERYMAN' as const,
+          ageTier: fallbackAgeTier,
+          action: 'Primary subject in documentary scene'
+        })
+      );
     }
+
+    // 2. Object Fact Extraction
+    const objects = (input.rawObjectNames ?? []).map((name, index) => {
+      const isExplicit = textLower.includes(name.toLowerCase());
+      return Object.freeze({
+        id: createObjectId(`obj-${index + 1}`),
+        name,
+        action: isExplicit ? 'Interacted in scene' : 'UNKNOWN'
+      });
+    });
+
+    // 3. Environment Fact Extraction
+    const envDesc = input.rawEnvironmentText && input.rawEnvironmentText.trim().length > 0
+      ? input.rawEnvironmentText
+      : 'UNKNOWN';
+
+    const environment = Object.freeze({
+      id: createEnvId('env-main'),
+      description: envDesc
+    });
+
+    return Object.freeze({
+      characters: Object.freeze(characters),
+      objects: Object.freeze(objects),
+      environment,
+      confidence
+    });
   }
 
-  const errMsg = lastError instanceof Error ? lastError.message : "Internal Error";
-  throw new Error(`[StoryWorld] Gagal mengekstrak Story World: ${errMsg}`);
+  /**
+   * Logika Otomatis Inferensi Age Tier Berdasarkan Peran & Konteks Naskah
+   */
+  public inferAgeTierFromContext(characterName: string, scriptTextLower: string): CharacterAgeTier {
+    // A. Aturan Kakek / Lansia (ELDERLY)
+    const elderlyKeywords = ['kakek', 'lansia', 'tua', 'veteran', 'monarki tua', 'old man', 'elderly'];
+    if (elderlyKeywords.some((kw) => scriptTextLower.includes(kw) || characterName.toLowerCase().includes(kw))) {
+      return 'ELDERLY';
+    }
+
+    // B. Aturan Anak-Anak (CHILD)
+    const childKeywords = ['anak', 'bocah', 'kecil', 'pelajar', 'murid', 'child', 'kid'];
+    if (childKeywords.some((kw) => scriptTextLower.includes(kw) || characterName.toLowerCase().includes(kw))) {
+      return 'CHILD';
+    }
+
+    // C. Aturan Jabatan / Pemimpin / Tokoh Utama (MIDDLE_AGED - Bapak-bapak Paruh Baya)
+    const middleAgedKeywords = [
+      'raja', 'king', 'presiden', 'bapak', 'pejabat', 'menteri', 'komandan',
+      'pemimpin', 'direktur', 'pemilik', 'owner', 'ilmuwan senior', 'profesor', 'knocker-up'
+    ];
+    if (middleAgedKeywords.some((kw) => scriptTextLower.includes(kw) || characterName.toLowerCase().includes(kw))) {
+      return 'MIDDLE_AGED';
+    }
+
+    // D. Default Peran Umum / Pekerja / Masyarakat (ADULT)
+    return 'ADULT';
+  }
+
+  /**
+   * Inferensi Peran Karakter (Everyman vs Historical Figure)
+   */
+  public inferRoleTypeFromContext(characterName: string, scriptTextLower: string): CharacterRoleType {
+    const historicalKeywords = ['edison', 'einstein', 'napoleon', 'soekarno', 'lincoln', 'tesla', 'newton'];
+    const nameLower = characterName.toLowerCase();
+
+    if (historicalKeywords.some((kw) => nameLower.includes(kw) || scriptTextLower.includes(kw))) {
+      return 'HISTORICAL_FIGURE';
+    }
+
+    return 'GENERIC_EVERYMAN';
+  }
+
+  /**
+   * Mengkonversi nilai variabel individual ke dalam FactValue dengan provenance tier.
+   */
+  public hydrateSingleFact<T>(
+    key: string,
+    rawTextValue: string | undefined | null,
+    systemDefaultFallback: T
+  ): FactHydrationOutputDTO<T> {
+    if (rawTextValue && rawTextValue.trim().length > 0) {
+      return Object.freeze({
+        factKey: key,
+        hydratedValue: rawTextValue as unknown as T,
+        tier: 'EXPLICIT_TEXT',
+        confidence: 1.0
+      });
+    }
+
+    if (systemDefaultFallback !== undefined && systemDefaultFallback !== null) {
+      return Object.freeze({
+        factKey: key,
+        hydratedValue: systemDefaultFallback,
+        tier: 'SYSTEM_HYDRATED',
+        confidence: 0.85
+      });
+    }
+
+    return Object.freeze({
+      factKey: key,
+      hydratedValue: 'UNKNOWN' as unknown as T,
+      tier: 'UNKNOWN',
+      confidence: 0.0
+    });
+  }
+
+  /**
+   * Memeriksa apakah skor confidence memenuhi ambang batas Gate 1 (>= 0.80)
+   */
+  public meetsGate1ConfidenceThreshold(confidence: ExtractionConfidence): boolean {
+    return confidence >= EXTRACTION_CONFIDENCE_THRESHOLD;
+  }
 }
