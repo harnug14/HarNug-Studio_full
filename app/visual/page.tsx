@@ -99,7 +99,6 @@ function VisualContent() {
   const [judulNaskah, setJudulNaskah] = useState(queryJudul ? cleanTitle(queryJudul) : "");
   const [isiNaskah, setIsiNaskah] = useState("");
   const [visualStyle, setVisualStyle] = useState("3D Unreal Engine 5");
-  const [ageTier, setAgeTier] = useState<"ADULT" | "MIDDLE_AGED" | "ELDERLY" | "CHILD">("ADULT");
 
   const [generating, setGenerating] = useState(false);
   const [progressMsg, setProgressMsg] = useState("");
@@ -173,8 +172,6 @@ function VisualContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scriptText: textToUse,
-          ageTier,
-          roleType: "GENERIC_EVERYMAN",
           confidenceScore: 0.95
         }),
       });
@@ -204,7 +201,6 @@ function VisualContent() {
           isi_visual: {
             summaryText: textToUse,
             styleTag: visualStyle,
-            ageTier,
             scenes: generatedScenes
           }
         }),
@@ -286,23 +282,11 @@ function VisualContent() {
             />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
-            <div>
-              <label className="form-label">Usia Karakter (Age Tier)</label>
-              <select value={ageTier} onChange={(e) => setAgeTier(e.target.value as any)} className="select-field">
-                <option value="ADULT">Adult / Dewasa Utama</option>
-                <option value="MIDDLE_AGED">Middle-Aged / Bapak-bapak (45-55 th)</option>
-                <option value="ELDERLY">Elderly / Kakek (Lansia)</option>
-                <option value="CHILD">Child / Anak-anak (8-10 th)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="form-label">Gaya Visual</label>
-              <select value={visualStyle} onChange={(e) => setVisualStyle(e.target.value)} className="select-field">
-                <option value="3D Unreal Engine 5">3D Unreal Engine 5 (9:16 Vertical)</option>
-              </select>
-            </div>
+          <div style={{ marginBottom: 18 }}>
+            <label className="form-label">Gaya Visual</label>
+            <select value={visualStyle} onChange={(e) => setVisualStyle(e.target.value)} className="select-field">
+              <option value="3D Unreal Engine 5">3D Unreal Engine 5 (9:16 Vertical)</option>
+            </select>
           </div>
 
           <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
@@ -351,7 +335,6 @@ function VisualContent() {
                     </h3>
                     <div style={{ marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <span className="badge badge-neutral">{content.styleTag || "3D Unreal Engine 5"}</span>
-                      <span className="badge badge-neutral">{content.ageTier || "ADULT"}</span>
                       <span className="badge badge-neutral">{scenes.length} Shot Beats</span>
                     </div>
                   </div>
