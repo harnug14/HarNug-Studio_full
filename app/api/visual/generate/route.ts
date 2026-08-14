@@ -2,13 +2,13 @@
  * ========================================================================================
  * HARNUG STUDIO — VISUAL DIRECTOR ENGINE
  * File: app/api/visual/generate/route.ts
- * Step: 15 of 15 (Main Pipeline API Orchestrator — Triad Multi-Shot Sequence Engine)
+ * Step: 15 of 15 (Main Pipeline API Orchestrator — Contextual Triad Multi-Shot Engine)
  * Status: PRODUCTION-READY (LOCKED)
  * ========================================================================================
  * Orchestrator API Route Next.js App Router (POST).
  * Memecah naskah narasi menjadi urutan CanonicalShot berantai (Shot #01, #02, dst.),
- * membangun DAG Dependency Graph, dan menghasilkan 3 varian prompt Google Flow per shot
- * (Full Scene, Clean Background, Isolated Green Screen).
+ * menggunakan Contextual Role & Age Hydration otomatis tanpa input manual,
+ * dan menghasilkan 3 varian prompt Google Flow per shot (Full Scene, Clean BG, Green Screen).
  * ========================================================================================
  */
 
@@ -16,8 +16,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   ShotId,
   CanonicalShot,
-  CharacterRoleType,
-  CharacterAgeTier,
   createShotId,
   createCharacterId,
   createEnvId,
@@ -65,15 +63,12 @@ export async function POST(req: NextRequest) {
     const generatedShots: any[] = [];
     let previousShotId: ShotId | null = null;
 
-    const defaultRoleType: CharacterRoleType = body.roleType ?? 'GENERIC_EVERYMAN';
-    const defaultAgeTier: CharacterAgeTier = body.ageTier ?? 'ADULT';
-
     // 3. Iterasi Pemrosesan Berantai untuk Setiap Shot (Canonical Timeline)
     for (let i = 0; i < scriptChunks.length; i++) {
       const chunkText = scriptChunks[i];
       const shotId = createShotId(`shot-${Date.now()}-${i + 1}`);
 
-      // Layer 1 & 3: Fact Extraction
+      // Layer 1 & 3: Fact Extraction & Contextual Age/Role Hydration Otomatis
       const extractedFacts = extractor.extractAndHydrateFacts({
         shotId,
         scriptText: chunkText,
@@ -129,13 +124,18 @@ export async function POST(req: NextRequest) {
       });
       resourcesEngine.registerEnvironmentSpec(environmentSpec);
 
-      const characterId = createCharacterId(`char-${i + 1}`);
+      // Karakter Utama dengan Contextual Age & Role yang telah di-hydrate otomatis oleh Extractor
+      const primaryChar = extractedFacts.characters[0];
+      const characterId = primaryChar ? primaryChar.id : createCharacterId(`char-${i + 1}`);
+      const roleType = primaryChar ? primaryChar.roleType : 'GENERIC_EVERYMAN';
+      const ageTier = primaryChar ? primaryChar.ageTier : 'ADULT';
+
       const masterAsset = Object.freeze({
         assetId: createAssetId(`asset-${characterId}`),
         characterId,
-        name: extractedFacts.characters[0]?.name ?? 'Master Subject',
-        roleType: defaultRoleType,
-        ageTier: defaultAgeTier,
+        name: primaryChar ? primaryChar.name : 'Everyman Subject',
+        roleType,
+        ageTier,
         fullBodyAssetUrl: body.masterAssetUrl ?? 'https://storage.harnugstudio.com/assets/master-head-to-toe.png',
         headToToeVerified: true as const,
         backgroundIsolated: true as const,
