@@ -249,6 +249,17 @@ function VisualContent() {
     setActiveTabMap((prev) => ({ ...prev, [key]: tab }));
   }
 
+  // Helper untuk mengecek apakah naskah tertentu sudah dibuatkan visual
+  function checkNaskahHasVisual(naskahId: string, naskahJudul: string): boolean {
+    if (!Array.isArray(items) || items.length === 0) return false;
+    return items.some((v) => {
+      if (v.sumber_naskah_id && v.sumber_naskah_id === naskahId) return true;
+      const cleanN = cleanTitle(naskahJudul).toLowerCase();
+      const cleanV = cleanTitle(v.judul || "").toLowerCase();
+      return cleanN.length > 3 && cleanV.includes(cleanN);
+    });
+  }
+
   return (
     <div className="animate-fade-in">
       <div style={{ marginBottom: 16 }}>
@@ -263,11 +274,14 @@ function VisualContent() {
             <label className="form-label">Pilih Script Naskah *</label>
             <select value={selectedNaskahId} onChange={(e) => handleSelectNaskah(e.target.value)} className="select-field">
               <option value="">-- Pilih dari Daftar Naskah --</option>
-              {Array.isArray(naskahList) && naskahList.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {cleanTitle(n.judul)}
-                </option>
-              ))}
+              {Array.isArray(naskahList) && naskahList.map((n) => {
+                const hasVisual = checkNaskahHasVisual(n.id, n.judul);
+                return (
+                  <option key={n.id} value={n.id}>
+                    {hasVisual ? `🟢 ${cleanTitle(n.judul)} (Sudah ada Visual)` : `⚪ ${cleanTitle(n.judul)} (Belum ada Visual)`}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
