@@ -19,12 +19,20 @@ import {
   ExtractionConfidence,
   CharacterRoleType,
   CharacterAgeTier,
+  FactHydrationTier,
   createCharacterId,
   createObjectId,
   createEnvId
 } from '../domain-model';
-import { EXTRACTION_CONFIDENCE_THRESHOLD } from '../config/system-invariants';
-import { FactHydrationOutputDTO } from '../contracts/dto.contract';
+
+export const EXTRACTION_CONFIDENCE_THRESHOLD = 0.80;
+
+export interface FactHydrationOutputDTO<T> {
+  readonly factKey: string;
+  readonly hydratedValue: T;
+  readonly tier: FactHydrationTier;
+  readonly confidence: ExtractionConfidence;
+}
 
 export interface UnparsedFactInput {
   readonly shotId: ShotId;
@@ -109,19 +117,16 @@ export class StoryWorldExtractor {
    * Logika Otomatis Inferensi Age Tier Berdasarkan Peran & Konteks Naskah
    */
   public inferAgeTierFromContext(characterName: string, scriptTextLower: string): CharacterAgeTier {
-    // A. Aturan Kakek / Lansia (ELDERLY)
     const elderlyKeywords = ['kakek', 'lansia', 'tua', 'veteran', 'monarki tua', 'old man', 'elderly'];
     if (elderlyKeywords.some((kw) => scriptTextLower.includes(kw) || characterName.toLowerCase().includes(kw))) {
       return 'ELDERLY';
     }
 
-    // B. Aturan Anak-Anak (CHILD)
     const childKeywords = ['anak', 'bocah', 'kecil', 'pelajar', 'murid', 'child', 'kid'];
     if (childKeywords.some((kw) => scriptTextLower.includes(kw) || characterName.toLowerCase().includes(kw))) {
       return 'CHILD';
     }
 
-    // C. Aturan Jabatan / Pemimpin / Tokoh Utama (MIDDLE_AGED - Bapak-bapak Paruh Baya)
     const middleAgedKeywords = [
       'raja', 'king', 'presiden', 'bapak', 'pejabat', 'menteri', 'komandan',
       'pemimpin', 'direktur', 'pemilik', 'owner', 'ilmuwan senior', 'profesor', 'knocker-up'
@@ -130,7 +135,6 @@ export class StoryWorldExtractor {
       return 'MIDDLE_AGED';
     }
 
-    // D. Default Peran Umum / Pekerja / Masyarakat (ADULT)
     return 'ADULT';
   }
 
