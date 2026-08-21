@@ -56,33 +56,37 @@ export class StoryWorldExtractor {
 
     const textLower = input.scriptText.toLowerCase();
 
-    // 1. Character Fact Extraction & Automatic Contextual Hydration
-    const characters = (input.rawCharacterNames ?? []).map((name, index) => {
+    // 1. Character Fact Extraction & Automatic Contextual Hydration (Explicit Array Type)
+    const characters: Array<{
+      id: CharacterId;
+      name: string;
+      roleType: CharacterRoleType;
+      ageTier: CharacterAgeTier;
+      action: string;
+    }> = (input.rawCharacterNames ?? []).map((name, index) => {
       const isExplicit = textLower.includes(name.toLowerCase());
       const roleType = this.inferRoleTypeFromContext(name, textLower);
       const ageTier = this.inferAgeTierFromContext(name, textLower);
 
-      return Object.freeze({
+      return {
         id: createCharacterId(`char-${index + 1}`),
         name,
         roleType,
         ageTier,
         action: isExplicit ? 'Present in scene' : 'UNKNOWN'
-      });
+      };
     });
 
     // Jika tidak ada karakter yang terdeteksi, buat default Everyman Subject dengan Contextual Age
     if (characters.length === 0) {
       const fallbackAgeTier = this.inferAgeTierFromContext('subject', textLower);
-      characters.push(
-        Object.freeze({
-          id: createCharacterId('char-main'),
-          name: 'Everyman Subject',
-          roleType: 'GENERIC_EVERYMAN' as const,
-          ageTier: fallbackAgeTier,
-          action: 'Primary subject in documentary scene'
-        })
-      );
+      characters.push({
+        id: createCharacterId('char-main'),
+        name: 'Everyman Subject',
+        roleType: 'GENERIC_EVERYMAN',
+        ageTier: fallbackAgeTier,
+        action: 'Present in scene'
+      });
     }
 
     // 2. Object Fact Extraction
