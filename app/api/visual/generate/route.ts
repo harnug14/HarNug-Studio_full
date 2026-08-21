@@ -2,7 +2,7 @@
  * ========================================================================================
  * HARNUG STUDIO — VISUAL DIRECTOR ENGINE
  * File: app/api/visual/generate/route.ts
- * Step: 15 of 15 (Main Pipeline API Orchestrator — Synchronized with V5 Modules)
+ * Step: 15 of 15 (Main Pipeline API Orchestrator — Type-Safe V5 Synchronized Engine)
  * Status: PRODUCTION-READY (LOCKED)
  * ========================================================================================
  * Orchestrator API Route Next.js App Router (POST).
@@ -64,12 +64,12 @@ export async function POST(req: NextRequest) {
         totalBeatShots: fallbackChunks.length,
         shots: fallbackChunks.map((chunk, idx) => ({
           scene: idx + 1,
-          visualBeatType: 'Action',
+          visualBeatType: 'Action' as const,
           naskahChunk: chunk,
           primaryVisualFocus: chunk.slice(0, 60),
           narrativePurpose: 'Visual storytelling beat',
           expectedDuration: '2-3s',
-          importance: 'High'
+          importance: 'High' as const
         }))
       };
     }
@@ -98,9 +98,9 @@ export async function POST(req: NextRequest) {
         );
       } catch {
         directorialSpec = {
-          shotSize: 'Medium Shot',
-          angle: 'Eye Level',
-          movement: 'Static Hold',
+          shotSize: 'Medium Shot' as const,
+          angle: 'Eye Level' as const,
+          movement: 'Static Hold' as const,
           lightingMood: 'Atmospheric sinematik',
           compositionGoal: 'Clean visual focus',
           emotionalEmphasis: beatShot.primaryVisualFocus
@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
       } catch {
         resourcesResult = {
           scene: beatShot.scene ?? i + 1,
-          assetDecision: { assetStatus: i === 0 ? 'NEW' : 'POSE_SWAP' },
+          assetDecision: { assetStatus: (i === 0 ? 'NEW' : 'POSE_SWAP') as any },
           sceneSpecification: { action: beatShot.primaryVisualFocus }
         };
       }
