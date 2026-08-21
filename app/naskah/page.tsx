@@ -341,9 +341,12 @@ function NaskahContent() {
       {activeTab === "generator" && (
         <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
           <form onSubmit={handleGenerateScript}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-              <div>
-                <label className="form-label">Pilih dari Bank Topik (Opsional)</label>
+            {/* Grid Form Simetris Presisi */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <label className="form-label" style={{ minHeight: 34, display: "flex", alignItems: "flex-end", marginBottom: 6 }}>
+                  Pilih dari Bank Topik (Opsional)
+                </label>
                 <select
                   value={selectedTopikId}
                   onChange={(e) => handleSelectTopik(e.target.value)}
@@ -361,8 +364,10 @@ function NaskahContent() {
                 </select>
               </div>
 
-              <div>
-                <label className="form-label">Judul Topik Video *</label>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <label className="form-label" style={{ minHeight: 34, display: "flex", alignItems: "flex-end", marginBottom: 6 }}>
+                  Judul Topik Video *
+                </label>
                 <input
                   type="text"
                   placeholder="Judul topik..."
@@ -374,8 +379,8 @@ function NaskahContent() {
               </div>
             </div>
 
-            <div style={{ marginBottom: 12 }}>
-              <label className="form-label">Catatan / Konteks (Opsional)</label>
+            <div style={{ marginBottom: 14 }}>
+              <label className="form-label" style={{ marginBottom: 6 }}>Catatan / Konteks (Opsional)</label>
               <textarea
                 placeholder="Detail fakta atau konteks khusus..."
                 value={catatanTopik}
@@ -386,7 +391,7 @@ function NaskahContent() {
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label className="form-label">Referensi Kalibrasi Gaya (Opsional)</label>
+              <label className="form-label" style={{ marginBottom: 6 }}>Referensi Kalibrasi Gaya (Opsional)</label>
               <select
                 value={referenceProfileId}
                 onChange={(e) => setReferenceProfileId(e.target.value)}
@@ -402,9 +407,11 @@ function NaskahContent() {
             </div>
 
             {isManualMode && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-                <div>
-                  <label className="form-label">Tone & Gaya Tutur</label>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14, marginBottom: 16 }}>
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <label className="form-label" style={{ minHeight: 24, display: "flex", alignItems: "flex-end", marginBottom: 6 }}>
+                    Tone & Gaya Tutur
+                  </label>
                   <select
                     value={tone}
                     onChange={(e) => setTone(e.target.value)}
@@ -417,8 +424,10 @@ function NaskahContent() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="form-label">Target Durasi</label>
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <label className="form-label" style={{ minHeight: 24, display: "flex", alignItems: "flex-end", marginBottom: 6 }}>
+                    Target Durasi
+                  </label>
                   <select
                     value={targetPanjang}
                     onChange={(e) => setTargetPanjang(e.target.value)}
