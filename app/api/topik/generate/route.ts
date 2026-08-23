@@ -7,7 +7,7 @@ import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-// OTAK UTAMA TUNGGAL (TIDAK BOLEH DIGANTI/DITURUNKAN)
+// OTAK UTAMA TUNGGAL TERKUNCI DI GEMINI 3.6 FLASH
 const MAIN_MODEL = "gemini-3.6-flash";
 
 async function callGeminiApi(
@@ -16,7 +16,7 @@ async function callGeminiApi(
   systemPrompt: string,
   temperature: number = 1.0
 ): Promise<string> {
-  // Key rotation tetap berjalan untuk menjaga kuota API Key, tetapi HANYA memakai Gemini 3.6 Flash
+  // Key rotation tetap berjalan untuk menjaga kuota API Key, murni memakai Gemini 3.6 Flash
   return await callGeminiWithRotation(supabase, async (apiKey) => {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
@@ -26,6 +26,8 @@ async function callGeminiApi(
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],
           systemInstruction: { parts: [{ text: systemPrompt }] },
+          // 💡 FITUR GOOGLE SEARCH GROUNDING REAL-TIME AKTIF:
+          tools: [{ googleSearch: {} }],
           generationConfig: {
             responseMimeType: "application/json",
             temperature,
@@ -58,7 +60,7 @@ export async function POST(req: NextRequest) {
     }
 
     const {
-      kategori = "Umum/Edukasi",
+      kategori = "Sejarah Unik & Fakta Kehidupan",
       durasi = "45-60 detik",
       topikDisukai = "",
       topikDitolak = "",
@@ -66,7 +68,7 @@ export async function POST(req: NextRequest) {
       referenceProfileId = null,
     } = await req.json();
 
-    // EXEKUSI KUERI DATABASE PARALEL
+    // EKSEKUSI KUERI DATABASE PARALEL
     const [profileRes, historyRes] = await Promise.all([
       referenceProfileId
         ? supabase
@@ -107,8 +109,10 @@ export async function POST(req: NextRequest) {
       riwayatTopikText = `\n\n--- DAFTAR TOPIK LAMA YANG WAJIB DIHINDARI ---\n${daftarJudul}\n\nSetiap kandidat topik baru WAJIB memiliki INTI CERITA/FAKTA yang BENAR-BENAR BERBEDA dari daftar di atas.`;
     }
 
-    const systemPrompt = `Kamu adalah seorang Expert YouTube Shorts Content Strategist & Topic Validator tingkat dunia.
-Hasilkan ${jumlah} ide topik video YouTube Shorts berkualitas tinggi yang orisinal, relevan, dan berpotensi viral.
+    const systemPrompt = `Kamu adalah seorang Expert Content Strategist & Topic Researcher kelas dunia spesialis niche Curious History, Fakta Unik Asal-usul, dan Sejarah Kehidupan Manusia.
+Gunakan kapabilitas Google Search untuk mencari dan memvalidasi fakta sejarah otentik, peristiwa unik masa lalu, atau asal-usul barang/kebiasaan sehari-hari yang mengejutkan dan akurat (anti-halusinasi).
+
+Hasilkan ${jumlah} ide topik video YouTube Shorts/Reels berkualitas tinggi yang orisinal, kaya fakta menarik, dan berpotensi viral tinggi.
 
 RUBRIK VALIDASI SKOR (/50):
 - Relevansi/Familiaritas Audiens (/10)
@@ -122,29 +126,29 @@ FORMAT JSON OUTPUT PERSIS (pure JSON object):
 {
   "candidates": [
     {
-      "judul": "Judul Ide Topik yang Menarik dan Konkret",
-      "penjelasan": "Penjelasan singkat 2-3 kalimat kenapa topik ini sangat menarik dan bagaimana eksekusinya.",
-      "skor": { "total": 43 },
-      "alasanKelulusan": "Penjelasan singkat kenapa topik ini lolos skor >= 40/50."
+      "judul": "Judul Ide Topik yang Menarik, Memancing Rasa Penasaran, dan Konkret",
+      "penjelasan": "Penjelasan singkat 2-3 kalimat mengenai fakta otentik di balik topik ini dan bagaimana eksekusi ceritanya.",
+      "skor": { "total": 45 },
+      "alasanKelulusan": "Penjelasan singkat kenapa topik ini lolos skor >= 40/50 dan memiliki dasar fakta sejarah yang kuat."
     }
   ]
 }${riwayatTopikText}`;
 
     const userPrompt = isProfileMode
-      ? `PROFIL CHANNEL DIPIILIH:${referenceContextText}
+      ? `PROFIL CHANNEL DIPILIH:${referenceContextText}
 
 Instruksi Tambahan:
-Analisis seluruh gaya bahasa, tone, topik, dan struktur dari naskah utuh channel di atas. Hasilkan ${jumlah} kandidat ide topik baru yang konsisten dengan pola channel referensi tersebut dalam JSON murni.`
-      : `Parameter Ideation Topic (Manual):
-- Kategori Prioritas: ${kategori}
+Analisis seluruh gaya bahasa, tone, topik, dan struktur dari naskah utuh channel di atas. Lakukan validasi fakta via web search, lalu hasilkan ${jumlah} kandidat ide topik baru yang konsisten dengan pola channel referensi tersebut dalam JSON murni.`
+      : `Parameter Ideation Topic:
+- Kategori Niche: ${kategori}
 - Target Durasi Video: ${durasi}
-- Topik yang Disukai: ${topikDisukai || "Bebas"}
+- Topik/Preferensi yang Disukai: ${topikDisukai || "Sejarah unik, asal-usul barang/kebiasaan, peristiwa aneh masa lalu yang nyata"}
 - Topik yang Ditolak: ${topikDitolak || "Tidak ada"}
 - Jumlah Kandidat: ${jumlah} kandidat
 
-Hasilkan ${jumlah} kandidat ide topik yang lolos skor >= 40/50 dalam JSON murni sekarang.`;
+Validasi fakta sejarahnya dan hasilkan ${jumlah} kandidat ide topik yang lolos skor >= 40/50 dalam JSON murni sekarang.`;
 
-    // PEMANGGILAN KHUSUS GEMINI 3.6 FLASH
+    // PEMANGGILAN KHUSUS GEMINI 3.6 FLASH DENGAN GROUNDING
     const rawResponse = await callGeminiApi(
       supabase,
       userPrompt,
