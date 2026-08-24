@@ -7,8 +7,8 @@ import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-// OTAK UTAMA: MURNI GEMINI 3.6 FLASH
-const MAIN_MODEL = "gemini-3.6-flash";
+// MODEL RESMI 100% GRATIS DENGAN DUKUNGAN 1.500 SEARCH GROUNDING/HARI
+const MAIN_MODEL = "gemini-2.5-flash";
 
 async function requestGoogleGemini(
   apiKey: string,
@@ -23,6 +23,7 @@ async function requestGoogleGemini(
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: userPrompt }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
+        // 💡 GOOGLE SEARCH GROUNDING RESMI AKTIF & 100% GRATIS:
         tools: [{ googleSearch: {} }],
         generationConfig: {
           responseMimeType: "application/json",
