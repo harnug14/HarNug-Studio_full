@@ -1,50 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
+import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 
 // DIBERI WAKTU 60 DETIK AGAR VERCEL TIDAK MEMUTUS PAKSA (0% TIMEOUT 504)
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-// OTAK UTAMA TUNGGAL TERKUNCI DI GEMINI 3.6 FLASH
+// OTAK UTAMA: MURNI GEMINI 3.6 FLASH
 const MAIN_MODEL = "gemini-3.6-flash";
+
+async function requestGoogleGemini(
+  apiKey: string,
+  userPrompt: string,
+  systemPrompt: string
+): Promise<string> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        tools: [{ googleSearch: {} }],
+        generationConfig: {
+          responseMimeType: "application/json",
+        },
+      }),
+    }
+  );
+
+  const rawText = await response.text();
+
+  if (!response.ok) {
+    let errorDetail = rawText;
+    try {
+      const errJson = JSON.parse(rawText);
+      errorDetail = errJson.error?.message || rawText;
+    } catch {}
+    throw new Error(`[${response.status}] ${errorDetail}`);
+  }
+
+  const json = JSON.parse(rawText);
+  return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+}
 
 async function callGeminiApi(
   supabase: any,
   userPrompt: string,
-  systemPrompt: string,
-  temperature: number = 1.0
+  systemPrompt: string
 ): Promise<string> {
-  // Key rotation tetap berjalan untuk menjaga kuota API Key, murni memakai Gemini 3.6 Flash
   return await callGeminiWithRotation(supabase, async (apiKey) => {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          // 💡 FITUR GOOGLE SEARCH GROUNDING REAL-TIME AKTIF:
-          tools: [{ googleSearch: {} }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature,
-          },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        throw new GeminiQuotaError(`Gemini Rate Limit Exceeded (429)`);
-      }
-      throw new Error(`Gemini API Error: Status ${response.status}`);
-    }
-
-    const json = await response.json();
-    return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    return await requestGoogleGemini(apiKey, userPrompt, systemPrompt);
   });
 }
 
@@ -91,7 +99,6 @@ export async function POST(req: NextRequest) {
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
       
-      // BACA SELURUH NASKAH UTUH TANPA DIPANGKAS SAMA SEKALI
       const samples = profileRes.data.channel_analysis_entries
         .map((e: any, idx: number) => {
           return `Contoh Naskah ${idx + 1}: ${e.title}\nNaskah Utuh:\n${e.full_script || ""}`;
@@ -148,12 +155,10 @@ Analisis seluruh gaya bahasa, tone, topik, dan struktur dari naskah utuh channel
 
 Validasi fakta sejarahnya dan hasilkan ${jumlah} kandidat ide topik yang lolos skor >= 40/50 dalam JSON murni sekarang.`;
 
-    // PEMANGGILAN KHUSUS GEMINI 3.6 FLASH DENGAN GROUNDING
     const rawResponse = await callGeminiApi(
       supabase,
       userPrompt,
-      systemPrompt,
-      1.0
+      systemPrompt
     );
 
     const parsedData: any = parseJsonResponse(rawResponse, { candidates: [] });
