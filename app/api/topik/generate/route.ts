@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
+import { fetchTavilySearchResults } from "@/lib/tavily";
 
 // DIBERI WAKTU 60 DETIK AGAR VERCEL TIDAK MEMUTUS PAKSA (0% TIMEOUT 504)
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-// MODEL RESMI 100% GRATIS DENGAN DUKUNGAN 1.500 SEARCH GROUNDING/HARI
-const MAIN_MODEL = "gemini-2.5-flash";
+// OTAK UTAMA RESMI GOOGLE: GEMINI 3.6 FLASH
+const MAIN_MODEL = "gemini-3.6-flash";
 
 async function requestGoogleGemini(
   apiKey: string,
@@ -23,8 +24,6 @@ async function requestGoogleGemini(
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: userPrompt }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        // 💡 GOOGLE SEARCH GROUNDING RESMI AKTIF & 100% GRATIS:
-        tools: [{ googleSearch: {} }],
         generationConfig: {
           responseMimeType: "application/json",
         },
@@ -117,9 +116,21 @@ export async function POST(req: NextRequest) {
       riwayatTopikText = `\n\n--- DAFTAR TOPIK LAMA YANG WAJIB DIHINDARI ---\n${daftarJudul}\n\nSetiap kandidat topik baru WAJIB memiliki INTI CERITA/FAKTA yang BENAR-BENAR BERBEDA dari daftar di atas.`;
     }
 
-    const systemPrompt = `Kamu adalah seorang Expert Content Strategist & Topic Researcher kelas dunia spesialis niche Curious History, Fakta Unik Asal-usul, dan Sejarah Kehidupan Manusia.
-Gunakan kapabilitas Google Search untuk mencari dan memvalidasi fakta sejarah otentik, peristiwa unik masa lalu, atau asal-usul barang/kebiasaan sehari-hari yang mengejutkan dan akurat (anti-halusinasi).
+    // 💡 AMBIL DATA RISET REAL-TIME VIA TAVILY (AKURAT & ANTI-HALUSINASI)
+    let tavilyContext = "";
+    try {
+      const searchQuery = topikDisukai
+        ? `fakta sejarah unik asal usul ${topikDisukai}`
+        : `fakta sejarah unik aneh manusia asal usul barang peristiwa masa lalu nyata trivia`;
+      const tavilyRes = await fetchTavilySearchResults(searchQuery);
+      if (tavilyRes) {
+        tavilyContext = `\n\n[DATA RISET FAKTA SEJARAH OTENTIK DARI WEB]:\n${tavilyRes}\n\nGunakan fakta-fakta otentik di atas sebagai rujukan validasi agar naskah/topik 100% akurat dan nyata.`;
+      }
+    } catch (e) {
+      console.warn("[Topik] Gagal fetch Tavily, lanjut tanpa search tambahan:", e);
+    }
 
+    const systemPrompt = `Kamu adalah seorang Expert Content Strategist & Topic Researcher kelas dunia spesialis niche Curious History, Fakta Unik Asal-usul, dan Sejarah Kehidupan Manusia.
 Hasilkan ${jumlah} ide topik video YouTube Shorts/Reels berkualitas tinggi yang orisinal, kaya fakta menarik, dan berpotensi viral tinggi.
 
 RUBRIK VALIDASI SKOR (/50):
@@ -143,18 +154,18 @@ FORMAT JSON OUTPUT PERSIS (pure JSON object):
 }${riwayatTopikText}`;
 
     const userPrompt = isProfileMode
-      ? `PROFIL CHANNEL DIPILIH:${referenceContextText}
+      ? `PROFIL CHANNEL DIPILIH:${referenceContextText}${tavilyContext}
 
 Instruksi Tambahan:
-Analisis seluruh gaya bahasa, tone, topik, dan struktur dari naskah utuh channel di atas. Lakukan validasi fakta via web search, lalu hasilkan ${jumlah} kandidat ide topik baru yang konsisten dengan pola channel referensi tersebut dalam JSON murni.`
+Analisis seluruh gaya bahasa, tone, topik, dan struktur dari naskah utuh channel di atas. Hasilkan ${jumlah} kandidat ide topik baru yang konsisten dengan pola channel referensi tersebut dalam JSON murni.`
       : `Parameter Ideation Topic:
 - Kategori Niche: ${kategori}
 - Target Durasi Video: ${durasi}
 - Topik/Preferensi yang Disukai: ${topikDisukai || "Sejarah unik, asal-usul barang/kebiasaan, peristiwa aneh masa lalu yang nyata"}
 - Topik yang Ditolak: ${topikDitolak || "Tidak ada"}
-- Jumlah Kandidat: ${jumlah} kandidat
+- Jumlah Kandidat: ${jumlah} kandidat${tavilyContext}
 
-Validasi fakta sejarahnya dan hasilkan ${jumlah} kandidat ide topik yang lolos skor >= 40/50 dalam JSON murni sekarang.`;
+Hasilkan ${jumlah} kandidat ide topik yang lolos skor >= 40/50 dalam JSON murni sekarang.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
