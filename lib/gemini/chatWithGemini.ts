@@ -30,7 +30,8 @@ function isDailyQuotaError(errText: string): boolean {
   return lower.includes("perday") || lower.includes("per day") || lower.includes("daily limit");
 }
 
-export function buildStyleInstruction(mode: ChatMode, hasWebData: boolean): string {
+// 💡 hasWebData dibuat opsional (default = false) agar kompatibel dengan Groq & panggilan lainnya
+export function buildStyleInstruction(mode: ChatMode, hasWebData: boolean = false): string {
   const baseStyle =
     "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku.";
 
@@ -113,7 +114,7 @@ export async function chatWithGemini(
     ? `${styleInstruction}\n\n${targetInstruction}`
     : styleInstruction;
 
-  const contents = messages.map((m, index) => {
+  const contents = messages.map((m) => {
     const parts: any[] = [];
 
     if (m.attachments && Array.isArray(m.attachments)) {
