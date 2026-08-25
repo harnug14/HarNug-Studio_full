@@ -30,20 +30,24 @@ function isDailyQuotaError(errText: string): boolean {
   return lower.includes("perday") || lower.includes("per day") || lower.includes("daily limit");
 }
 
-export function buildStyleInstruction(mode: ChatMode): string {
+export function buildStyleInstruction(mode: ChatMode, hasWebData: boolean): string {
   const baseStyle =
-    "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku yang nyaman didengar.";
+    "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku.";
+
+  if (hasWebData) {
+    return `${baseStyle} [INSTRUKSI KHUSUS REAL-TIME]: Kamu DIBEKALI data riset web internet terkini di bawah. Kamu WAJIB menggunakan data, angka, kurs, atau fakta tersebut untuk menjawab pertanyaan pengguna secara langsung dan spesifik. DILARANG menyatakan bahwa kamu tidak memiliki akses internet atau tidak tahu kurs real-time, karena datanya sudah tertera lengkap di lampiran.`;
+  }
 
   switch (mode) {
     case "mendalam":
-      return `${baseStyle} Jawab secara sangat detail, analitis, dan komprehensif. Berikan konteks, latar belakang kronologi, dan berbagai sudut pandang sejarah jika relevan.`;
+      return `${baseStyle} Jawab secara sangat detail, analitis, dan komprehensif. Berikan konteks dan latar belakang mendalam.`;
     case "berpikir":
-      return `${baseStyle} [MODE THINKING AKTIF]: Sebelum memberikan jawaban akhir, kamu WAJIB menganalisis dan menjabarkan proses berpikirmu langkah demi langkah (Chain of Thought) secara mendalam di awal jawaban, baru diikuti dengan kesimpulan akhir.`;
+      return `${baseStyle} [MODE THINKING AKTIF]: Sebelum memberikan jawaban akhir, analisis proses berpikirmu langkah demi langkah secara mendalam, baru diikuti dengan kesimpulan akhir.`;
     case "search":
-      return `${baseStyle} Jawab pertanyaan pengguna secara akurat berdasarkan data hasil pencarian web real-time terverifikasi yang dilampirkan. Kutip fakta, nama tokoh, tahun, dan sertakan URL sumbernya dalam jawabanmu.`;
+      return `${baseStyle} Jawab pertanyaan pengguna secara akurat berdasarkan data hasil pencarian web real-time yang dilampirkan.`;
     case "biasa":
     default:
-      return `${baseStyle} Jawab secara natural dan ringkas seperti obrolan diskusi kreatif profesional, tapi tetap sopan.`;
+      return `${baseStyle} Jawab secara natural dan ringkas seperti obrolan diskusi profesional.`;
   }
 }
 
@@ -86,37 +90,30 @@ export async function chatWithGemini(
   contextText?: string,
   contentTarget?: ContentTarget
 ): Promise<string> {
-  // 💡 OTAK UTAMA TERKUNCI STANDAR DI GEMINI 3.6 FLASH (MENDUKUNG MULTI-MODEL DARI UI)
   const activeModel = model || "gemini-3.6-flash";
-  let finalContextText = contextText || "";
+  const modeStr = String(mode || "biasa").toLowerCase();
+  const isSearchRequested = modeStr.includes("search");
 
   // Cari pertanyaan user paling akhir
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+  let tavilyData = "";
 
-  // Jika Mode Search Aktif, panggil Tavily Advanced Search API (Non-Wikipedia)
-  if (
-    (mode === "search" || (typeof mode === "string" && (mode as string).includes("search"))) &&
-    lastUserMsg &&
-    lastUserMsg.content
-  ) {
+  // 💡 JIKA MODE SEARCH AKTIF: Panggil Tavily dan suntikkan langsung ke pertanyaan user
+  if (isSearchRequested && lastUserMsg && lastUserMsg.content) {
     try {
-      const tavilyData = await fetchTavilySearchResults(lastUserMsg.content);
-      if (tavilyData) {
-        const searchBlock = `\n\n[DATA RISET WEB REAL-TIME TERVERIFIKASI VIA TAVILY]:\n${tavilyData}\n\nATURAN WAJIB: Jawab pertanyaan pengguna secara akurat berdasarkan data riset web terpercaya di atas dan cantumkan URL sumbernya bila relevan!`;
-        finalContextText = finalContextText ? `${finalContextText}${searchBlock}` : searchBlock;
-      }
+      tavilyData = await fetchTavilySearchResults(lastUserMsg.content);
     } catch (e) {
       console.warn("[Chat] Tavily search fallback:", e);
     }
   }
 
   const targetInstruction = buildContentInstruction(contentTarget);
-  const styleInstruction = buildStyleInstruction(mode);
+  const styleInstruction = buildStyleInstruction(mode, Boolean(tavilyData));
   const systemInstruction = targetInstruction
     ? `${styleInstruction}\n\n${targetInstruction}`
     : styleInstruction;
 
-  const contents = messages.map((m) => {
+  const contents = messages.map((m, index) => {
     const parts: any[] = [];
 
     if (m.attachments && Array.isArray(m.attachments)) {
@@ -128,22 +125,20 @@ export async function chatWithGemini(
       }
     }
 
-    if (m.content || parts.length === 0) {
-      parts.push({ text: m.content || "Tolong analisis dan jelaskan lampiran foto/file berikut." });
+    let textContent = m.content || "Tolong analisis lampiran berikut.";
+
+    // 💡 INJEKSI LANGSUNG: Tempelkan data web ke pesan user paling terakhir
+    if (m === lastUserMsg && tavilyData) {
+      textContent = `${textContent}\n\n[DATA FAKTA & WEB SEARCH REAL-TIME TERKINI]:\n${tavilyData}\n\nGunakan data terkini di atas untuk menjawab secara akurat dan lugas.`;
     }
+
+    parts.push({ text: textContent });
 
     return {
       role: m.role === "assistant" ? "model" : "user",
       parts,
     };
   });
-
-  if (finalContextText) {
-    contents.unshift({
-      role: "user",
-      parts: [{ text: `Konteks Riset & Data Web Real-time:\n${finalContextText}` }],
-    });
-  }
 
   const body: any = {
     contents,
