@@ -18,9 +18,18 @@ export async function fetchTavilySearchResults(query: string): Promise<string> {
       body: JSON.stringify({
         api_key: apiKey,
         query: query,
-        search_depth: "basic",
-        max_results: 5,
+        // 💡 MODE MENDALAM: Membaca isi artikel web secara komprehensif, detail, dan utuh
+        search_depth: "advanced",
+        max_results: 6,
         include_answer: true,
+        // 💡 BLOKIR TOTAL WIKIPEDIA: Menolak semua domain Wikipedia dari hasil pencarian
+        exclude_domains: [
+          "wikipedia.org",
+          "id.wikipedia.org",
+          "en.wikipedia.org",
+          "m.wikipedia.org",
+          "wikidata.org",
+        ],
       }),
     });
 
@@ -36,18 +45,28 @@ export async function fetchTavilySearchResults(query: string): Promise<string> {
     const outputParts: string[] = [];
 
     if (data.answer) {
-      outputParts.push(`[Ringkasan Jawaban Langsung Tavily]:\n${data.answer}`);
+      outputParts.push(`[Ringkasan Fakta Mendalam Tavily]:\n${data.answer}`);
     }
 
     if (data.results && Array.isArray(data.results) && data.results.length > 0) {
-      const formattedResults = data.results.map((item: any, idx: number) => {
-        return `[Sumber ${idx + 1}]: ${item.title || "Tanpa Judul"}\nURL: ${item.url || "Tanpa URL"}\nKutipan Snippet: ${item.content || "Tanpa Ringkasan"}`;
+      // Filter proteksi ganda: pastikan 0% data Wikipedia yang lolos
+      const filteredResults = data.results.filter(
+        (item: any) =>
+          !item.url?.toLowerCase().includes("wikipedia.org") &&
+          !item.url?.toLowerCase().includes("wikidata.org")
+      );
+
+      const formattedResults = filteredResults.map((item: any, idx: number) => {
+        return `[Sumber Terpercaya ${idx + 1}]: ${item.title || "Tanpa Judul"}\nURL Sumber: ${item.url || "Tanpa URL"}\nUraian Fakta Detail: ${item.content || "Tanpa Ringkasan"}`;
       });
-      outputParts.push(`[Daftar Hasil Pencarian Web Real-Time]:\n${formattedResults.join("\n\n")}`);
+
+      if (formattedResults.length > 0) {
+        outputParts.push(`[Daftar Hasil Riset Web Otentik & Terverifikasi (Non-Wikipedia)]:\n${formattedResults.join("\n\n")}`);
+      }
     }
 
     if (outputParts.length === 0) {
-      return "Tidak ditemukan hasil pencarian web yang relevan dari Tavily untuk kueri ini.";
+      return "Tidak ditemukan hasil pencarian web yang relevan dari sumber terverifikasi non-Wikipedia.";
     }
 
     return outputParts.join("\n\n");
