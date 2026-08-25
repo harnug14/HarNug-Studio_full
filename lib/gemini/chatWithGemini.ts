@@ -30,7 +30,6 @@ function isDailyQuotaError(errText: string): boolean {
   return lower.includes("perday") || lower.includes("per day") || lower.includes("daily limit");
 }
 
-// 💡 hasWebData dibuat opsional (default = false) agar kompatibel dengan Groq & panggilan lainnya
 export function buildStyleInstruction(mode: ChatMode, hasWebData: boolean = false): string {
   const baseStyle =
     "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku.";
@@ -95,11 +94,15 @@ export async function chatWithGemini(
   const modeStr = String(mode || "biasa").toLowerCase();
   const isSearchRequested = modeStr.includes("search");
 
-  // Cari pertanyaan user paling akhir
-  const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+  // 1. Bersihkan riwayat: filter keluar pesan kosong agar Google tidak menolak
+  const validMessages = messages.filter(
+    (m) => (m.content && m.content.trim().length > 0) || (m.attachments && m.attachments.length > 0)
+  );
+
+  const lastUserMsg = [...validMessages].reverse().find((m) => m.role === "user");
   let tavilyData = "";
 
-  // 💡 JIKA MODE SEARCH AKTIF: Panggil Tavily dan suntikkan langsung ke pertanyaan user
+  // 2. Panggil Tavily jika mode Search aktif
   if (isSearchRequested && lastUserMsg && lastUserMsg.content) {
     try {
       tavilyData = await fetchTavilySearchResults(lastUserMsg.content);
@@ -114,7 +117,7 @@ export async function chatWithGemini(
     ? `${styleInstruction}\n\n${targetInstruction}`
     : styleInstruction;
 
-  const contents = messages.map((m) => {
+  const contents = validMessages.map((m) => {
     const parts: any[] = [];
 
     if (m.attachments && Array.isArray(m.attachments)) {
@@ -126,14 +129,16 @@ export async function chatWithGemini(
       }
     }
 
-    let textContent = m.content || "Tolong analisis lampiran berikut.";
+    let textContent = m.content ? m.content.trim() : "";
 
-    // 💡 INJEKSI LANGSUNG: Tempelkan data web ke pesan user paling terakhir
+    // 💡 INJEKSI LANGSUNG PADA PESAN TERAKHIR USER
     if (m === lastUserMsg && tavilyData) {
-      textContent = `${textContent}\n\n[DATA FAKTA & WEB SEARCH REAL-TIME TERKINI]:\n${tavilyData}\n\nGunakan data terkini di atas untuk menjawab secara akurat dan lugas.`;
+      textContent = `${textContent}\n\n[DATA FAKTA & WEB SEARCH REAL-TIME TERKINI]:\n${tavilyData}\n\nINSTRUKSI: Gunakan data terkini di atas untuk menjawab secara spesifik, sebutkan angka/faktanya secara langsung.`;
     }
 
-    parts.push({ text: textContent });
+    if (textContent || parts.length === 0) {
+      parts.push({ text: textContent || "Lanjutkan percakapan." });
+    }
 
     return {
       role: m.role === "assistant" ? "model" : "user",
@@ -162,11 +167,25 @@ export async function chatWithGemini(
   if (response.ok) {
     try {
       const data = JSON.parse(rawText);
-      const answer: string =
-        data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      return answer;
+      const candidate = data.candidates?.[0];
+      
+      // 💡 GABUNGKAN SELURUH PARTS RESPON (TERMASUK MODE THINKING)
+      const parts = candidate?.content?.parts || [];
+      const answer = parts
+        .map((p: any) => p.text || "")
+        .filter((t: string) => t.trim().length > 0)
+        .join("\n\n")
+        .trim();
+
+      if (answer) return answer;
+      
+      if (candidate?.finishReason && candidate.finishReason !== "STOP") {
+        return `[Respon dihentikan oleh sistem AI: ${candidate.finishReason}]`;
+      }
+
+      return "Maaf, tidak ada respon teks yang dihasilkan. Silakan coba tanyakan kembali.";
     } catch {
-      return rawText;
+      return rawText || "Maaf, respon tidak dapat diproses.";
     }
   }
 
