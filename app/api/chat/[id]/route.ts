@@ -85,8 +85,17 @@ export async function POST(
 
   const pesanBaru: string = (body?.pesan || "").trim();
   const attachments: any[] = body?.attachments || [];
-  const model: string = body?.model || session.model;
-  const mode: string = body?.mode || session.mode;
+  const model: string = body?.model || session.model || "gemini-3.6-flash";
+  
+  // Tangkap mode & tombol Web Search secara fleksibel
+  const rawMode: string = String(body?.mode || session.mode || "biasa");
+  const isWebSearchOn = Boolean(
+    rawMode.includes("search") ||
+    body?.webSearch === true ||
+    body?.isSearch === true ||
+    rawMode === "search"
+  );
+  const modeToSend = isWebSearchOn ? "search" : rawMode;
 
   if (!pesanBaru && attachments.length === 0) {
     return NextResponse.json({ error: "Pesan atau lampiran tidak boleh kosong" }, { status: 400 });
@@ -129,7 +138,7 @@ export async function POST(
           messages as any,
           apiKey,
           model,
-          mode as any
+          modeToSend as any
         )
       );
     } else {
@@ -138,7 +147,7 @@ export async function POST(
           messages as any,
           apiKey,
           model,
-          mode as any
+          modeToSend as any
         )
       );
     }
@@ -155,8 +164,8 @@ export async function POST(
     content: jawaban,
   });
 
-  if (model !== session.model || mode !== session.mode) {
-    await supabase.from("chat_sessions").update({ model, mode }).eq("id", id);
+  if (model !== session.model || rawMode !== session.mode) {
+    await supabase.from("chat_sessions").update({ model, mode: rawMode }).eq("id", id);
   }
 
   return NextResponse.json({ jawaban });
