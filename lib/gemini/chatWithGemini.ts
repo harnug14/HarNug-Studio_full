@@ -32,17 +32,17 @@ function isDailyQuotaError(errText: string): boolean {
 
 export function buildStyleInstruction(mode: ChatMode, hasWebData: boolean = false): string {
   const baseStyle =
-    "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku.";
+    "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku. Berikan jawaban MURNI berupa teks narasi langsung, DILARANG menghasilkan kode function call.";
 
   if (hasWebData) {
-    return `${baseStyle} [INSTRUKSI KHUSUS REAL-TIME]: Kamu DIBEKALI data riset web internet terkini di bawah. Kamu WAJIB menggunakan data, angka, kurs, atau fakta tersebut untuk menjawab pertanyaan pengguna secara langsung dan spesifik. DILARANG menyatakan bahwa kamu tidak memiliki akses internet atau tidak tahu kurs real-time, karena datanya sudah tertera lengkap di lampiran.`;
+    return `${baseStyle} [INSTRUKSI REAL-TIME]: Kamu DIBEKALI data fakta/angka riset web internet di dalam pesan user. Gunakan data angka, kurs, atau fakta tersebut untuk menjawab pertanyaan pengguna secara langsung, spesifik, dan lugas dalam teks biasa.`;
   }
 
   switch (mode) {
     case "mendalam":
-      return `${baseStyle} Jawab secara sangat detail, analitis, dan komprehensif. Berikan konteks dan latar belakang mendalam.`;
+      return `${baseStyle} Jawab secara sangat detail, analitis, dan komprehensif.`;
     case "berpikir":
-      return `${baseStyle} [MODE THINKING AKTIF]: Sebelum memberikan jawaban akhir, analisis proses berpikirmu langkah demi langkah secara mendalam, baru diikuti dengan kesimpulan akhir.`;
+      return `${baseStyle} [MODE THINKING AKTIF]: Analisis proses berpikirmu langkah demi langkah secara mendalam, baru diikuti dengan kesimpulan akhir.`;
     case "search":
       return `${baseStyle} Jawab pertanyaan pengguna secara akurat berdasarkan data hasil pencarian web real-time yang dilampirkan.`;
     case "biasa":
@@ -94,7 +94,7 @@ export async function chatWithGemini(
   const modeStr = String(mode || "biasa").toLowerCase();
   const isSearchRequested = modeStr.includes("search");
 
-  // 1. Bersihkan riwayat: filter keluar pesan kosong agar Google tidak menolak
+  // Filter pesan kosong
   const validMessages = messages.filter(
     (m) => (m.content && m.content.trim().length > 0) || (m.attachments && m.attachments.length > 0)
   );
@@ -102,7 +102,6 @@ export async function chatWithGemini(
   const lastUserMsg = [...validMessages].reverse().find((m) => m.role === "user");
   let tavilyData = "";
 
-  // 2. Panggil Tavily jika mode Search aktif
   if (isSearchRequested && lastUserMsg && lastUserMsg.content) {
     try {
       tavilyData = await fetchTavilySearchResults(lastUserMsg.content);
@@ -131,9 +130,8 @@ export async function chatWithGemini(
 
     let textContent = m.content ? m.content.trim() : "";
 
-    // 💡 INJEKSI LANGSUNG PADA PESAN TERAKHIR USER
     if (m === lastUserMsg && tavilyData) {
-      textContent = `${textContent}\n\n[DATA FAKTA & WEB SEARCH REAL-TIME TERKINI]:\n${tavilyData}\n\nINSTRUKSI: Gunakan data terkini di atas untuk menjawab secara spesifik, sebutkan angka/faktanya secara langsung.`;
+      textContent = `${textContent}\n\n[DATA FAKTA REAL-TIME WEB]:\n${tavilyData}\n\n(Jawab langsung menggunakan data di atas dalam format teks biasa)`;
     }
 
     if (textContent || parts.length === 0) {
@@ -150,6 +148,10 @@ export async function chatWithGemini(
     contents,
     systemInstruction: {
       parts: [{ text: systemInstruction }],
+    },
+    // 💡 KUNCI: Paksa AI menjawab teks murni tanpa mencoba function call internal
+    generationConfig: {
+      temperature: 0.7,
     },
   };
 
@@ -169,21 +171,20 @@ export async function chatWithGemini(
       const data = JSON.parse(rawText);
       const candidate = data.candidates?.[0];
       
-      // 💡 GABUNGKAN SELURUH PARTS RESPON (TERMASUK MODE THINKING)
       const parts = candidate?.content?.parts || [];
-      const answer = parts
-        .map((p: any) => p.text || "")
-        .filter((t: string) => t.trim().length > 0)
-        .join("\n\n")
-        .trim();
+      const textParts = parts.map((p: any) => p.text || "").filter((t: string) => t.trim().length > 0);
+      const answer = textParts.join("\n\n").trim();
 
       if (answer) return answer;
-      
+
       if (candidate?.finishReason && candidate.finishReason !== "STOP") {
-        return `[Respon dihentikan oleh sistem AI: ${candidate.finishReason}]`;
+        if (candidate.finishReason === "MALFORMED_FUNCTION_CALL") {
+          return "Maaf, terjadi kesalahan format pemanggilan. Silakan klik tombol kirim ulang.";
+        }
+        return `[Respon dihentikan oleh AI: ${candidate.finishReason}]`;
       }
 
-      return "Maaf, tidak ada respon teks yang dihasilkan. Silakan coba tanyakan kembali.";
+      return "Maaf, tidak ada respon teks yang dihasilkan. Silakan tanyakan kembali.";
     } catch {
       return rawText || "Maaf, respon tidak dapat diproses.";
     }
