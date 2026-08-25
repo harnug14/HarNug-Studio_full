@@ -1,4 +1,4 @@
-// Mengirim pesan chat ke Gemini, dengan dukungan mode: biasa, mendalam, berpikir, search (grounding) & multimodal (foto/file)
+// Mengirim pesan chat ke Gemini, dengan dukungan mode: biasa, mendalam, berpikir, search (Tavily deep grounding) & multimodal (foto/file)
 
 import { GeminiQuotaError } from "./keyRotation";
 import { fetchTavilySearchResults } from "../tavily";
@@ -13,32 +13,37 @@ export type ChatMode = "biasa" | "mendalam" | "berpikir" | "search";
 export type ContentTarget = "topik" | "naskah" | "visual" | null;
 
 export function buildContentInstruction(contentTarget?: ContentTarget): string {
+  if (contentTarget === "topik") {
+    return "Fokuskan respon pada perumusan ide topik video YouTube Shorts yang menarik, orisinal, dan berbasis fakta sejarah unik.";
+  }
+  if (contentTarget === "naskah") {
+    return "Fokuskan respon pada penyusunan struktur naskah video yang memiliki Hook kuat, alur kronologis runtut, dan bebas klise.";
+  }
+  if (contentTarget === "visual") {
+    return "Fokuskan respon pada visual director prompt, camera angle, dan komposisi pencahayaan sinematik.";
+  }
   return "";
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isDailyQuotaError(errText: string): boolean {
   const lower = errText.toLowerCase();
-  return lower.includes("perday");
+  return lower.includes("perday") || lower.includes("per day") || lower.includes("daily limit");
 }
 
 export function buildStyleInstruction(mode: ChatMode): string {
   const baseStyle =
-    "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku.";
+    "Gunakan bahasa Indonesia yang netral, sopan, dan jelas. JANGAN gunakan bahasa gaul kasual seperti 'lo', 'gue', 'elo', atau sejenisnya — gunakan 'kamu'/'Anda' dan kata baku yang nyaman didengar.";
 
   switch (mode) {
     case "mendalam":
-      return `${baseStyle} Jawab secara sangat detail, analitis, dan komprehensif. Berikan konteks, latar belakang, dan berbagai sudut pandang jika relevan.`;
+      return `${baseStyle} Jawab secara sangat detail, analitis, dan komprehensif. Berikan konteks, latar belakang kronologi, dan berbagai sudut pandang sejarah jika relevan.`;
     case "berpikir":
       return `${baseStyle} [MODE THINKING AKTIF]: Sebelum memberikan jawaban akhir, kamu WAJIB menganalisis dan menjabarkan proses berpikirmu langkah demi langkah (Chain of Thought) secara mendalam di awal jawaban, baru diikuti dengan kesimpulan akhir.`;
     case "search":
-      return `${baseStyle} Jawab pertanyaan pengguna HANYA berdasarkan data hasil pencarian web real-time Tavily yang dilampirkan. Kutip fakta, angka, dan sertakan URL sumbernya (source URL) dalam jawabanmu jika memungkinkan.`;
+      return `${baseStyle} Jawab pertanyaan pengguna secara akurat berdasarkan data hasil pencarian web real-time terverifikasi yang dilampirkan. Kutip fakta, nama tokoh, tahun, dan sertakan URL sumbernya dalam jawabanmu.`;
     case "biasa":
     default:
-      return `${baseStyle} Jawab secara natural dan ringkas seperti obrolan biasa, tapi tetap sopan.`;
+      return `${baseStyle} Jawab secara natural dan ringkas seperti obrolan diskusi kreatif profesional, tapi tetap sopan.`;
   }
 }
 
@@ -81,22 +86,35 @@ export async function chatWithGemini(
   contextText?: string,
   contentTarget?: ContentTarget
 ): Promise<string> {
-  const activeModel = model || "gemini-1.5-flash";
+  // 💡 OTAK UTAMA TERKUNCI STANDAR DI GEMINI 3.6 FLASH (MENDUKUNG MULTI-MODEL DARI UI)
+  const activeModel = model || "gemini-3.6-flash";
   let finalContextText = contextText || "";
 
   // Cari pertanyaan user paling akhir
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
 
-  // Jika Mode Web Search Aktif, panggil Tavily Search API
-  if ((mode === "search" || (typeof mode === "string" && (mode as string).includes("search"))) && lastUserMsg && lastUserMsg.content) {
-    const tavilyData = await fetchTavilySearchResults(lastUserMsg.content);
-    if (tavilyData) {
-      const searchBlock = `\n\n[DATA PENCARIAN WEB REAL-TIME TAVILY DETIK INI]:\n${tavilyData}\n\nATURAN WAJIB: Jawab pertanyaan pengguna secara akurat berdasarkan data pencarian web Tavily di atas dan cantumkan URL sumbernya bila relevan!`;
-      finalContextText = finalContextText ? `${finalContextText}${searchBlock}` : searchBlock;
+  // Jika Mode Search Aktif, panggil Tavily Advanced Search API (Non-Wikipedia)
+  if (
+    (mode === "search" || (typeof mode === "string" && (mode as string).includes("search"))) &&
+    lastUserMsg &&
+    lastUserMsg.content
+  ) {
+    try {
+      const tavilyData = await fetchTavilySearchResults(lastUserMsg.content);
+      if (tavilyData) {
+        const searchBlock = `\n\n[DATA RISET WEB REAL-TIME TERVERIFIKASI VIA TAVILY]:\n${tavilyData}\n\nATURAN WAJIB: Jawab pertanyaan pengguna secara akurat berdasarkan data riset web terpercaya di atas dan cantumkan URL sumbernya bila relevan!`;
+        finalContextText = finalContextText ? `${finalContextText}${searchBlock}` : searchBlock;
+      }
+    } catch (e) {
+      console.warn("[Chat] Tavily search fallback:", e);
     }
   }
 
-  const systemInstruction = buildStyleInstruction(mode);
+  const targetInstruction = buildContentInstruction(contentTarget);
+  const styleInstruction = buildStyleInstruction(mode);
+  const systemInstruction = targetInstruction
+    ? `${styleInstruction}\n\n${targetInstruction}`
+    : styleInstruction;
 
   const contents = messages.map((m) => {
     const parts: any[] = [];
@@ -123,7 +141,7 @@ export async function chatWithGemini(
   if (finalContextText) {
     contents.unshift({
       role: "user",
-      parts: [{ text: `Konteks & Data Web Real-time:\n${finalContextText}` }],
+      parts: [{ text: `Konteks Riset & Data Web Real-time:\n${finalContextText}` }],
     });
   }
 
@@ -143,24 +161,34 @@ export async function chatWithGemini(
     }
   );
 
+  const rawText = await response.text();
+
   if (response.ok) {
-    const data = await response.json();
-    const rawText: string =
-      data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return rawText;
-  }
-
-  const errText = await response.text();
-
-  if (response.status === 429) {
-    if (isDailyQuotaError(errText)) {
-      throw new GeminiQuotaError(
-        `Gemini API quota harian habis (429) - ${errText.slice(0, 200)}`
-      );
-    } else {
-      throw new Error(`Rate limit sesaat pada key ini.`);
+    try {
+      const data = JSON.parse(rawText);
+      const answer: string =
+        data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      return answer;
+    } catch {
+      return rawText;
     }
   }
 
-  throw new Error(`Gemini API error: ${response.status} - ${errText}`);
+  if (response.status === 429) {
+    if (isDailyQuotaError(rawText)) {
+      throw new GeminiQuotaError(
+        `Gemini API quota harian habis (429) - ${rawText.slice(0, 200)}`
+      );
+    } else {
+      throw new Error(`Rate limit sesaat pada model ${activeModel}.`);
+    }
+  }
+
+  let errorDetail = rawText;
+  try {
+    const errJson = JSON.parse(rawText);
+    errorDetail = errJson.error?.message || rawText;
+  } catch {}
+
+  throw new Error(`Gemini API error (${response.status}): ${errorDetail}`);
 }
