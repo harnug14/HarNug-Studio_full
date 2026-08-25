@@ -56,37 +56,39 @@ export class StoryWorldExtractor {
 
     const textLower = input.scriptText.toLowerCase();
 
-    // 1. Character Fact Extraction & Automatic Contextual Hydration (Explicit Array Type)
-    const characters: Array<{
+    // 1. Character Fact Extraction & Automatic Contextual Hydration
+    const characters: Array<Readonly<{
       id: CharacterId;
       name: string;
       roleType: CharacterRoleType;
       ageTier: CharacterAgeTier;
-      action: string;
-    }> = (input.rawCharacterNames ?? []).map((name, index) => {
+      action: 'UNKNOWN' | 'Present in scene';
+    }>> = (input.rawCharacterNames ?? []).map((name, index) => {
       const isExplicit = textLower.includes(name.toLowerCase());
       const roleType = this.inferRoleTypeFromContext(name, textLower);
       const ageTier = this.inferAgeTierFromContext(name, textLower);
 
-      return {
+      return Object.freeze({
         id: createCharacterId(`char-${index + 1}`),
         name,
         roleType,
         ageTier,
-        action: isExplicit ? 'Present in scene' : 'UNKNOWN'
-      };
+        action: isExplicit ? ('Present in scene' as const) : ('UNKNOWN' as const)
+      });
     });
 
     // Jika tidak ada karakter yang terdeteksi, buat default Everyman Subject dengan Contextual Age
     if (characters.length === 0) {
       const fallbackAgeTier = this.inferAgeTierFromContext('subject', textLower);
-      characters.push({
-        id: createCharacterId('char-main'),
-        name: 'Everyman Subject',
-        roleType: 'GENERIC_EVERYMAN',
-        ageTier: fallbackAgeTier,
-        action: 'Present in scene'
-      });
+      characters.push(
+        Object.freeze({
+          id: createCharacterId('char-main'),
+          name: 'Everyman Subject',
+          roleType: 'GENERIC_EVERYMAN' as const,
+          ageTier: fallbackAgeTier,
+          action: 'Present in scene' as const
+        })
+      );
     }
 
     // 2. Object Fact Extraction
@@ -95,7 +97,7 @@ export class StoryWorldExtractor {
       return Object.freeze({
         id: createObjectId(`obj-${index + 1}`),
         name,
-        action: isExplicit ? 'Interacted in scene' : 'UNKNOWN'
+        action: isExplicit ? ('Interacted in scene' as const) : ('UNKNOWN' as const)
       });
     });
 
