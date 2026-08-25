@@ -1,14 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabaseServer";
-import { callGeminiWithRotation, GeminiQuotaError } from "@/lib/gemini/keyRotation";
+import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
+import { fetchTavilySearchResults } from "@/lib/tavily";
 
 // VERCEL TIMEOUT PROTECTOR (60 DETIK)
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-// OTAK UTAMA TUNGGAL (TIDAK BOLEH DIGANTI/DITURUNKAN)
+// OTAK UTAMA TUNGGAL RESMI GOOGLE: GEMINI 3.6 FLASH
 const MAIN_MODEL = "gemini-3.6-flash";
+
+async function requestGoogleGemini(
+  apiKey: string,
+  userPrompt: string,
+  systemPrompt: string
+): Promise<string> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: {
+          responseMimeType: "application/json",
+        },
+      }),
+    }
+  );
+
+  const rawText = await response.text();
+
+  if (!response.ok) {
+    let errorDetail = rawText;
+    try {
+      const errJson = JSON.parse(rawText);
+      errorDetail = errJson.error?.message || rawText;
+    } catch {}
+    throw new Error(`[${response.status}] ${errorDetail}`);
+  }
+
+  const json = JSON.parse(rawText);
+  return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+}
 
 async function callGeminiApi(
   supabase: any,
@@ -16,30 +52,7 @@ async function callGeminiApi(
   systemPrompt: string
 ): Promise<string> {
   return await callGeminiWithRotation(supabase, async (apiKey) => {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          generationConfig: {
-            responseMimeType: "application/json",
-          },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        throw new GeminiQuotaError(`Gemini Rate Limit Exceeded (429)`);
-      }
-      throw new Error(`Gemini API Error: Status ${response.status}`);
-    }
-
-    const json = await response.json();
-    return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    return await requestGoogleGemini(apiKey, userPrompt, systemPrompt);
   });
 }
 
@@ -87,8 +100,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const systemPrompt = `Kamu adalah Scriptwriter & Narrative Strategist tingkat dunia untuk YouTube Shorts.
-Tugasmu adalah menyusun NASKAH UTUH YouTube Shorts berkualitas tinggi yang mengalir sangat natural, organik, dan berbobot.
+    // 💡 AMBIL DATA RISET DETAIL & FAKTA OTENTIK VIA TAVILY SEBELUM MENULIS NASKAH
+    let tavilyContext = "";
+    try {
+      const searchQuery = `fakta sejarah detail kronologi ${judulTopik} ${catatanTopik || ""}`.trim();
+      const tavilyRes = await fetchTavilySearchResults(searchQuery);
+      if (tavilyRes) {
+        tavilyContext = `\n\n[DATA RISET FAKTA & KRONOLOGI SEJARAH OTENTIK VIA TAVILY]:\n${tavilyRes}\n\nATURAN WAJIB AKURASI: Susun isi naskah, alur kronologi, nama tokoh, dan tahun berdasarkan data riset otentik di atas (100% fakta nyata, dilarang halusinasi).`;
+      }
+    } catch (e) {
+      console.warn("[Naskah] Gagal fetch Tavily, lanjut tanpa data tambahan:", e);
+    }
+
+    const systemPrompt = `Kamu adalah Scriptwriter & Narrative Strategist tingkat dunia untuk YouTube Shorts spesialis niche Curious History & Sejarah Unik Kehidupan Manusia.
+Tugasmu adalah menyusun NASKAH UTUH YouTube Shorts berkualitas tinggi yang mengalir sangat natural, organik, dan berbobot berdasarkan fakta nyata.
 
 --- ATURAN MUTLAK KUALITAS PENULISAN (MANDATORI) ---
 1. MENELURUSI DAN MENELIMINASI SEMUA FRASA AI KLISE / TEMPLATE:
@@ -137,7 +162,7 @@ Tugasmu adalah menyusun NASKAH UTUH YouTube Shorts berkualitas tinggi yang menga
       ? `Detail Topik Naskah:
 - Judul Topik: ${judulTopik}
 - Catatan / Konteks Topik: ${catatanTopik || "Tidak ada"}
-${referenceContextText}
+${referenceContextText}${tavilyContext}
 
 Instruksi Tambahan:
 Gunakan contoh-contoh naskah kalibrasi channel di atas untuk mengadopsi tone suara, ritme kalimat, kepanjangan/durasi, serta gaya bertutur channel tersebut secara persis. Hindari frasa klise AI pada hook/transisi/ending dan DILARANG KERAS menggunakan kata "gue/lu" atau variasinya. Buatkan Script Draft terbaik dalam format JSON murni.`
@@ -145,7 +170,7 @@ Gunakan contoh-contoh naskah kalibrasi channel di atas untuk mengadopsi tone sua
 - Judul Topik: ${judulTopik}
 - Catatan / Konteks Topik: ${catatanTopik || "Tidak ada"}
 - Tone Suara: ${tone}
-- Target Panjang / Durasi: ${targetPanjang}
+- Target Panjang / Durasi: ${targetPanjang}${tavilyContext}
 
 Buatkan Script Draft terbaik mengikuti aturan kualitas penulisan tinggi di atas sekarang dalam format JSON murni.`;
 
