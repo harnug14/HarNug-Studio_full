@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const {
-      kategori = "Curious Human History & Bizarre Past Norms",
+      kategori = "Curious Human History",
       durasi = "45-60 detik",
       topikDisukai = "",
       topikDitolak = "",
@@ -92,74 +92,60 @@ export async function POST(req: NextRequest) {
     ]);
 
     let referenceContextText = "";
-    let isProfileMode = false;
-
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
-      isProfileMode = true;
       const samples = profileRes.data.channel_analysis_entries
-        .map((e: any, idx: number) => `[CONTOH POLA DAFIOLOGY ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
+        .map((e: any, idx: number) => `[CONTOH POLA ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
 
-      referenceContextText = `\n\n=== WAJIB ADOPSI TOTAL POLA CHANNEL: "${profileRes.data.profile_name}" ===\n${samples}`;
+      referenceContextText = `\n\n=== POLA GAYA CHANNEL "${profileRes.data.profile_name}" ===\n${samples}`;
     }
 
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
       const daftarJudul = historyRes.data.map((t: any, idx: number) => `${idx + 1}. ${t.judul}`).join("\n");
-      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG MENGULANG TEMA/SUBJEK INI):\n${daftarJudul}`;
+      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG MENGULANG TEMA INI):\n${daftarJudul}`;
     }
 
     let blacklistUser = "";
     if (topikDitolak && topikDitolak.trim()) {
-      blacklistUser = `\n⛔ DITOLAK USER SECARA SPESIFIK: "${topikDitolak}". DILARANG KERAS!`;
+      blacklistUser = `\n⛔ BLACKLIST SPESIFIK DARI PENGGUNA: "${topikDitolak}". DILARANG KERAS!`;
     }
 
-    // 💡 TAVILY SEARCH: Gali domain sejarah yang benar-benar fresh dan liar
     let tavilyContext = "";
     try {
       const searchQuery = topikDisukai
-        ? `bizarre historical facts origins paradox ${topikDisukai}`
-        : `obscure bizarre historical events ancient medical practices weird laws forgotten inventions human history`;
+        ? `bizarre origins human history oddities ${topikDisukai}`
+        : `bizarre origins of everyday objects forgotten ancient professions weird historical customs unusual events`;
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA RISET FAKTA SEJARAH WEB]:\n${tavilyRes}`;
+        tavilyContext = `\n\n[DATA FAKTA RISET WEB]:\n${tavilyRes}`;
       }
     } catch (e) {
       console.warn("[Topik] Tavily fallback:", e);
     }
 
-    const systemPrompt = `Kamu adalah Lead Content Director & Topic Architect untuk channel YouTube Shorts "Dafiology" (Curious Human History).
+    const systemPrompt = `Kamu adalah Lead Content Director & Topic Architect untuk YouTube Shorts Curious Human History (Gaya Dafiology).
 
-🎯 FORMULA TOPIK WAJIB ALAS DAFIOLOGY:
-1. PARADOKS & IRONI MASA LALU: Menyoroti hal yang kita anggap normal/sepele hari ini, tapi di masa lalu punya asal-usul gila, berbahaya, atau konyol.
-2. WAJIB VARIASI DOMAIN (JANGAN MONOTON):
-   - Operasi & Pengobatan Medis Kuno yang Ekstrem (Bukan mumi/radium).
-   - Hukum & Hukuman Absurd Abad Pertengahan / Zaman Kuno.
-   - Profesi Nyata yang Gila di Masa Lalu.
-   - Sanitasi, Kebiasaan Tidur/Makan yang Melanggar Logika Modern.
-   - Taktik Perang Konyol & Keputusan Fatal Pemimpin Dunia.
-3. GAYA JUDUL KHAS DAFIOLOGY:
-   - "[Subjek Unik]: [Fakta/Ironi Mengejutkan yang Bikin Melongo]!"
+🎯 4 PILAR KATEGORI UTAMA (BERIKAN KOMBINASI SEIMBANG DARI PILAR INI):
+1. "Asal-Usul Benda": Benda/fashion sehari-hari dengan asal-usul tak terduga (High Heels, Dasi, Kacamata Hitam, Bantal).
+2. "Profesi Kuno": Pekerjaan nyata masa lalu yang terdengar gila (Groom of the Stool, Whipping Boy, Jam Alarm Manusia).
+3. "Tradisi & Perilaku": Kebiasaan/tren absurd masa lalu (Sewa Nanas, Pengadilan Hewan, Tradisi Gardyloo).
+4. "Peristiwa & Taktik": Taktik aneh atau peristiwa paradoks masa lalu (Taktik Kucing Pelusium, Operasi Cepat Liston).
 
-⛔ ATURAN ANTI-DUPLIKASI SUBJEK MUTLAK:
-Periksa daftar topik database user di bawah. JIKA SEBUAH SUBJEK SUDAH ADA (misal: "Kulkas/Es", "Shampo/Rambut", "Popok"), KAMU DILARANG KERAS MEMBUAT TOPIK TERKAIT SUBJEK ITU LAGI DENGAN ALASAN APA PUN! Wajib pilih subjek/benda/peristiwa yang 100% berbeda!
+⛔ ATURAN KETAT:
+- WAJIB melampirkan label "kategori" yang tepat pada setiap kandidat.
+- DILARANG mengulang subjek/benda yang sudah ada di riwayat database.
+- DILARANG topik klise pasaran (Dancing plague, radithor, wallpaper arsenik, banjir sirup boston, bubuk mumi).
 
-⛔ DAFTAR KLISE PASARAN (DILARANG):
-- Dancing Plague 1518
-- Radithor / Air Radioaktif
-- Scheele's Green / Wallpaper Arsenik
-- Banjir Molasses Boston
-- Bubuk Mumi
-- Garpu dianggap setan
-
-FORMAT JSON OUTPUT PERSIS (pure JSON object):
+FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
       "judul": "Judul Khas Dafiology (Padat, Ironis, Hook Kuat)",
-      "penjelasan": "Uraian 2-3 kalimat mengenai fakta otentik, tokoh/zaman terjadinya, dan kenapa ini memicu rasa penasaran tinggi.",
-      "skor": { "total": 48 },
-      "alasanKelulusan": "Alasan kenapa topik ini 100% sesuai formula Dafiology dan bebas duplikasi subjek."
+      "kategori": "Asal-Usul Benda",
+      "penjelasan": "Uraian 2-3 kalimat mengenai fakta otentik dan alasan kenapa ini sangat menarik.",
+      "skor": { "total": 49 },
+      "alasanKelulusan": "Alasan kelulusan skor >= 40/50."
     }
   ]
 }`;
@@ -169,11 +155,8 @@ ${riwayatTopikText}
 ${blacklistUser}
 ${tavilyContext}
 
-INSTRUKSI EKSEKUSI:
-Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENIRU GAYA DAFIOLOGY.
-- JANGAN mengulang subjek/tema yang sudah ada di daftar database di atas (Kulkas, Rambut, dll WAJIB DIHINDARI).
-- Pastikan setiap kandidat membahas domain sejarah yang berbeda-beda dan kaya intrik manusiawi.
-- Output murni JSON.`;
+Instruksi:
+Hasilkan ${jumlah} ide topik video YouTube Shorts berkualitas tinggi yang berbobot dan seimbang antar-kategori (Benda, Profesi, Tradisi, Taktik). Output murni JSON.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
