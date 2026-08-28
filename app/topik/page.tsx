@@ -57,70 +57,59 @@ function getExplanationText(cand: any): string {
   return "Topik potensial berdasarkan analisis AI.";
 }
 
+// 💡 PEMBERSIH PARAGRAF CATATAN (HAPUS BRACKET [KATEGORI] & [CHANNEL] DARI TEKS UTAMA)
 function getCleanNotes(catatan: string | null): string {
   if (!catatan) return "";
-  return catatan.replace(/^\[.*?\]\s*/, "").trim();
+  return catatan.replace(/^(\[.*?\]\s*)+/, "").trim();
 }
 
-function getCleanCategory(item: TopikItem): string {
+// 💡 EKSTRAKSI LABEL GANDA DARI CATATAN (KATEGORI + NAMA CHANNEL REFERENSI)
+function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef: string | null } {
   const rawCatatan = item.catatan || "";
-  const match = rawCatatan.match(/^\[(.*?)\]/);
-  let cat = match ? match[1].trim() : "";
+  const bracketMatches = Array.from(rawCatatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
 
-  if (!cat || cat.toLowerCase() === "umum") {
-    const text = `${item.judul} ${rawCatatan}`.toLowerCase();
+  let kategori = "";
+  let channelRef: string | null = null;
 
-    if (
-      text.includes("profesi") ||
-      text.includes("pekerjaan") ||
-      text.includes("whipping boy") ||
-      text.includes("groom of the stool") ||
-      text.includes("knocker") ||
-      text.includes("tukang") ||
-      text.includes("digaji")
-    ) {
-      return "Profesi Kuno";
+  if (bracketMatches.length >= 2) {
+    kategori = bracketMatches[0];
+    channelRef = bracketMatches[1];
+  } else if (bracketMatches.length === 1) {
+    if (["dafiology", "jurnal kumal", "framework murni"].some(c => bracketMatches[0].toLowerCase().includes(c))) {
+      channelRef = bracketMatches[0];
+    } else if (bracketMatches[0].toLowerCase() !== "umum") {
+      kategori = bracketMatches[0];
     }
-
-    if (
-      text.includes("taktik") ||
-      text.includes("perang") ||
-      text.includes("pelusium") ||
-      text.includes("trepanasi") ||
-      text.includes("bedah") ||
-      text.includes("operasi") ||
-      text.includes("bencana") ||
-      text.includes("hantu")
-    ) {
-      return "Peristiwa & Taktik";
-    }
-
-    if (
-      text.includes("sejarah") ||
-      text.includes("asal-usul") ||
-      text.includes("dasi") ||
-      text.includes("kacamata") ||
-      text.includes("sepatu") ||
-      text.includes("shampo") ||
-      text.includes("bantal") ||
-      text.includes("kulkas") ||
-      text.includes("es batu") ||
-      text.includes("mentega") ||
-      text.includes("sedotan") ||
-      text.includes("popok") ||
-      text.includes("deodoran") ||
-      text.includes("uang") ||
-      text.includes("lakban") ||
-      text.includes("jam ") ||
-      text.includes("alarm")
-    ) {
-      return "Asal-Usul Benda";
-    }
-
-    return "Tradisi & Perilaku";
   }
 
-  return cat;
+  // Auto-detect Kategori jika belum ada di catatan lama
+  if (!kategori || kategori.toLowerCase() === "umum") {
+    const text = `${item.judul} ${rawCatatan}`.toLowerCase();
+
+    if (text.includes("profesi") || text.includes("pekerjaan") || text.includes("whipping boy") || text.includes("groom of the stool") || text.includes("knocker") || text.includes("digaji")) {
+      kategori = "Profesi Kuno";
+    } else if (text.includes("taktik") || text.includes("perang") || text.includes("pelusium") || text.includes("trepanasi") || text.includes("bedah") || text.includes("bencana") || text.includes("hantu")) {
+      kategori = "Peristiwa & Taktik";
+    } else if (text.includes("sejarah") || text.includes("asal-usul") || text.includes("dasi") || text.includes("kacamata") || text.includes("sepatu") || text.includes("shampo") || text.includes("kulkas") || text.includes("sedotan") || text.includes("uang") || text.includes("lakban") || text.includes("jam ") || text.includes("alarm")) {
+      kategori = "Asal-Usul Benda";
+    } else if (text.includes("kasus") || text.includes("menuntut") || text.includes("pengadilan") || text.includes("penjara") || text.includes("koma") || text.includes("petani") || text.includes("bandara")) {
+      kategori = "Kasus Unik";
+    } else {
+      kategori = "Tradisi & Perilaku";
+    }
+  }
+
+  // Auto-detect Channel untuk data lama
+  if (!channelRef) {
+    const text = `${item.judul} ${rawCatatan}`.toLowerCase();
+    if (text.includes("menuntut") || text.includes("bandara narita") || text.includes("pencuri") || text.includes("koma") || text.includes("salah transfer")) {
+      channelRef = "Jurnal Kumal";
+    } else if (text.includes("sejarah") || text.includes("asal-usul") || text.includes("groom of the stool") || text.includes("whipping boy") || text.includes("pelusium") || text.includes("trepanasi") || text.includes("sewa nanas")) {
+      channelRef = "Dafiology";
+    }
+  }
+
+  return { kategori, channelRef };
 }
 
 export default function TopicPage() {
@@ -155,10 +144,7 @@ export default function TopicPage() {
   const [editJudul, setEditJudul] = useState("");
   const [editCatatan, setEditCatatan] = useState("");
 
-  // Filter Status (ALL | PROCESSED | UNPROCESSED)
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PROCESSED" | "UNPROCESSED">("ALL");
-
-  // 💡 STATE PENCARIAN REAL-TIME
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -321,9 +307,13 @@ export default function TopicPage() {
     try {
       const numericScore = getScoreNumber(candidate.skor);
       const explanation = getExplanationText(candidate);
+      
+      // Ambil nama channel yang sedang aktif
+      const activeProfile = channelProfiles.find((p) => p.id === referenceProfileId);
+      const channelRefName = activeProfile ? activeProfile.profile_name : "Framework Murni";
       const categoryTag = candidate.kategori || "Tradisi & Perilaku";
       
-      let notes = `[${categoryTag}] Skor: ${numericScore}/50 | ${explanation}`;
+      let notes = `[${categoryTag}] [${channelRefName}] Skor: ${numericScore}/50 | ${explanation}`;
       if (candidate.hookFormula) notes += `\nHook: ${candidate.hookFormula}`;
       if (candidate.retentionAngle) notes += `\nAngle: ${candidate.retentionAngle}`;
 
@@ -424,15 +414,12 @@ export default function TopicPage() {
     });
   }
 
-  // 💡 FILTER DAFTAR TOPIK BERDASARKAN STATUS DAN KATA KUNCI PENCARIAN
   const filteredItems = items.filter((item) => {
     const hasNaskah = checkHasNaskah(item);
     
-    // 1. Filter Status
     if (filterStatus === "PROCESSED" && !hasNaskah) return false;
     if (filterStatus === "UNPROCESSED" && hasNaskah) return false;
 
-    // 2. Filter Kotak Pencarian
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const titleMatch = cleanTitle(item.judul).toLowerCase().includes(q);
@@ -442,6 +429,8 @@ export default function TopicPage() {
 
     return true;
   });
+
+  const activeChannelProfile = channelProfiles.find((p) => p.id === referenceProfileId);
 
   return (
     <div className="animate-fade-in">
@@ -554,7 +543,7 @@ export default function TopicPage() {
             </div>
 
             <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
-              {generating ? <><span className="spinner" /> Menganalisis 50-Point Viral Potential...</> : "Generate Ide Topik"}
+              {generating ? <><span className="spinner" /> Menganalisis DNA Channel & Ideasi...</> : "Generate Ide Topik"}
             </button>
           </form>
 
@@ -624,8 +613,10 @@ export default function TopicPage() {
                 <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div>
+                      {/* 💡 BADGE GANDA (SKOR + KATEGORI BIRU + CHANNEL UNGU) */}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                         <span className="badge badge-neutral">Skor: {numericScore}/50</span>
+                        
                         {cand.kategori && (
                           <span
                             className="badge badge-neutral"
@@ -639,8 +630,24 @@ export default function TopicPage() {
                             🏷️ {cand.kategori}
                           </span>
                         )}
+
+                        {activeChannelProfile && (
+                          <span
+                            className="badge badge-neutral"
+                            style={{
+                              color: "#c084fc",
+                              background: "rgba(192, 132, 252, 0.12)",
+                              border: "1px solid rgba(192, 132, 252, 0.3)",
+                              fontWeight: 600
+                            }}
+                          >
+                            📺 {activeChannelProfile.profile_name}
+                          </span>
+                        )}
+
                         {cand.targetDurasi && <span className="badge badge-neutral">{cand.targetDurasi}</span>}
                       </div>
+
                       <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)", lineHeight: 1.35 }}>
                         {cleanTitle(cand.judul)}
                       </h3>
@@ -742,7 +749,7 @@ export default function TopicPage() {
         <div>
           <input
             type="text"
-            placeholder="🔍 Cari judul topik atau kata kunci (misal: kulkas, lintah, dasi)..."
+            placeholder="🔍 Cari judul topik, kata kunci, atau nama channel (misal: bandara, dasi, jurnal kumal)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="input-field"
@@ -770,7 +777,7 @@ export default function TopicPage() {
           {filteredItems.map((item) => {
             const isEditing = editingId === item.id;
             const hasNaskah = checkHasNaskah(item);
-            const itemKategori = getCleanCategory(item);
+            const { kategori: itemKategori, channelRef: itemChannel } = extractBadgesFromNotes(item);
             const cleanNotes = getCleanNotes(item.catatan);
 
             return (
@@ -809,6 +816,8 @@ export default function TopicPage() {
                             flexShrink: 0
                           }}
                         />
+
+                        {/* 💡 BADGE KATEGORI (BIRU) */}
                         <span
                           className="badge badge-neutral"
                           style={{
@@ -821,6 +830,23 @@ export default function TopicPage() {
                         >
                           🏷️ {itemKategori}
                         </span>
+
+                        {/* 💡 BADGE CHANNEL REFERENSI (UNGU) */}
+                        {itemChannel && (
+                          <span
+                            className="badge badge-neutral"
+                            style={{
+                              color: "#c084fc",
+                              background: "rgba(192, 132, 252, 0.12)",
+                              border: "1px solid rgba(192, 132, 252, 0.3)",
+                              fontSize: 10,
+                              fontWeight: 600
+                            }}
+                          >
+                            📺 {itemChannel}
+                          </span>
+                        )}
+
                         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: "var(--text-primary)", lineHeight: 1.35 }}>
                           {cleanTitle(item.judul)}
                         </h3>
