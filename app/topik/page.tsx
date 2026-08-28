@@ -57,6 +57,13 @@ function getExplanationText(cand: any): string {
   return "Topik potensial berdasarkan analisis AI.";
 }
 
+// 💡 HELPER UNTUK MENGEKSTRAK LABEL KATEGORI DARI CATATAN TOPIK TERSIMPAN
+function extractCategoryFromNotes(catatan: string | null): string | null {
+  if (!catatan) return null;
+  const match = catatan.match(/^\[(.*?)\]/);
+  return match ? match[1] : null;
+}
+
 export default function TopicPage() {
   const router = useRouter();
   const [items, setItems] = useState<TopikItem[]>([]);
@@ -89,10 +96,8 @@ export default function TopicPage() {
   const [editJudul, setEditJudul] = useState("");
   const [editCatatan, setEditCatatan] = useState("");
 
-  // Filter Status (ALL | PROCESSED | UNPROCESSED)
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PROCESSED" | "UNPROCESSED">("ALL");
 
-  // MEMUAT KANDIDAT YANG BELUM DISIMPAN DARI LOCAL STORAGE (AWET SAAT REFRESH/CLOSE)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("cached_topic_candidates");
@@ -109,7 +114,6 @@ export default function TopicPage() {
     }
   }, []);
 
-  // FUNGSI UPDATE STATE KANDIDAT DAN SIMPAN PERMANEN KE LOCAL STORAGE
   function updateCandidates(newCandidates: TopikCandidate[]) {
     setCandidates(newCandidates);
     if (typeof window !== "undefined") {
@@ -517,7 +521,6 @@ export default function TopicPage() {
                 <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div>
-                      {/* 💡 BADGE SKOR + BADGE KATEGORI MINIMALIS */}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                         <span className="badge badge-neutral">Skor: {numericScore}/50</span>
                         {cand.kategori && (
@@ -565,7 +568,7 @@ export default function TopicPage() {
         </div>
       )}
 
-      {/* Daftar Topic List */}
+      {/* Daftar Topic List (Dengan Badge Kategori) */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div className="section-title" style={{ margin: 0 }}>
           Daftar Topic ({filteredItems.length} dari {items.length})
@@ -648,6 +651,7 @@ export default function TopicPage() {
           {filteredItems.map((item) => {
             const isEditing = editingId === item.id;
             const hasNaskah = checkHasNaskah(item);
+            const itemKategori = extractCategoryFromNotes(item.catatan);
 
             return (
               <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18 }}>
@@ -673,7 +677,7 @@ export default function TopicPage() {
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     <div style={{ width: "100%" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                         <span
                           title={hasNaskah ? "Sudah diproses ke Naskah" : "Belum diproses ke Naskah"}
                           style={{
@@ -685,6 +689,21 @@ export default function TopicPage() {
                             flexShrink: 0
                           }}
                         />
+                        {/* 💡 BADGE KATEGORI OTOMATIS MUNCUL DI DAFTAR TOPIK TERSIMPAN */}
+                        {itemKategori && (
+                          <span
+                            className="badge badge-neutral"
+                            style={{
+                              color: "#38bdf8",
+                              background: "rgba(56, 189, 248, 0.12)",
+                              border: "1px solid rgba(56, 189, 248, 0.3)",
+                              fontSize: 10,
+                              fontWeight: 600
+                            }}
+                          >
+                            🏷️ {itemKategori}
+                          </span>
+                        )}
                         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: "var(--text-primary)", lineHeight: 1.35 }}>
                           {cleanTitle(item.judul)}
                         </h3>
