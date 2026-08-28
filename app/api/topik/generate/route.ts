@@ -76,7 +76,6 @@ export async function POST(req: NextRequest) {
       rejectedHistory = [],
     } = await req.json();
 
-    // EKSEKUSI KUERI PARALEL (AMBIL PROFIL CHANNEL DARI DB + 100 TOPIK RIWAYAT)
     const [profileRes, historyRes] = await Promise.all([
       referenceProfileId
         ? supabase
@@ -96,17 +95,15 @@ export async function POST(req: NextRequest) {
     let isProfileMode = false;
     let channelName = "";
     let referenceContextText = "";
-    let sampleTitlesList: string[] = [];
+    let isJurnalKumal = false;
 
-    // 💡 EKSTRAKSI DNA DARI CHANNEL MANA PUN YANG DIPILIH DARI DATABASE
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name;
-      
-      sampleTitlesList = profileRes.data.channel_analysis_entries.map((e: any) => e.title).filter(Boolean);
-      
+      isJurnalKumal = channelName.toLowerCase().includes("kumal");
+
       const samples = profileRes.data.channel_analysis_entries
-        .map((e: any, idx: number) => `[CONTOH NASKAH ASLI ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
+        .map((e: any, idx: number) => `[CONTOH POLA ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
 
       referenceContextText = `\n\n=== CONTOH POLA & NASKAH ASLI DARI DATABASE CHANNEL "${channelName}" ===\n${samples}`;
@@ -122,66 +119,95 @@ export async function POST(req: NextRequest) {
     const combinedRejected = [
       ...(topikDitolak ? [topikDitolak] : []),
       ...(Array.isArray(rejectedHistory) ? rejectedHistory : []),
+      "Groom of the Stool",
+      "Perang Emu",
+      "Kaki Teratai",
+      "Cornflakes",
+      "Sirup Heroin",
     ];
 
     if (combinedRejected.length > 0) {
-      const list = combinedRejected.slice(0, 40).map((r: string) => `- ${r}`).join("\n");
-      blacklistText = `\n\n⛔ DAFTAR TOPIK DITOLAK/DIABAIKAN PENGGUNA (JANGAN DIBUAT LAGI):\n${list}`;
+      const list = combinedRejected.slice(0, 50).map((r: string) => `- ${r}`).join("\n");
+      blacklistText = `\n\n⛔ DAFTAR BLACKLIST (DILARANG KERAS MUNCUL LAGI):\n${list}`;
     }
 
-    // 💡 PENCARIAN TAVILY REAL-TIME DINAMIS (MENYESUAIKAN TEMA ASLI CHANNEL)
+    // 💡 RISET TAVILY SESUAI NICHE ASLI CHANNEL
     let tavilyContext = "";
     try {
       let searchQuery = "";
       if (isProfileMode) {
-        // Ambil 2 sampel judul asli channel untuk memandu arah pencarian web
-        const titleKeywords = sampleTitlesList.slice(0, 2).join(" ").replace(/[^a-zA-Z0-9\s]/g, "");
-        searchQuery = topikDisukai
-          ? `fakta unik menarik nyata ${topikDisukai}`
-          : `bizarre true facts unique phenomena interesting stories ${titleKeywords}`;
+        if (isJurnalKumal) {
+          // Khusus Jurnal Kumal: Murni cari kisah nyata aneh, kasus hukum absurd, fenomena manusia ekstrem
+          searchQuery = topikDisukai
+            ? `bizarre true stories human phenomena weird real cases ${topikDisukai}`
+            : `shocking bizarre true stories real life unbelievable human events weird lawsuits strange people phenomena`;
+        } else {
+          // Khusus Dafiology: Sejarah benda kuno & tradisi masa lalu
+          searchQuery = topikDisukai
+            ? `bizarre origins human history oddities ${topikDisukai}`
+            : `bizarre origins of everyday objects forgotten ancient professions weird historical customs`;
+        }
       } else {
         searchQuery = topikDisukai
-          ? `${kategori} fakta unik menarik ${topikDisukai}`
+          ? `${kategori} fakta unik ${topikDisukai}`
           : `${kategori} fakta unik menarik mencengangkan`;
       }
 
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA FAKTA RISET WEB TERBARU VIA TAVILY]:\n${tavilyRes}`;
+        tavilyContext = `\n\n[DATA FAKTA RISET WEB TERBARU]:\n${tavilyRes}`;
       }
     } catch (e) {
       console.warn("[Topik] Tavily fallback:", e);
     }
 
-    // 💡 SYSTEM PROMPT MURNI DINAMIS (OTOMATIS BERADAPTASI KE CHANNEL APA PUN)
-    const systemPrompt = isProfileMode
-      ? `Kamu adalah Lead Content Strategist & Topic Architect kelas dunia. 
-TUGAS UTAMA: Analisis dan ekstrak secara mandiri DNA gaya konten, tema pembahasan, sudut pandang unik, pacing cerita, dan formula judul dari channel "${channelName}" berdasarkan naskah-naskah aslinya di bawah.
-Hasilkan ide topik baru yang 100% selaras dengan DNA channel tersebut, berakar pada fakta otentik dari web riset, dan memiliki potensi retensi penonton yang tinggi.
+    let systemPrompt = "";
 
-⚖️ ATURAN KUALITAS & GAYA BAHASA:
-1. GAYA BAHASA: Tiru gaya bertutur khas channel "${channelName}". Gunakan bahasa yang LUGAS, SANTAI, dan CERDAS.
-2. DILARANG VULGAR KASAR & DILARANG LEBAY/HIPERBOLA.
-3. DILARANG MENGULANG SUBJEK/TEMA yang sudah ada di database atau yang diabaikan pengguna.
+    if (isProfileMode && isJurnalKumal) {
+      // 💡 SYSTEM PROMPT KHUSUS JURNAL KUMAL (100% KISAH NYATA / FENOMENA ANEH DUNIA)
+      systemPrompt = `Kamu adalah Lead Content Strategist untuk channel YouTube Shorts "Jurnal Kumal".
+
+🎯 ATURAN DNA JURNAL KUMAL (WAJIB DIPATUHI 100%):
+1. BUKAN SEJARAH KUNO: DILARANG KERAS membuat topik tentang sejarah benda abad pertengahan, kerajaan kuno, atau zaman purba!
+2. TEMA UTAMA: 
+   - Kasus Hukum / Persidangan Aneh Nyata di Dunia (contoh: anak dituntut ortu karena malas, orang menuntut dirinya sendiri).
+   - Fenomena Manusia Ekstrem & Unik (contoh: orang dengan obsesi gila, petani di tengah runway bandara, orang hidup dengan kondisi fisik langka).
+   - Kejadian Nyata yang Penuh Ironi & Plot Twist Menggelitik.
+3. KATEGORI: Klasifikasikan ke salah satu: "Kasus Unik" | "Fenomena Nyata" | "Kisah Ekstrem" | "Sosial & Manusia" | "Tradisi & Perilaku".
+4. GAYA BAHASA: Lugas, santai, memancing rasa heran penonton, anti-vulgar, dan anti-lebay.
 
 FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Sesuai Karakter Channel (Lugas, Cerdas, Hook Kuat)",
-      "kategori": "Tradisi & Perilaku", // Klasifikasikan ke salah satu: "Asal-Usul Benda" | "Profesi Kuno" | "Tradisi & Perilaku" | "Peristiwa & Taktik"
-      "penjelasan": "Uraian singkat 2-3 kalimat mengenai fakta otentik dan daya tarik ceritanya.",
-      "skor": { "total": 48 },
-      "alasanKelulusan": "Alasan kenapa topik ini 100% selaras dengan DNA channel referensi dan bebas duplikasi."
+      "judul": "Judul Khas Jurnal Kumal (Menyoroti Keanehan Kasus/Orang Secara Lugas)",
+      "kategori": "Kasus Unik",
+      "penjelasan": "Uraian 2-3 kalimat mengenai siapa tokohnya, di negara mana terjadinya, dan apa keanehan/ironi kasusnya.",
+      "skor": { "total": 49 },
+      "alasanKelulusan": "Alasan kenapa topik ini 100% sesuai karakter Jurnal Kumal."
     }
   ]
-}`
-      : `Kamu adalah Lead Content Strategist & Topic Architect untuk YouTube Shorts spesialis kategori "${kategori}".
+}`;
+    } else if (isProfileMode) {
+      // 💡 SYSTEM PROMPT DINAMIS UNTUK DAFIOLOGY / CHANNEL LAIN
+      systemPrompt = `Kamu adalah Lead Content Strategist & Topic Architect untuk YouTube Shorts channel "${channelName}".
+Tugasmu adalah mereplikasi DNA gaya konten, tema pembahasan, dan pola judul channel "${channelName}" berdasarkan contoh naskah aslinya.
 
-⚖️ ATURAN KUALITAS & GAYA BAHASA:
-1. Hasilkan ide topik berkualitas tinggi yang berakar pada fakta otentik dan berpotensi viral tinggi.
-2. Gunakan bahasa yang LUGAS, CERDAS, dan SANTAI (Anti-Vulgar & Anti-Lebay).
-3. DILARANG MENGULANG TEMA/SUBJEK yang sudah ada di database atau yang ditolak pengguna.
+FORMAT JSON OUTPUT PERSIS:
+{
+  "candidates": [
+    {
+      "judul": "Judul Khas ${channelName}",
+      "kategori": "Asal-Usul Benda", // Pilih: "Asal-Usul Benda" | "Profesi Kuno" | "Tradisi & Perilaku" | "Peristiwa & Taktik"
+      "penjelasan": "Uraian 2-3 kalimat fakta otentik.",
+      "skor": { "total": 48 },
+      "alasanKelulusan": "Alasan kelulusan skor >= 40/50."
+    }
+  ]
+}`;
+    } else {
+      // MODE TANPA REFERENSI
+      systemPrompt = `Kamu adalah Lead Content Strategist untuk YouTube Shorts spesialis kategori "${kategori}".
 
 FORMAT JSON OUTPUT PERSIS:
 {
@@ -195,29 +221,17 @@ FORMAT JSON OUTPUT PERSIS:
     }
   ]
 }`;
+    }
 
-    const userPrompt = isProfileMode
-      ? `${referenceContextText}
+    const userPrompt = `${referenceContextText}
 ${riwayatTopikText}
 ${blacklistText}
 ${tavilyContext}
 
 INSTRUKSI EKSEKUSI:
-Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENIRU KARAKTER DAN POLA DARI CONTOH NASKAH ASLI CHANNEL "${channelName}".
-- Pelajari contoh naskah asli channel di atas secara teliti.
-- Pastikan topik baru belum ada di database dan didukung fakta riset web.
-- Output murni JSON.`
-      : `Parameter Pencarian:
-- Kategori: ${kategori}
-- Durasi: ${durasi}
-- Preferensi: ${topikDisukai || "Bebas"}
-- Ditolak: ${topikDitolak || "Tidak ada"}
-- Jumlah: ${jumlah}
-${riwayatTopikText}
-${blacklistText}
-${tavilyContext}
-
-Hasilkan ${jumlah} ide topik berkualitas tinggi dalam format JSON murni.`;
+Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENIRU KARAKTER CHANNEL "${channelName || kategori}".
+${isJurnalKumal ? "⛔ INGAT: Jurnal Kumal BUKAN sejarah kuno! Wajib fokus pada Kasus Nyata Unik Dunia, Fenomena Manusia Ekstrem, dan Ironi Nyata." : ""}
+- Output murni JSON.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
