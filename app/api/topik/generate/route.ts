@@ -24,7 +24,7 @@ async function requestGoogleGemini(
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.85,
+          temperature: 0.9,
         },
       }),
     }
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const {
-      kategori = "Asal-usul Kebiasaan & Kehidupan Manusia Masa Lalu",
+      kategori = "Curious Human History & Bizarre Past Norms",
       durasi = "45-60 detik",
       topikDisukai = "",
       topikDitolak = "",
@@ -97,80 +97,83 @@ export async function POST(req: NextRequest) {
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
       const samples = profileRes.data.channel_analysis_entries
-        .map((e: any, idx: number) => `Contoh Naskah ${idx + 1}: ${e.title}\nNaskah Utuh:\n${e.full_script || ""}`)
+        .map((e: any, idx: number) => `[CONTOH POLA DAFIOLOGY ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
 
-      referenceContextText = `\n\nREFERENSI PROFIL CHANNEL LENGKAP ("${profileRes.data.profile_name}"):\n${samples}`;
+      referenceContextText = `\n\n=== WAJIB ADOPSI TOTAL POLA CHANNEL: "${profileRes.data.profile_name}" ===\n${samples}`;
     }
 
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
-      const daftarJudul = historyRes.data.map((t: any) => `- ${t.judul}`).join("\n");
-      riwayatTopikText = `\n\n--- DAFTAR TOPIK DATABASE ANDA (DILARANG DUPLIKAT) ---\n${daftarJudul}`;
+      const daftarJudul = historyRes.data.map((t: any, idx: number) => `${idx + 1}. ${t.judul}`).join("\n");
+      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG MENGULANG TEMA/SUBJEK INI):\n${daftarJudul}`;
     }
 
     let blacklistUser = "";
     if (topikDitolak && topikDitolak.trim()) {
-      blacklistUser = `\n⛔ BLACKLIST KHUSUS PENGGUNA: Dilarang keras membuat topik tentang: "${topikDitolak}".`;
+      blacklistUser = `\n⛔ DITOLAK USER SECARA SPESIFIK: "${topikDitolak}". DILARANG KERAS!`;
     }
 
-    // 💡 RISET TAVILY TERARAH: Khusus asal-usul barang, kebiasaan manusia, dan profesi kuno
+    // 💡 TAVILY SEARCH: Gali domain sejarah yang benar-benar fresh dan liar
     let tavilyContext = "";
     try {
       const searchQuery = topikDisukai
-        ? `bizarre origin of everyday habits objects history ${topikDisukai}`
-        : `bizarre origins of daily habits forgotten ancient human professions weird everyday life customs history`;
+        ? `bizarre historical facts origins paradox ${topikDisukai}`
+        : `obscure bizarre historical events ancient medical practices weird laws forgotten inventions human history`;
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA FAKTA RISET WEB TAVILY]:\n${tavilyRes}`;
+        tavilyContext = `\n\n[DATA RISET FAKTA SEJARAH WEB]:\n${tavilyRes}`;
       }
     } catch (e) {
       console.warn("[Topik] Tavily fallback:", e);
     }
 
-    const systemPrompt = `Kamu adalah Lead Researcher & Story Strategist untuk channel YouTube Shorts "Curious Human History" (Standar Dafiology).
+    const systemPrompt = `Kamu adalah Lead Content Director & Topic Architect untuk channel YouTube Shorts "Dafiology" (Curious Human History).
 
-🎯 PILAR TEMA UTAMA TOPIK (WAJIB MEMILIH DARI PILAR INI):
-1. ASAL-USUL BENDA/NORMA SEHARI-HARI: Kenapa manusia masa lalu menciptakan barang/etika tertentu (misal: asal-usul deodoran, bantal batu, sepatu hak tinggi, salaman).
-2. CARA HIDUP SEBELUM TEKNOLOGI MODERN: Solusi cerdas/ekstrem manusia purba/kuno untuk mengatasi masalah hidup (misal: cara bangun pagi sebelum ada jam alarm, cara mandi sebelum ada sabun, cara kirim pesan sebelum ada pos).
-3. PROFESI ANEH YANG SUDAH PUNAH: Pekerjaan nyata di masa lalu yang terdengar gila hari ini.
-4. DILEMA SOSIAL & ATURAN ANEH: Kebiasaan makan, tidur, atau interaksi sosial kuno yang memicu benturan budaya.
+🎯 FORMULA TOPIK WAJIB ALAS DAFIOLOGY:
+1. PARADOKS & IRONI MASA LALU: Menyoroti hal yang kita anggap normal/sepele hari ini, tapi di masa lalu punya asal-usul gila, berbahaya, atau konyol.
+2. WAJIB VARIASI DOMAIN (JANGAN MONOTON):
+   - Operasi & Pengobatan Medis Kuno yang Ekstrem (Bukan mumi/radium).
+   - Hukum & Hukuman Absurd Abad Pertengahan / Zaman Kuno.
+   - Profesi Nyata yang Gila di Masa Lalu.
+   - Sanitasi, Kebiasaan Tidur/Makan yang Melanggar Logika Modern.
+   - Taktik Perang Konyol & Keputusan Fatal Pemimpin Dunia.
+3. GAYA JUDUL KHAS DAFIOLOGY:
+   - "[Subjek Unik]: [Fakta/Ironi Mengejutkan yang Bikin Melongo]!"
 
-⛔ DAFTAR MERAH KLISE AI (DILARANG KERAS MENGHASILKAN INI):
-DILARANG 100% membuat topik tentang:
-- Wabah Menari Strasbourg 1518 (Dancing Plague)
-- Air Minum Radioaktif / Radithor
-- Cat Hijau Paris Green / Scheele's Green / Wallpaper Arsenik
-- Banjir Sirup Molasses Boston 1919
-- Bubuk Mumi Obat / Mummia
-- Perang Emu Australia
+⛔ ATURAN ANTI-DUPLIKASI SUBJEK MUTLAK:
+Periksa daftar topik database user di bawah. JIKA SEBUAH SUBJEK SUDAH ADA (misal: "Kulkas/Es", "Shampo/Rambut", "Popok"), KAMU DILARANG KERAS MEMBUAT TOPIK TERKAIT SUBJEK ITU LAGI DENGAN ALASAN APA PUN! Wajib pilih subjek/benda/peristiwa yang 100% berbeda!
+
+⛔ DAFTAR KLISE PASARAN (DILARANG):
+- Dancing Plague 1518
+- Radithor / Air Radioaktif
+- Scheele's Green / Wallpaper Arsenik
+- Banjir Molasses Boston
+- Bubuk Mumi
 - Garpu dianggap setan
 
-FORMAT JSON OUTPUT PERSIS:
+FORMAT JSON OUTPUT PERSIS (pure JSON object):
 {
   "candidates": [
     {
-      "judul": "Judul Konkret, Menggelitik Rasa Ingin Tahu, dan Berbobot",
-      "penjelasan": "Uraian 2-3 kalimat mengenai fakta otentik dan solusi unik manusia di zaman itu.",
-      "skor": { "total": 47 },
-      "alasanKelulusan": "Alasan kenapa topik ini relevan dengan kehidupan manusia dan bebas klise."
+      "judul": "Judul Khas Dafiology (Padat, Ironis, Hook Kuat)",
+      "penjelasan": "Uraian 2-3 kalimat mengenai fakta otentik, tokoh/zaman terjadinya, dan kenapa ini memicu rasa penasaran tinggi.",
+      "skor": { "total": 48 },
+      "alasanKelulusan": "Alasan kenapa topik ini 100% sesuai formula Dafiology dan bebas duplikasi subjek."
     }
   ]
-}${riwayatTopikText}${blacklistUser}`;
+}`;
 
-    const userPrompt = isProfileMode
-      ? `PROFIL CHANNEL REFERENSI:${referenceContextText}${tavilyContext}
+    const userPrompt = `${referenceContextText}
+${riwayatTopikText}
+${blacklistUser}
+${tavilyContext}
 
-Instruksi:
-Hasilkan ${jumlah} ide topik baru yang fresh, fokus pada kebiasaan & asal-usul kehidupan manusia masa lalu, dan PATUHI daftar merah larangan klise AI. Berikan dalam JSON murni.`
-      : `Parameter Ideation:
-- Niche: ${kategori}
-- Durasi: ${durasi}
-- Preferensi: ${topikDisukai || "Asal-usul barang sehari-hari, cara manusia hidup sebelum teknologi, profesi kuno yang hilang"}
-- Topik Ditolak: ${topikDitolak || "Tidak ada"}
-- Jumlah: ${jumlah} kandidat${tavilyContext}
-
-Hasilkan ${jumlah} ide topik fresh anti-klise dalam JSON murni sekarang.`;
+INSTRUKSI EKSEKUSI:
+Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENIRU GAYA DAFIOLOGY.
+- JANGAN mengulang subjek/tema yang sudah ada di daftar database di atas (Kulkas, Rambut, dll WAJIB DIHINDARI).
+- Pastikan setiap kandidat membahas domain sejarah yang berbeda-beda dan kaya intrik manusiawi.
+- Output murni JSON.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
