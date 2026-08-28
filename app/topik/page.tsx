@@ -92,7 +92,7 @@ export default function TopicPage() {
   // Filter Status (ALL | PROCESSED | UNPROCESSED)
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PROCESSED" | "UNPROCESSED">("ALL");
 
-  // 💡 MEMUAT KANDIDAT YANG BELUM DISIMPAN DARI LOCAL STORAGE (AWET SAAT REFRESH & CLOSE BROWSER)
+  // MEMUAT KANDIDAT YANG BELUM DISIMPAN DARI LOCAL STORAGE (AWET SAAT REFRESH/CLOSE)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("cached_topic_candidates");
@@ -109,7 +109,7 @@ export default function TopicPage() {
     }
   }, []);
 
-  // 💡 FUNGSI UPDATE STATE KANDIDAT DAN SIMPAN PERMANEN KE LOCAL STORAGE
+  // FUNGSI UPDATE STATE KANDIDAT DAN SIMPAN PERMANEN KE LOCAL STORAGE
   function updateCandidates(newCandidates: TopikCandidate[]) {
     setCandidates(newCandidates);
     if (typeof window !== "undefined") {
@@ -229,7 +229,7 @@ export default function TopicPage() {
       const numericScore = getScoreNumber(candidate.skor);
       const explanation = getExplanationText(candidate);
       
-      let notes = `Skor: ${numericScore}/50 | ${explanation}`;
+      let notes = `[${candidate.kategori || "Umum"}] Skor: ${numericScore}/50 | ${explanation}`;
       if (candidate.hookFormula) notes += `\nHook: ${candidate.hookFormula}`;
       if (candidate.retentionAngle) notes += `\nAngle: ${candidate.retentionAngle}`;
 
@@ -244,7 +244,6 @@ export default function TopicPage() {
       const json = await res.json();
       if (json.data) {
         fetchTopik();
-        // OTOMATIS HILANGKAN KANDIDAT YANG SUDAH DISIMPAN DARI TAMPILAN
         const remaining = candidates.filter(
           (c) => cleanTitle(c.judul) !== cleanTitle(candidate.judul)
         );
@@ -319,7 +318,6 @@ export default function TopicPage() {
     router.push(`/naskah?topikId=${item.id}&judul=${encodeURIComponent(cleanTitle(item.judul))}`);
   }
 
-  // Cek relasi apakah topik item sudah dibuatkan naskah
   function checkHasNaskah(topik: TopikItem): boolean {
     if (!Array.isArray(naskahList) || naskahList.length === 0) return false;
 
@@ -331,7 +329,6 @@ export default function TopicPage() {
     });
   }
 
-  // Filter daftar topik
   const filteredItems = items.filter((item) => {
     const hasNaskah = checkHasNaskah(item);
     if (filterStatus === "PROCESSED") return hasNaskah;
@@ -341,14 +338,12 @@ export default function TopicPage() {
 
   return (
     <div className="animate-fade-in">
-      {/* Subtitle Halaman */}
       <div style={{ marginBottom: 16 }}>
         <p className="page-subtitle">
           Generate ide topik berpotensi viral (AI 50-Point Framework) atau kelola Daftar Topic Anda.
         </p>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <button
           onClick={() => setActiveTab("generator")}
@@ -364,7 +359,6 @@ export default function TopicPage() {
         </button>
       </div>
 
-      {/* AI Topic Generator Form */}
       {activeTab === "generator" && (
         <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
           <form onSubmit={handleGenerate}>
@@ -465,7 +459,6 @@ export default function TopicPage() {
         </div>
       )}
 
-      {/* Manual Form */}
       {activeTab === "manual" && (
         <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
           <form onSubmit={handleManualSubmit}>
@@ -524,8 +517,22 @@ export default function TopicPage() {
                 <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      {/* 💡 BADGE SKOR + BADGE KATEGORI MINIMALIS */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                         <span className="badge badge-neutral">Skor: {numericScore}/50</span>
+                        {cand.kategori && (
+                          <span
+                            className="badge badge-neutral"
+                            style={{
+                              color: "#38bdf8",
+                              background: "rgba(56, 189, 248, 0.12)",
+                              border: "1px solid rgba(56, 189, 248, 0.3)",
+                              fontWeight: 600
+                            }}
+                          >
+                            🏷️ {cand.kategori}
+                          </span>
+                        )}
                         {cand.targetDurasi && <span className="badge badge-neutral">{cand.targetDurasi}</span>}
                       </div>
                       <h3 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px 0", color: "var(--text-primary)", lineHeight: 1.35 }}>
@@ -558,7 +565,7 @@ export default function TopicPage() {
         </div>
       )}
 
-      {/* Daftar Topic List + Filter Status Cepat */}
+      {/* Daftar Topic List */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div className="section-title" style={{ margin: 0 }}>
           Daftar Topic ({filteredItems.length} dari {items.length})
@@ -667,7 +674,6 @@ export default function TopicPage() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                     <div style={{ width: "100%" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                        {/* Indikator Bundar 🟢 / ⚪ */}
                         <span
                           title={hasNaskah ? "Sudah diproses ke Naskah" : "Belum diproses ke Naskah"}
                           style={{
