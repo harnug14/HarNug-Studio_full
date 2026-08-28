@@ -57,11 +57,74 @@ function getExplanationText(cand: any): string {
   return "Topik potensial berdasarkan analisis AI.";
 }
 
-// 💡 HELPER UNTUK MENGEKSTRAK LABEL KATEGORI DARI CATATAN TOPIK TERSIMPAN
-function extractCategoryFromNotes(catatan: string | null): string | null {
-  if (!catatan) return null;
-  const match = catatan.match(/^\[(.*?)\]/);
-  return match ? match[1] : null;
+// 💡 PEMBERSIH TEKS CATATAN (HAPUS TULISAN [UMUM] DARI PARAGRAF)
+function getCleanNotes(catatan: string | null): string {
+  if (!catatan) return "";
+  return catatan.replace(/^\[.*?\]\s*/, "").trim();
+}
+
+// 💡 DETEKTOR PINTAR: OTOMATIS MEMBERI 4 LABEL RESMI UNTUK SEMUA 86 TOPIK LAMA
+function getCleanCategory(item: TopikItem): string {
+  const rawCatatan = item.catatan || "";
+  const match = rawCatatan.match(/^\[(.*?)\]/);
+  let cat = match ? match[1].trim() : "";
+
+  // Jika belum ada label atau labelnya "Umum", otomatis deteksi dari isi judul
+  if (!cat || cat.toLowerCase() === "umum") {
+    const text = `${item.judul} ${rawCatatan}`.toLowerCase();
+
+    if (
+      text.includes("profesi") ||
+      text.includes("pekerjaan") ||
+      text.includes("whipping boy") ||
+      text.includes("groom of the stool") ||
+      text.includes("knocker") ||
+      text.includes("tukang") ||
+      text.includes("digaji")
+    ) {
+      return "Profesi Kuno";
+    }
+
+    if (
+      text.includes("taktik") ||
+      text.includes("perang") ||
+      text.includes("pelusium") ||
+      text.includes("trepanasi") ||
+      text.includes("bedah") ||
+      text.includes("operasi") ||
+      text.includes("bencana") ||
+      text.includes("racun")
+    ) {
+      return "Peristiwa & Taktik";
+    }
+
+    if (
+      text.includes("sejarah") ||
+      text.includes("asal-usul") ||
+      text.includes("dasi") ||
+      text.includes("kacamata") ||
+      text.includes("sepatu") ||
+      text.includes("shampo") ||
+      text.includes("bantal") ||
+      text.includes("kulkas") ||
+      text.includes("es batu") ||
+      text.includes("mentega") ||
+      text.includes("sedotan") ||
+      text.includes("popok") ||
+      text.includes("deodoran") ||
+      text.includes("uang") ||
+      text.includes("jam ") ||
+      text.includes("alarm") ||
+      text.includes("alat") ||
+      text.includes("benda")
+    ) {
+      return "Asal-Usul Benda";
+    }
+
+    return "Tradisi & Perilaku";
+  }
+
+  return cat;
 }
 
 export default function TopicPage() {
@@ -232,8 +295,9 @@ export default function TopicPage() {
     try {
       const numericScore = getScoreNumber(candidate.skor);
       const explanation = getExplanationText(candidate);
+      const categoryTag = candidate.kategori || "Tradisi & Perilaku";
       
-      let notes = `[${candidate.kategori || "Umum"}] Skor: ${numericScore}/50 | ${explanation}`;
+      let notes = `[${categoryTag}] Skor: ${numericScore}/50 | ${explanation}`;
       if (candidate.hookFormula) notes += `\nHook: ${candidate.hookFormula}`;
       if (candidate.retentionAngle) notes += `\nAngle: ${candidate.retentionAngle}`;
 
@@ -568,7 +632,7 @@ export default function TopicPage() {
         </div>
       )}
 
-      {/* Daftar Topic List (Dengan Badge Kategori) */}
+      {/* Daftar Topic List (Dengan Auto-Label 4 Kategori Resmi) */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div className="section-title" style={{ margin: 0 }}>
           Daftar Topic ({filteredItems.length} dari {items.length})
@@ -651,7 +715,8 @@ export default function TopicPage() {
           {filteredItems.map((item) => {
             const isEditing = editingId === item.id;
             const hasNaskah = checkHasNaskah(item);
-            const itemKategori = extractCategoryFromNotes(item.catatan);
+            const itemKategori = getCleanCategory(item);
+            const cleanNotes = getCleanNotes(item.catatan);
 
             return (
               <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18 }}>
@@ -689,29 +754,27 @@ export default function TopicPage() {
                             flexShrink: 0
                           }}
                         />
-                        {/* 💡 BADGE KATEGORI OTOMATIS MUNCUL DI DAFTAR TOPIK TERSIMPAN */}
-                        {itemKategori && (
-                          <span
-                            className="badge badge-neutral"
-                            style={{
-                              color: "#38bdf8",
-                              background: "rgba(56, 189, 248, 0.12)",
-                              border: "1px solid rgba(56, 189, 248, 0.3)",
-                              fontSize: 10,
-                              fontWeight: 600
-                            }}
-                          >
-                            🏷️ {itemKategori}
-                          </span>
-                        )}
+                        {/* 💡 BADGE 4 KATEGORI RESMI UNTUK SEMUA TOPIK */}
+                        <span
+                          className="badge badge-neutral"
+                          style={{
+                            color: "#38bdf8",
+                            background: "rgba(56, 189, 248, 0.12)",
+                            border: "1px solid rgba(56, 189, 248, 0.3)",
+                            fontSize: 10,
+                            fontWeight: 600
+                          }}
+                        >
+                          🏷️ {itemKategori}
+                        </span>
                         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: "var(--text-primary)", lineHeight: 1.35 }}>
                           {cleanTitle(item.judul)}
                         </h3>
                       </div>
 
-                      {item.catatan && (
+                      {cleanNotes && (
                         <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "4px 0 0 18px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
-                          {item.catatan}
+                          {cleanNotes}
                         </p>
                       )}
                     </div>
