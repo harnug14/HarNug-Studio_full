@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
       topikDitolak = "",
       jumlah = 5,
       referenceProfileId = null,
+      rejectedHistory = [], // 💡 MENERIMA DAFTAR TOPIK YANG PERNAH DIABAIKAN USER
     } = await req.json();
 
     const [profileRes, historyRes] = await Promise.all([
@@ -92,10 +93,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     let referenceContextText = "";
-    let isProfileMode = false;
-
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
-      isProfileMode = true;
       const samples = profileRes.data.channel_analysis_entries
         .map((e: any, idx: number) => `[CONTOH POLA ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
@@ -106,12 +104,19 @@ export async function POST(req: NextRequest) {
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
       const daftarJudul = historyRes.data.map((t: any, idx: number) => `${idx + 1}. ${t.judul}`).join("\n");
-      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG MENGULANG TEMA INI):\n${daftarJudul}`;
+      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG KERAS MENGULANG TEMA/BENDA INI):\n${daftarJudul}`;
     }
 
-    let blacklistUser = "";
-    if (topikDitolak && topikDitolak.trim()) {
-      blacklistUser = `\n⛔ BLACKLIST KHUSUS PENGGUNA: "${topikDitolak}". DILARANG KERAS!`;
+    // 💡 DAFTAR BLACKLIST: TOPIK YANG DITOLAK USER & YANG PERNAH DIABAIKAN SEBELUMNYA
+    let blacklistText = "";
+    const combinedRejected = [
+      ...(topikDitolak ? [topikDitolak] : []),
+      ...(Array.isArray(rejectedHistory) ? rejectedHistory : []),
+    ];
+
+    if (combinedRejected.length > 0) {
+      const list = combinedRejected.slice(0, 40).map((r: string) => `- ${r}`).join("\n");
+      blacklistText = `\n\n⛔ DAFTAR TOPIK YANG SUDAH DITOLAK/DIABAIKAN PENGGUNA (DILARANG MUNCUL LAGI):\n${list}`;
     }
 
     let tavilyContext = "";
@@ -136,12 +141,9 @@ export async function POST(req: NextRequest) {
 4. "Peristiwa & Taktik": Taktik aneh atau peristiwa unik masa lalu.
 
 ⚖️ ATURAN GAYA BAHASA (ANTI-VULGAR & ANTI-LEBAY):
-1. DILARANG VULGAR/JOROK KASAR: Hindari kata-kata jorok vulgar yang rawan kena filter sensor YouTube (contoh: jangan gunakan kata "nyebokin", gunakan istilah yang lebih wajar dan santun seperti "membersihkan" atau "merawat").
-2. DILARANG LEBAY/HIPERBOLA BOMBATIS: Hindari kata-kata heboh berlebihan yang terdengar 'cringe' (contoh: jangan gunakan kata "Jabatan Paling Mengguncang Jagat Raya", dll).
-3. GUNAKAN BAHASA LUGAS, SANTAI, DAN CERDAS: Judul harus terasa memancing rasa ingin tahu secara alami dan proporsional.
-
-⛔ ATURAN ANTI-DUPLIKASI:
-DILARANG mengulang subjek/benda yang sudah ada di riwayat database.
+1. DILARANG VULGAR/JOROK KASAR: Gunakan istilah yang wajar dan santun (misal: bukan 'nyebokin', tapi 'membersihkan').
+2. DILARANG LEBAY/HIPERBOLA: Gunakan bahasa LUGAS, SANTAI, dan CERDAS.
+3. DILARANG DUPLIKAT: Periksa daftar topik database DAN daftar topik yang diabaikan. JANGAN PERNAH membuat topik yang sudah ada di daftar tersebut!
 
 FORMAT JSON OUTPUT PERSIS:
 {
@@ -158,11 +160,11 @@ FORMAT JSON OUTPUT PERSIS:
 
     const userPrompt = `${referenceContextText}
 ${riwayatTopikText}
-${blacklistUser}
+${blacklistText}
 ${tavilyContext}
 
 Instruksi:
-Hasilkan ${jumlah} ide topik video YouTube Shorts berkualitas tinggi yang berbobot, seimbang antar-kategori, dan menggunakan gaya bahasa yang lugas (anti-vulgar & anti-lebay). Output murni JSON.`;
+Hasilkan ${jumlah} ide topik video YouTube Shorts berkualitas tinggi yang 100% BARU dan BELUM PERNAH ADA di database maupun daftar topik yang diabaikan di atas. Output murni JSON.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
