@@ -42,6 +42,53 @@ function cleanTitle(text: string) {
   return cleaned.trim();
 }
 
+// 💡 DETEKTOR BADGE NAMA CHANNEL UNTUK KARTU NASKAH
+function getChannelBadge(
+  naskah: Naskah,
+  topikList: Topik[],
+  channelProfiles: ChannelProfile[]
+): string | null {
+  // 1. Cek dari catatan Topik sumbernya
+  if (naskah.sumber_topik_id) {
+    const t = topikList.find((x) => x.id === naskah.sumber_topik_id);
+    if (t && t.catatan) {
+      const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
+      for (const m of matches) {
+        const found = channelProfiles.find((p) => p.profile_name.toLowerCase() === m.toLowerCase());
+        if (found) return found.profile_name;
+      }
+      if (matches.length >= 2) return matches[1];
+    }
+  }
+
+  // 2. Fallback deteksi cerdas berdasarkan judul
+  const judulLower = cleanTitle(naskah.judul).toLowerCase();
+  if (
+    judulLower.includes("menuntut") ||
+    judulLower.includes("pencuri") ||
+    judulLower.includes("koma") ||
+    judulLower.includes("salah transfer") ||
+    judulLower.includes("bandara") ||
+    judulLower.includes("mobil mewah")
+  ) {
+    return "Jurnal Kumal";
+  }
+
+  if (
+    judulLower.includes("asal-usul") ||
+    judulLower.includes("sejarah") ||
+    judulLower.includes("groom of the stool") ||
+    judulLower.includes("dasi") ||
+    judulLower.includes("kulkas") ||
+    judulLower.includes("pelusium") ||
+    judulLower.includes("uang kertas")
+  ) {
+    return "Dafiology";
+  }
+
+  return null;
+}
+
 function NaskahContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -80,10 +127,8 @@ function NaskahContent() {
   const [translateLoading, setTranslateLoading] = useState<string | null>(null);
   const [activeModalItem, setActiveModalItem] = useState<{ naskah: Naskah; type: "fact-check" | "translation" } | null>(null);
 
-  // Filter Status (ALL | PROCESSED | UNPROCESSED)
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PROCESSED" | "UNPROCESSED">("ALL");
 
-  // SET TOPIK ID YANG SUDAH MEMILIKI NASKAH
   const generatedTopikIds = new Set(items.map((n) => n.sumber_topik_id).filter(Boolean));
 
   async function fetchNaskah() {
@@ -292,7 +337,6 @@ function NaskahContent() {
     router.push(`/visual?naskahId=${item.id}&judul=${encodeURIComponent(cleanTitle(item.judul))}`);
   }
 
-  // Cek apakah naskah n sudah dibuatkan Visual Storyboard
   function checkHasVisual(naskah: Naskah): boolean {
     if (!Array.isArray(visualList) || visualList.length === 0) return false;
 
@@ -304,7 +348,6 @@ function NaskahContent() {
     });
   }
 
-  // Filter daftar naskah
   const filteredItems = items.filter((item) => {
     const hasVisual = checkHasVisual(item);
     if (filterStatus === "PROCESSED") return hasVisual;
@@ -314,14 +357,12 @@ function NaskahContent() {
 
   return (
     <div className="animate-fade-in">
-      {/* Subtitle Halaman */}
       <div style={{ marginBottom: 16 }}>
         <p className="page-subtitle">
           Penyusunan naskah YouTube Shorts dan terjemahan ke bahasa Inggris.
         </p>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         <button
           onClick={() => setActiveTab("generator")}
@@ -337,11 +378,9 @@ function NaskahContent() {
         </button>
       </div>
 
-      {/* AI Generator Form */}
       {activeTab === "generator" && (
         <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
           <form onSubmit={handleGenerateScript}>
-            {/* Grid Form Simetris Presisi */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14, marginBottom: 14 }}>
               <div style={{ display: "flex", flexDirection: "column" }}>
                 <label className="form-label" style={{ minHeight: 34, display: "flex", alignItems: "flex-end", marginBottom: 6 }}>
@@ -442,7 +481,7 @@ function NaskahContent() {
             )}
 
             <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
-              {generating ? <><span className="spinner" /> Menyusun Script Draft...</> : "Generate Script Draft"}
+              {generating ? <><span className="spinner" /> Menyusun Script Sesuai DNA Channel...</> : "Generate Script Draft"}
             </button>
           </form>
 
@@ -492,7 +531,7 @@ function NaskahContent() {
         </div>
       )}
 
-      {/* Filter Status Cepat & Title */}
+      {/* Header Daftar Script + Filter */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div className="section-title" style={{ margin: 0 }}>
           Daftar Script ({filteredItems.length} dari {items.length})
@@ -576,6 +615,7 @@ function NaskahContent() {
           {filteredItems.map((item) => {
             const isEditing = editingId === item.id;
             const hasVisual = checkHasVisual(item);
+            const channelBadge = getChannelBadge(item, topikList, channelProfiles);
 
             return (
               <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18 }}>
@@ -615,7 +655,6 @@ function NaskahContent() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
                       <div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          {/* Indikator Bundar 🟢 / ⚪ */}
                           <span
                             title={hasVisual ? "Sudah diproses ke Visual" : "Belum diproses ke Visual"}
                             style={{
@@ -636,6 +675,23 @@ function NaskahContent() {
                           <span className={`badge ${item.status === "approved" ? "badge-success" : item.status === "review" ? "badge-warning" : "badge-neutral"}`}>
                             {item.status === "approved" ? "✓ Terverifikasi" : item.status === "review" ? "Perlu Review" : "Draft"}
                           </span>
+
+                          {/* 💡 BADGE NAMA CHANNEL REFERENSI (UNGU) */}
+                          {channelBadge && (
+                            <span
+                              className="badge badge-neutral"
+                              style={{
+                                color: "#c084fc",
+                                background: "rgba(192, 132, 252, 0.12)",
+                                border: "1px solid rgba(192, 132, 252, 0.3)",
+                                fontSize: 10,
+                                fontWeight: 600
+                              }}
+                            >
+                              📺 {channelBadge}
+                            </span>
+                          )}
+
                           {item.english_script && <span className="badge badge-neutral">English</span>}
 
                           {/* Badge Visual Status */}
