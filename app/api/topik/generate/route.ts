@@ -24,7 +24,7 @@ async function requestGoogleGemini(
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.9,
+          temperature: 0.85,
         },
       }),
     }
@@ -92,7 +92,10 @@ export async function POST(req: NextRequest) {
     ]);
 
     let referenceContextText = "";
+    let isProfileMode = false;
+
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
+      isProfileMode = true;
       const samples = profileRes.data.channel_analysis_entries
         .map((e: any, idx: number) => `[CONTOH POLA ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
@@ -108,7 +111,7 @@ export async function POST(req: NextRequest) {
 
     let blacklistUser = "";
     if (topikDitolak && topikDitolak.trim()) {
-      blacklistUser = `\n⛔ BLACKLIST SPESIFIK DARI PENGGUNA: "${topikDitolak}". DILARANG KERAS!`;
+      blacklistUser = `\n⛔ BLACKLIST KHUSUS PENGGUNA: "${topikDitolak}". DILARANG KERAS!`;
     }
 
     let tavilyContext = "";
@@ -126,24 +129,27 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = `Kamu adalah Lead Content Director & Topic Architect untuk YouTube Shorts Curious Human History (Gaya Dafiology).
 
-🎯 4 PILAR KATEGORI UTAMA (BERIKAN KOMBINASI SEIMBANG DARI PILAR INI):
-1. "Asal-Usul Benda": Benda/fashion sehari-hari dengan asal-usul tak terduga (High Heels, Dasi, Kacamata Hitam, Bantal).
-2. "Profesi Kuno": Pekerjaan nyata masa lalu yang terdengar gila (Groom of the Stool, Whipping Boy, Jam Alarm Manusia).
-3. "Tradisi & Perilaku": Kebiasaan/tren absurd masa lalu (Sewa Nanas, Pengadilan Hewan, Tradisi Gardyloo).
-4. "Peristiwa & Taktik": Taktik aneh atau peristiwa paradoks masa lalu (Taktik Kucing Pelusium, Operasi Cepat Liston).
+🎯 4 PILAR KATEGORI UTAMA:
+1. "Asal-Usul Benda": Benda/fashion sehari-hari dengan asal-usul tak terduga.
+2. "Profesi Kuno": Pekerjaan nyata masa lalu yang terdengar janggal/unik.
+3. "Tradisi & Perilaku": Kebiasaan/tren absurd masa lalu.
+4. "Peristiwa & Taktik": Taktik aneh atau peristiwa unik masa lalu.
 
-⛔ ATURAN KETAT:
-- WAJIB melampirkan label "kategori" yang tepat pada setiap kandidat.
-- DILARANG mengulang subjek/benda yang sudah ada di riwayat database.
-- DILARANG topik klise pasaran (Dancing plague, radithor, wallpaper arsenik, banjir sirup boston, bubuk mumi).
+⚖️ ATURAN GAYA BAHASA (ANTI-VULGAR & ANTI-LEBAY):
+1. DILARANG VULGAR/JOROK KASAR: Hindari kata-kata jorok vulgar yang rawan kena filter sensor YouTube (contoh: jangan gunakan kata "nyebokin", gunakan istilah yang lebih wajar dan santun seperti "membersihkan" atau "merawat").
+2. DILARANG LEBAY/HIPERBOLA BOMBATIS: Hindari kata-kata heboh berlebihan yang terdengar 'cringe' (contoh: jangan gunakan kata "Jabatan Paling Mengguncang Jagat Raya", dll).
+3. GUNAKAN BAHASA LUGAS, SANTAI, DAN CERDAS: Judul harus terasa memancing rasa ingin tahu secara alami dan proporsional.
+
+⛔ ATURAN ANTI-DUPLIKASI:
+DILARANG mengulang subjek/benda yang sudah ada di riwayat database.
 
 FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Khas Dafiology (Padat, Ironis, Hook Kuat)",
-      "kategori": "Asal-Usul Benda",
-      "penjelasan": "Uraian 2-3 kalimat mengenai fakta otentik dan alasan kenapa ini sangat menarik.",
+      "judul": "Judul Khas Dafiology (Lugas, Cerdas, Alami, Hook Kuat)",
+      "kategori": "Profesi Kuno",
+      "penjelasan": "Uraian 2-3 kalimat mengenai fakta otentik dan alasan kenapa ini sangat menarik secara historis.",
       "skor": { "total": 49 },
       "alasanKelulusan": "Alasan kelulusan skor >= 40/50."
     }
@@ -156,7 +162,7 @@ ${blacklistUser}
 ${tavilyContext}
 
 Instruksi:
-Hasilkan ${jumlah} ide topik video YouTube Shorts berkualitas tinggi yang berbobot dan seimbang antar-kategori (Benda, Profesi, Tradisi, Taktik). Output murni JSON.`;
+Hasilkan ${jumlah} ide topik video YouTube Shorts berkualitas tinggi yang berbobot, seimbang antar-kategori, dan menggunakan gaya bahasa yang lugas (anti-vulgar & anti-lebay). Output murni JSON.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
