@@ -92,10 +92,10 @@ export default function TopicPage() {
   // Filter Status (ALL | PROCESSED | UNPROCESSED)
   const [filterStatus, setFilterStatus] = useState<"ALL" | "PROCESSED" | "UNPROCESSED">("ALL");
 
-  // MEMUAT KANDIDAT YANG BELUM DISIMPAN DARI SESSION STORAGE SUSAH PINDAH MENU
+  // 💡 MEMUAT KANDIDAT YANG BELUM DISIMPAN DARI LOCAL STORAGE (AWET SAAT REFRESH & CLOSE BROWSER)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const saved = sessionStorage.getItem("cached_topic_candidates");
+      const saved = localStorage.getItem("cached_topic_candidates");
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -109,14 +109,14 @@ export default function TopicPage() {
     }
   }, []);
 
-  // FUNGSI UPDATE STATE KANDIDAT DAN SIMPAN KESIMPANAN SESSION STORAGE
+  // 💡 FUNGSI UPDATE STATE KANDIDAT DAN SIMPAN PERMANEN KE LOCAL STORAGE
   function updateCandidates(newCandidates: TopikCandidate[]) {
     setCandidates(newCandidates);
     if (typeof window !== "undefined") {
       if (newCandidates.length > 0) {
-        sessionStorage.setItem("cached_topic_candidates", JSON.stringify(newCandidates));
+        localStorage.setItem("cached_topic_candidates", JSON.stringify(newCandidates));
       } else {
-        sessionStorage.removeItem("cached_topic_candidates");
+        localStorage.removeItem("cached_topic_candidates");
       }
     }
   }
