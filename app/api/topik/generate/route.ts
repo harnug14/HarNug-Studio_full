@@ -4,11 +4,9 @@ import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 import { fetchTavilySearchResults } from "@/lib/tavily";
 
-// DIBERI WAKTU 60 DETIK AGAR VERCEL TIDAK MEMUTUS PAKSA (0% TIMEOUT 504)
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-// OTAK UTAMA RESMI: GEMINI 3.6 FLASH
 const MAIN_MODEL = "gemini-3.6-flash";
 
 async function requestGoogleGemini(
@@ -26,7 +24,7 @@ async function requestGoogleGemini(
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.7,
+          temperature: 0.85,
         },
       }),
     }
@@ -69,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const {
-      kategori = "Curious History & Sejarah Unik Kehidupan Manusia",
+      kategori = "Asal-usul Kebiasaan & Kehidupan Manusia Masa Lalu",
       durasi = "45-60 detik",
       topikDisukai = "",
       topikDitolak = "",
@@ -77,7 +75,6 @@ export async function POST(req: NextRequest) {
       referenceProfileId = null,
     } = await req.json();
 
-    // EKSEKUSI KUERI DATABASE PARALEL
     const [profileRes, historyRes] = await Promise.all([
       referenceProfileId
         ? supabase
@@ -100,9 +97,7 @@ export async function POST(req: NextRequest) {
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
       const samples = profileRes.data.channel_analysis_entries
-        .map((e: any, idx: number) => {
-          return `Contoh Naskah ${idx + 1}: ${e.title}\nNaskah Utuh:\n${e.full_script || ""}`;
-        })
+        .map((e: any, idx: number) => `Contoh Naskah ${idx + 1}: ${e.title}\nNaskah Utuh:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
 
       referenceContextText = `\n\nREFERENSI PROFIL CHANNEL LENGKAP ("${profileRes.data.profile_name}"):\n${samples}`;
@@ -110,74 +105,72 @@ export async function POST(req: NextRequest) {
 
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
-      const daftarJudul = historyRes.data
-        .map((t: any, idx: number) => `- ${t.judul}`)
-        .join("\n");
-      riwayatTopikText = `\n\n--- DAFTAR TOPIK YANG SUDAH PERNAH DIBUAT (WAJIB DIHINDARI 100%) ---\n${daftarJudul}\n\nATURAN ANTI-DUPLIKASI MUTLAK: Dilarang keras membuat topik dengan INTI CERITA/SUBJEK yang sama dari daftar di atas (misal: jika sudah ada sejarah popok, DILARANG membuat topik popok lagi meskipun judul/penjelasannya berbeda).`;
+      const daftarJudul = historyRes.data.map((t: any) => `- ${t.judul}`).join("\n");
+      riwayatTopikText = `\n\n--- DAFTAR TOPIK DATABASE ANDA (DILARANG DUPLIKAT) ---\n${daftarJudul}`;
     }
 
-    // 💡 ATURAN MUTLAK BLACKLIST (TOPIK DITOLAK)
-    let blacklistInstruction = "";
+    let blacklistUser = "";
     if (topikDitolak && topikDitolak.trim()) {
-      blacklistInstruction = `\n\n⛔ PROTOKOL BLACKLIST MUTLAK (DILARANG KERAS):
-Pengguna secara tegas MENOLAK topik terkait: "${topikDitolak}".
-KAMU DILARANG KERAS menghasilkan kandidat topik apa pun yang menyebut, membahas, atau berkaitan langsung maupun tidak langsung dengan "${topikDitolak}". Pelanggaran aturan ini dianggap kegagalan fatal.`;
+      blacklistUser = `\n⛔ BLACKLIST KHUSUS PENGGUNA: Dilarang keras membuat topik tentang: "${topikDitolak}".`;
     }
 
-    // 💡 AMBIL DATA RISET DARI TAVILY
+    // 💡 RISET TAVILY TERARAH: Khusus asal-usul barang, kebiasaan manusia, dan profesi kuno
     let tavilyContext = "";
     try {
       const searchQuery = topikDisukai
-        ? `fakta sejarah unik aneh manusia ${topikDisukai}`
-        : `peristiwa sejarah unik aneh misteri kehidupan manusia masa lalu trivia mendalam`;
+        ? `bizarre origin of everyday habits objects history ${topikDisukai}`
+        : `bizarre origins of daily habits forgotten ancient human professions weird everyday life customs history`;
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA FAKTA SEJARAH OTENTIK DARI WEB]:\n${tavilyRes}\n\nGunakan fakta otentik di atas sebagai rujukan validasi agar topik 100% berbasis peristiwa nyata.`;
+        tavilyContext = `\n\n[DATA FAKTA RISET WEB TAVILY]:\n${tavilyRes}`;
       }
     } catch (e) {
-      console.warn("[Topik] Gagal fetch Tavily, lanjut tanpa search tambahan:", e);
+      console.warn("[Topik] Tavily fallback:", e);
     }
 
-    const systemPrompt = `Kamu adalah seorang Lead Content Strategist & Topic Curator kelas dunia spesialis niche Curious Pop History & Sejarah Unik Kehidupan Manusia (standar channel Dafiology).
+    const systemPrompt = `Kamu adalah Lead Researcher & Story Strategist untuk channel YouTube Shorts "Curious Human History" (Standar Dafiology).
 
-KRITERIA KUALITAS TOPIK TINGGI (ANTI-SEPELE):
-1. WAJIB BERBOBOT: Topik harus memiliki unsur KONSEKUENSI NYATA, BENTURAN BUDAYA, DILEMA MORAL, atau KEANEHAN EKSTREM peradaban masa lalu. JANGAN memilih hal sepele yang membosankan tanpa intrik cerita.
-2. HOOK PENASARAN: Judul harus memicu rasa ingin tahu yang kuat (Curiosity Gap) tapi tetap konkret dan elegan.
-3. KAYA FAKTA OTENTIK: Berakar pada sejarah nyata dunia yang bisa diverifikasi.
+🎯 PILAR TEMA UTAMA TOPIK (WAJIB MEMILIH DARI PILAR INI):
+1. ASAL-USUL BENDA/NORMA SEHARI-HARI: Kenapa manusia masa lalu menciptakan barang/etika tertentu (misal: asal-usul deodoran, bantal batu, sepatu hak tinggi, salaman).
+2. CARA HIDUP SEBELUM TEKNOLOGI MODERN: Solusi cerdas/ekstrem manusia purba/kuno untuk mengatasi masalah hidup (misal: cara bangun pagi sebelum ada jam alarm, cara mandi sebelum ada sabun, cara kirim pesan sebelum ada pos).
+3. PROFESI ANEH YANG SUDAH PUNAH: Pekerjaan nyata di masa lalu yang terdengar gila hari ini.
+4. DILEMA SOSIAL & ATURAN ANEH: Kebiasaan makan, tidur, atau interaksi sosial kuno yang memicu benturan budaya.
 
-RUBRIK VALIDASI SKOR (/50):
-- Relevansi & Ketertarikan Audiens (/10)
-- Potensi Visual Dramatis (/10)
-- Kekuatan Konflik & Cerita (/10)
-- Kekuatan Hook (/10)
-- Potensi Retensi Viral (/10)
-Total skor WAJIB >= 40/50.
+⛔ DAFTAR MERAH KLISE AI (DILARANG KERAS MENGHASILKAN INI):
+DILARANG 100% membuat topik tentang:
+- Wabah Menari Strasbourg 1518 (Dancing Plague)
+- Air Minum Radioaktif / Radithor
+- Cat Hijau Paris Green / Scheele's Green / Wallpaper Arsenik
+- Banjir Sirup Molasses Boston 1919
+- Bubuk Mumi Obat / Mummia
+- Perang Emu Australia
+- Garpu dianggap setan
 
-FORMAT JSON OUTPUT PERSIS (pure JSON object):
+FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Ide Topik yang Memikat, Dramatis, dan Konkret",
-      "penjelasan": "Penjelasan 2-3 kalimat mengenai inti konflik/kejadian sejarah di balik topik ini dan kenapa ini menarik.",
-      "skor": { "total": 46 },
-      "alasanKelulusan": "Penjelasan kenapa topik ini berbobot tinggi dan lolos skor >= 40/50."
+      "judul": "Judul Konkret, Menggelitik Rasa Ingin Tahu, dan Berbobot",
+      "penjelasan": "Uraian 2-3 kalimat mengenai fakta otentik dan solusi unik manusia di zaman itu.",
+      "skor": { "total": 47 },
+      "alasanKelulusan": "Alasan kenapa topik ini relevan dengan kehidupan manusia dan bebas klise."
     }
   ]
-}${riwayatTopikText}${blacklistInstruction}`;
+}${riwayatTopikText}${blacklistUser}`;
 
     const userPrompt = isProfileMode
-      ? `PROFIL CHANNEL DIPILIH:${referenceContextText}${tavilyContext}
+      ? `PROFIL CHANNEL REFERENSI:${referenceContextText}${tavilyContext}
 
 Instruksi:
-Pelajari pola channel di atas. Hasilkan ${jumlah} kandidat ide topik baru yang berbobot tinggi, bebas duplikasi, dan PATUHI protokol blacklist jika ada. Berikan dalam format JSON murni.`
-      : `Parameter Ideation Topic:
+Hasilkan ${jumlah} ide topik baru yang fresh, fokus pada kebiasaan & asal-usul kehidupan manusia masa lalu, dan PATUHI daftar merah larangan klise AI. Berikan dalam JSON murni.`
+      : `Parameter Ideation:
 - Niche: ${kategori}
-- Durasi Target: ${durasi}
-- Fokus yang Disukai: ${topikDisukai || "Peristiwa unik, dilema masa lalu, asal-usul yang mengejutkan"}
+- Durasi: ${durasi}
+- Preferensi: ${topikDisukai || "Asal-usul barang sehari-hari, cara manusia hidup sebelum teknologi, profesi kuno yang hilang"}
 - Topik Ditolak: ${topikDitolak || "Tidak ada"}
 - Jumlah: ${jumlah} kandidat${tavilyContext}
 
-Hasilkan ${jumlah} ide topik berbobot tinggi yang lolos skor >= 40/50 dalam JSON murni sekarang.`;
+Hasilkan ${jumlah} ide topik fresh anti-klise dalam JSON murni sekarang.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
