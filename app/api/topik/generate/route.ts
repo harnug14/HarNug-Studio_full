@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       rejectedHistory = [],
     } = await req.json();
 
-    // EKSEKUSI KUERI PARALEL (PROFIL REFERENSI + RIWAYAT DATABASE)
+    // EKSEKUSI KUERI PARALEL (AMBIL PROFIL CHANNEL DARI DB + 100 TOPIK RIWAYAT)
     const [profileRes, historyRes] = await Promise.all([
       referenceProfileId
         ? supabase
@@ -96,23 +96,26 @@ export async function POST(req: NextRequest) {
     let isProfileMode = false;
     let channelName = "";
     let referenceContextText = "";
+    let sampleTitlesList: string[] = [];
 
-    // 💡 JIKA MEMILIH REFERENSI CHANNEL (MISAL: JURNAL KUMAL ATAU DAFIOLOGY)
+    // 💡 EKSTRAKSI DNA DARI CHANNEL MANA PUN YANG DIPILIH DARI DATABASE
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name;
+      
+      sampleTitlesList = profileRes.data.channel_analysis_entries.map((e: any) => e.title).filter(Boolean);
       
       const samples = profileRes.data.channel_analysis_entries
         .map((e: any, idx: number) => `[CONTOH NASKAH ASLI ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
 
-      referenceContextText = `\n\n=== CONTOH POLA & NASKAH ASLI CHANNEL "${channelName}" ===\n${samples}`;
+      referenceContextText = `\n\n=== CONTOH POLA & NASKAH ASLI DARI DATABASE CHANNEL "${channelName}" ===\n${samples}`;
     }
 
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
       const daftarJudul = historyRes.data.map((t: any, idx: number) => `${idx + 1}. ${t.judul}`).join("\n");
-      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG MENGULANG TEMA INI):\n${daftarJudul}`;
+      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG MENGULANG INI):\n${daftarJudul}`;
     }
 
     let blacklistText = "";
@@ -123,43 +126,53 @@ export async function POST(req: NextRequest) {
 
     if (combinedRejected.length > 0) {
       const list = combinedRejected.slice(0, 40).map((r: string) => `- ${r}`).join("\n");
-      blacklistText = `\n\n⛔ DAFTAR TOPIK DITOLAK/DIABAIKAN PENGGUNA (DILARANG MUNCUL LAGI):\n${list}`;
+      blacklistText = `\n\n⛔ DAFTAR TOPIK DITOLAK/DIABAIKAN PENGGUNA (JANGAN DIBUAT LAGI):\n${list}`;
     }
 
+    // 💡 PENCARIAN TAVILY REAL-TIME DINAMIS (MENYESUAIKAN TEMA ASLI CHANNEL)
     let tavilyContext = "";
     try {
-      const searchQuery = topikDisukai
-        ? `fakta unik sejarah menarik ${topikDisukai}`
-        : isProfileMode
-        ? `fakta unik sejarah aneh menarik ${channelName}`
-        : `fakta unik menarik sejarah peradaban manusia`;
+      let searchQuery = "";
+      if (isProfileMode) {
+        // Ambil 2 sampel judul asli channel untuk memandu arah pencarian web
+        const titleKeywords = sampleTitlesList.slice(0, 2).join(" ").replace(/[^a-zA-Z0-9\s]/g, "");
+        searchQuery = topikDisukai
+          ? `fakta unik menarik nyata ${topikDisukai}`
+          : `bizarre true facts unique phenomena interesting stories ${titleKeywords}`;
+      } else {
+        searchQuery = topikDisukai
+          ? `${kategori} fakta unik menarik ${topikDisukai}`
+          : `${kategori} fakta unik menarik mencengangkan`;
+      }
+
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA FAKTA RISET WEB TERBARU]:\n${tavilyRes}`;
+        tavilyContext = `\n\n[DATA FAKTA RISET WEB TERBARU VIA TAVILY]:\n${tavilyRes}`;
       }
     } catch (e) {
       console.warn("[Topik] Tavily fallback:", e);
     }
 
-    // 💡 SYSTEM PROMPT 100% DINAMIS (MENYESUAIKAN DENGAN CHANNEL YANG DIPILIH)
+    // 💡 SYSTEM PROMPT MURNI DINAMIS (OTOMATIS BERADAPTASI KE CHANNEL APA PUN)
     const systemPrompt = isProfileMode
       ? `Kamu adalah Lead Content Strategist & Topic Architect kelas dunia. 
-TUGAS UTAMA: Analisis, serap, dan tiru secara presisi DNA gaya konten, tone narasi, sudut pandang unik, dan struktur topik dari channel "${channelName}" berdasarkan contoh-contoh naskah aslinya di bawah.
+TUGAS UTAMA: Analisis dan ekstrak secara mandiri DNA gaya konten, tema pembahasan, sudut pandang unik, pacing cerita, dan formula judul dari channel "${channelName}" berdasarkan naskah-naskah aslinya di bawah.
+Hasilkan ide topik baru yang 100% selaras dengan DNA channel tersebut, berakar pada fakta otentik dari web riset, dan memiliki potensi retensi penonton yang tinggi.
 
 ⚖️ ATURAN KUALITAS & GAYA BAHASA:
-1. GAYA BAHASA: Tiru gaya bertutur khas channel "${channelName}". Gunakan bahasa yang LUGAS, CERDAS, dan SANTAI.
+1. GAYA BAHASA: Tiru gaya bertutur khas channel "${channelName}". Gunakan bahasa yang LUGAS, SANTAI, dan CERDAS.
 2. DILARANG VULGAR KASAR & DILARANG LEBAY/HIPERBOLA.
-3. DILARANG MENGULANG TEMA/SUBJEK yang sudah ada di database atau yang ditolak pengguna.
+3. DILARANG MENGULANG SUBJEK/TEMA yang sudah ada di database atau yang diabaikan pengguna.
 
 FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Sesuai Pola ${channelName} (Lugas, Hook Kuat)",
-      "kategori": "Asal-Usul Benda", // Pilih salah satu: "Asal-Usul Benda" | "Profesi Kuno" | "Tradisi & Perilaku" | "Peristiwa & Taktik"
-      "penjelasan": "Uraian singkat 2-3 kalimat mengenai fakta otentik dan alasan kenapa ini menarik.",
+      "judul": "Judul Sesuai Karakter Channel (Lugas, Cerdas, Hook Kuat)",
+      "kategori": "Tradisi & Perilaku", // Klasifikasikan ke salah satu: "Asal-Usul Benda" | "Profesi Kuno" | "Tradisi & Perilaku" | "Peristiwa & Taktik"
+      "penjelasan": "Uraian singkat 2-3 kalimat mengenai fakta otentik dan daya tarik ceritanya.",
       "skor": { "total": 48 },
-      "alasanKelulusan": "Alasan kelulusan skor >= 40/50 sesuai pola ${channelName}."
+      "alasanKelulusan": "Alasan kenapa topik ini 100% selaras dengan DNA channel referensi dan bebas duplikasi."
     }
   ]
 }`
@@ -175,8 +188,8 @@ FORMAT JSON OUTPUT PERSIS:
   "candidates": [
     {
       "judul": "Judul Menarik & Konkret",
-      "kategori": "Asal-Usul Benda", // Pilih salah satu: "Asal-Usul Benda" | "Profesi Kuno" | "Tradisi & Perilaku" | "Peristiwa & Taktik"
-      "penjelasan": "Uraian singkat 2-3 kalimat mengenai fakta otentik.",
+      "kategori": "Tradisi & Perilaku",
+      "penjelasan": "Uraian singkat fakta otentik.",
       "skor": { "total": 48 },
       "alasanKelulusan": "Alasan kelulusan skor >= 40/50."
     }
@@ -190,16 +203,16 @@ ${blacklistText}
 ${tavilyContext}
 
 INSTRUKSI EKSEKUSI:
-Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENIRU GAYA CHANNEL "${channelName}".
-- Pelajari pola judul dan naskah channel di atas.
-- Pastikan topik bervariasi antar-kategori dan belum ada di database.
+Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENIRU KARAKTER DAN POLA DARI CONTOH NASKAH ASLI CHANNEL "${channelName}".
+- Pelajari contoh naskah asli channel di atas secara teliti.
+- Pastikan topik baru belum ada di database dan didukung fakta riset web.
 - Output murni JSON.`
       : `Parameter Pencarian:
 - Kategori: ${kategori}
 - Durasi: ${durasi}
-- Preferensi: ${topikDisukai || "Fakta unik, sejarah, peristiwa menarik"}
-- Topik Ditolak: ${topikDitolak || "Tidak ada"}
-- Jumlah: ${jumlah} kandidat
+- Preferensi: ${topikDisukai || "Bebas"}
+- Ditolak: ${topikDitolak || "Tidak ada"}
+- Jumlah: ${jumlah}
 ${riwayatTopikText}
 ${blacklistText}
 ${tavilyContext}
