@@ -57,13 +57,11 @@ function getExplanationText(cand: any): string {
   return "Topik potensial berdasarkan analisis AI.";
 }
 
-// 💡 PEMBERSIH PARAGRAF CATATAN (HAPUS BRACKET [KATEGORI] & [CHANNEL] DARI TEKS UTAMA)
 function getCleanNotes(catatan: string | null): string {
   if (!catatan) return "";
   return catatan.replace(/^(\[.*?\]\s*)+/, "").trim();
 }
 
-// 💡 EKSTRAKSI LABEL GANDA DARI CATATAN (KATEGORI + NAMA CHANNEL REFERENSI)
 function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef: string | null } {
   const rawCatatan = item.catatan || "";
   const bracketMatches = Array.from(rawCatatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
@@ -82,30 +80,16 @@ function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef
     }
   }
 
-  // Auto-detect Kategori jika belum ada di catatan lama
   if (!kategori || kategori.toLowerCase() === "umum") {
     const text = `${item.judul} ${rawCatatan}`.toLowerCase();
-
-    if (text.includes("profesi") || text.includes("pekerjaan") || text.includes("whipping boy") || text.includes("groom of the stool") || text.includes("knocker") || text.includes("digaji")) {
-      kategori = "Profesi Kuno";
-    } else if (text.includes("taktik") || text.includes("perang") || text.includes("pelusium") || text.includes("trepanasi") || text.includes("bedah") || text.includes("bencana") || text.includes("hantu")) {
-      kategori = "Peristiwa & Taktik";
-    } else if (text.includes("sejarah") || text.includes("asal-usul") || text.includes("dasi") || text.includes("kacamata") || text.includes("sepatu") || text.includes("shampo") || text.includes("kulkas") || text.includes("sedotan") || text.includes("uang") || text.includes("lakban") || text.includes("jam ") || text.includes("alarm")) {
-      kategori = "Asal-Usul Benda";
-    } else if (text.includes("kasus") || text.includes("menuntut") || text.includes("pengadilan") || text.includes("penjara") || text.includes("koma") || text.includes("petani") || text.includes("bandara")) {
+    if (text.includes("kasus") || text.includes("menuntut") || text.includes("pencuri") || text.includes("petani") || text.includes("koma")) {
       kategori = "Kasus Unik";
+    } else if (text.includes("profesi") || text.includes("pekerjaan") || text.includes("whipping boy") || text.includes("groom of the stool")) {
+      kategori = "Profesi Kuno";
+    } else if (text.includes("sejarah") || text.includes("asal-usul") || text.includes("dasi") || text.includes("kacamata") || text.includes("lakban")) {
+      kategori = "Asal-Usul Benda";
     } else {
-      kategori = "Tradisi & Perilaku";
-    }
-  }
-
-  // Auto-detect Channel untuk data lama
-  if (!channelRef) {
-    const text = `${item.judul} ${rawCatatan}`.toLowerCase();
-    if (text.includes("menuntut") || text.includes("bandara narita") || text.includes("pencuri") || text.includes("koma") || text.includes("salah transfer")) {
-      channelRef = "Jurnal Kumal";
-    } else if (text.includes("sejarah") || text.includes("asal-usul") || text.includes("groom of the stool") || text.includes("whipping boy") || text.includes("pelusium") || text.includes("trepanasi") || text.includes("sewa nanas")) {
-      channelRef = "Dafiology";
+      kategori = "Kisah Ekstrem";
     }
   }
 
@@ -124,7 +108,7 @@ export default function TopicPage() {
   const [referenceProfileId, setReferenceProfileId] = useState("");
   const isManualMode = !referenceProfileId;
 
-  const [kategoriContent, setKategoriContent] = useState("Sains & Fakta Unik");
+  const [kategoriContent, setKategoriContent] = useState("Kisah Individu Nyata");
   const [targetDurasi, setTargetDurasi] = useState("45-60 detik");
   const [topikDisukai, setTopikDisukai] = useState("");
   const [topikDitolak, setTopikDitolak] = useState("");
@@ -174,13 +158,14 @@ export default function TopicPage() {
     }
   }
 
+  // 💡 CATAT SEMUA TOPIK YANG TIDAK DISIMPAN KE DAFTAR HITAM LOKAL
   function recordIgnoredCandidates(discarded: TopikCandidate[]) {
     if (typeof window === "undefined" || discarded.length === 0) return;
     try {
       const existingStr = localStorage.getItem("harnug_rejected_history");
       const existing: string[] = existingStr ? JSON.parse(existingStr) : [];
       const newTitles = discarded.map((c) => cleanTitle(c.judul));
-      const merged = Array.from(new Set([...existing, ...newTitles])).slice(-60);
+      const merged = Array.from(new Set([...existing, ...newTitles])).slice(-100);
       localStorage.setItem("harnug_rejected_history", JSON.stringify(merged));
     } catch (e) {
       console.error(e);
@@ -252,6 +237,7 @@ export default function TopicPage() {
     setGenerating(true);
     setGenError("");
 
+    // Otomatis masukkan kandidat yang sedang tampil dan belum disimpan ke daftar hitam
     if (candidates.length > 0) {
       recordIgnoredCandidates(candidates);
     }
@@ -308,10 +294,9 @@ export default function TopicPage() {
       const numericScore = getScoreNumber(candidate.skor);
       const explanation = getExplanationText(candidate);
       
-      // Ambil nama channel yang sedang aktif
       const activeProfile = channelProfiles.find((p) => p.id === referenceProfileId);
       const channelRefName = activeProfile ? activeProfile.profile_name : "Framework Murni";
-      const categoryTag = candidate.kategori || "Tradisi & Perilaku";
+      const categoryTag = candidate.kategori || "Kisah Ekstrem";
       
       let notes = `[${categoryTag}] [${channelRefName}] Skor: ${numericScore}/50 | ${explanation}`;
       if (candidate.hookFormula) notes += `\nHook: ${candidate.hookFormula}`;
@@ -483,11 +468,10 @@ export default function TopicPage() {
                     onChange={(e) => setKategoriContent(e.target.value)}
                     className="select-field"
                   >
+                    <option value="Kisah Individu Nyata">Kisah Individu Nyata</option>
+                    <option value="Kasus Unik & Hukum">Kasus Unik & Hukum</option>
+                    <option value="Fenomena Manusia Ekstrem">Fenomena Manusia Ekstrem</option>
                     <option value="Sains & Fakta Unik">Sains & Fakta Unik</option>
-                    <option value="Sejarah & Konspirasi">Sejarah & Konspirasi</option>
-                    <option value="Teknologi & Masa Depan">Teknologi & Masa Depan</option>
-                    <option value="Misteri & Horor">Misteri & Horor</option>
-                    <option value="Pop Culture & Hiburan">Pop Culture & Hiburan</option>
                   </select>
                 </div>
 
@@ -524,7 +508,7 @@ export default function TopicPage() {
                 <label className="form-label">Topik Disukai / Fokus (Opsional)</label>
                 <input
                   type="text"
-                  placeholder="Contoh: Otomotif, High heels..."
+                  placeholder="Contoh: Kasus persidangan, Obsesi nyeleneh..."
                   value={topikDisukai}
                   onChange={(e) => setTopikDisukai(e.target.value)}
                   className="input-field"
@@ -543,7 +527,7 @@ export default function TopicPage() {
             </div>
 
             <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
-              {generating ? <><span className="spinner" /> Menganalisis DNA Channel & Ideasi...</> : "Generate Ide Topik"}
+              {generating ? <><span className="spinner" /> Meriset Kisah Individu Nyata & Viral Potential...</> : "Generate Ide Topik"}
             </button>
           </form>
 
@@ -613,7 +597,6 @@ export default function TopicPage() {
                 <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div>
-                      {/* 💡 BADGE GANDA (SKOR + KATEGORI BIRU + CHANNEL UNGU) */}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                         <span className="badge badge-neutral">Skor: {numericScore}/50</span>
                         
