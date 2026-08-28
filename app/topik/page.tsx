@@ -57,19 +57,16 @@ function getExplanationText(cand: any): string {
   return "Topik potensial berdasarkan analisis AI.";
 }
 
-// 💡 PEMBERSIH TEKS CATATAN (HAPUS TULISAN [UMUM] DARI PARAGRAF)
 function getCleanNotes(catatan: string | null): string {
   if (!catatan) return "";
   return catatan.replace(/^\[.*?\]\s*/, "").trim();
 }
 
-// 💡 DETEKTOR PINTAR: OTOMATIS MEMBERI 4 LABEL RESMI UNTUK SEMUA 86 TOPIK LAMA
 function getCleanCategory(item: TopikItem): string {
   const rawCatatan = item.catatan || "";
   const match = rawCatatan.match(/^\[(.*?)\]/);
   let cat = match ? match[1].trim() : "";
 
-  // Jika belum ada label atau labelnya "Umum", otomatis deteksi dari isi judul
   if (!cat || cat.toLowerCase() === "umum") {
     const text = `${item.judul} ${rawCatatan}`.toLowerCase();
 
@@ -93,7 +90,8 @@ function getCleanCategory(item: TopikItem): string {
       text.includes("bedah") ||
       text.includes("operasi") ||
       text.includes("bencana") ||
-      text.includes("racun")
+      text.includes("racun") ||
+      text.includes("hantu")
     ) {
       return "Peristiwa & Taktik";
     }
@@ -113,6 +111,7 @@ function getCleanCategory(item: TopikItem): string {
       text.includes("popok") ||
       text.includes("deodoran") ||
       text.includes("uang") ||
+      text.includes("lakban") ||
       text.includes("jam ") ||
       text.includes("alarm") ||
       text.includes("alat") ||
@@ -125,6 +124,21 @@ function getCleanCategory(item: TopikItem): string {
   }
 
   return cat;
+}
+
+// 💡 EKSTRAK KATA KUNCI UTAMA DARI JUDUL UNTUK DETEKSI KEMBARAN
+function extractKeywords(title: string): string[] {
+  const stopwords = new Set([
+    "sejarah", "asal-usul", "asal", "usul", "sebelum", "ada", "yang", "dan", "di", "dari", 
+    "ke", "pada", "untuk", "cuma", "buat", "bikin", "jadi", "saat", "era", "zaman", "kuno", 
+    "masa", "lalu", "dulu", "abad", "ini", "itu", "dalam", "dengan", "orang", "rakyat", "bangsa"
+  ]);
+  
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !stopwords.has(w));
 }
 
 export default function TopicPage() {
@@ -159,7 +173,8 @@ export default function TopicPage() {
   const [editJudul, setEditJudul] = useState("");
   const [editCatatan, setEditCatatan] = useState("");
 
-  const [filterStatus, setFilterStatus] = useState<"ALL" | "PROCESSED" | "UNPROCESSED">("ALL");
+  // 💡 FILTER STATUS BARU: ALL | PROCESSED | UNPROCESSED | DUPLICATES
+  const [filterStatus, setFilterStatus] = useState<"ALL" | "PROCESSED" | "UNPROCESSED" | "DUPLICATES">("ALL");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -185,6 +200,20 @@ export default function TopicPage() {
       } else {
         localStorage.removeItem("cached_topic_candidates");
       }
+    }
+  }
+
+  // 💡 SIMPAN TOPIK YANG TIDAK DIPILIH KE DAFTAR HITAM
+  function recordIgnoredCandidates(discarded: TopikCandidate[]) {
+    if (typeof window === "undefined" || discarded.length === 0) return;
+    try {
+      const existingStr = localStorage.getItem("harnug_rejected_history");
+      const existing: string[] = existingStr ? JSON.parse(existingStr) : [];
+      const newTitles = discarded.map((c) => cleanTitle(c.judul));
+      const merged = Array.from(new Set([...existing, ...newTitles])).slice(-60);
+      localStorage.setItem("harnug_rejected_history", JSON.stringify(merged));
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -253,6 +282,19 @@ export default function TopicPage() {
     setGenerating(true);
     setGenError("");
 
+    // Otomatis masukkan sisa kandidat yang tidak dipilih ke daftar hitam
+    if (candidates.length > 0) {
+      recordIgnoredCandidates(candidates);
+    }
+
+    let rejectedHistoryList: string[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("harnug_rejected_history");
+        if (stored) rejectedHistoryList = JSON.parse(stored);
+      } catch {}
+    }
+
     try {
       const res = await fetch("/api/topik/generate", {
         method: "POST",
@@ -264,6 +306,7 @@ export default function TopicPage() {
           topikDitolak,
           jumlah: Number(jumlahKandidat),
           referenceProfileId: referenceProfileId || null,
+          rejectedHistory: rejectedHistoryList,
         }),
       });
 
@@ -327,6 +370,7 @@ export default function TopicPage() {
 
   function handleClearCandidates() {
     if (confirm("Bersihkan seluruh hasil rekomendasi yang belum disimpan?")) {
+      recordIgnoredCandidates(candidates);
       updateCandidates([]);
     }
   }
@@ -397,10 +441,32 @@ export default function TopicPage() {
     });
   }
 
+  // 💡 DETEKSI KEMBARAN/DUPLIKASI ANTAR 100 TOPIK DI DATABASE
+  function findSimilarSibling(target: TopikItem): TopikItem | null {
+    const targetWords = extractKeywords(cleanTitle(target.judul));
+    if (targetWords.length === 0) return null;
+
+    for (const other of items) {
+      if (other.id === target.id) continue;
+      const otherWords = extractKeywords(cleanTitle(other.judul));
+      
+      const overlap = targetWords.filter((w) => otherWords.includes(w));
+      // Jika memiliki 2 kata kunci sama atau 1 kata benda unik sama
+      if (overlap.length >= 2 || (overlap.length === 1 && overlap[0].length >= 5)) {
+        return other;
+      }
+    }
+    return null;
+  }
+
+  // Hitung jumlah topik yang punya kembaran
+  const duplicateItems = items.filter((item) => findSimilarSibling(item) !== null);
+
   const filteredItems = items.filter((item) => {
     const hasNaskah = checkHasNaskah(item);
     if (filterStatus === "PROCESSED") return hasNaskah;
     if (filterStatus === "UNPROCESSED") return !hasNaskah;
+    if (filterStatus === "DUPLICATES") return findSimilarSibling(item) !== null;
     return true;
   });
 
@@ -632,13 +698,13 @@ export default function TopicPage() {
         </div>
       )}
 
-      {/* Daftar Topic List (Dengan Auto-Label 4 Kategori Resmi) */}
+      {/* Daftar Topic List (Dengan Filter Kembar/Duplikat) */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div className="section-title" style={{ margin: 0 }}>
           Daftar Topic ({filteredItems.length} dari {items.length})
         </div>
 
-        <div style={{ display: "flex", gap: 6, background: "var(--bg-secondary)", padding: 4, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+        <div style={{ display: "flex", gap: 6, background: "var(--bg-secondary)", padding: 4, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", flexWrap: "wrap" }}>
           <button
             type="button"
             onClick={() => setFilterStatus("ALL")}
@@ -695,6 +761,28 @@ export default function TopicPage() {
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
             Sudah Naskah
           </button>
+
+          {/* 💡 TOMBOL FILTER BARU: DETEKSI TOPIK KEMBAR */}
+          <button
+            type="button"
+            onClick={() => setFilterStatus("DUPLICATES")}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: 600,
+              borderRadius: "var(--radius-xs)",
+              border: "none",
+              cursor: "pointer",
+              background: filterStatus === "DUPLICATES" ? "rgba(239, 68, 68, 0.25)" : "transparent",
+              color: filterStatus === "DUPLICATES" ? "#f87171" : "var(--text-secondary)",
+              display: "flex",
+              alignItems: "center",
+              gap: 4
+            }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", display: "inline-block" }} />
+            ⚠️ Kembar/Mirip ({duplicateItems.length})
+          </button>
         </div>
       </div>
 
@@ -708,6 +796,8 @@ export default function TopicPage() {
             ? "Semua topik sudah dibuatkan naskah!"
             : filterStatus === "PROCESSED"
             ? "Belum ada topik yang diproses ke naskah."
+            : filterStatus === "DUPLICATES"
+            ? "Bagus! Tidak ditemukan topik kembar/mirip di database Anda."
             : "Belum ada topik tersimpan."}
         </div>
       ) : (
@@ -717,9 +807,10 @@ export default function TopicPage() {
             const hasNaskah = checkHasNaskah(item);
             const itemKategori = getCleanCategory(item);
             const cleanNotes = getCleanNotes(item.catatan);
+            const sibling = findSimilarSibling(item);
 
             return (
-              <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18 }}>
+              <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18, borderColor: sibling ? "rgba(239, 68, 68, 0.3)" : undefined }}>
                 {isEditing ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input
@@ -754,7 +845,6 @@ export default function TopicPage() {
                             flexShrink: 0
                           }}
                         />
-                        {/* 💡 BADGE 4 KATEGORI RESMI UNTUK SEMUA TOPIK */}
                         <span
                           className="badge badge-neutral"
                           style={{
@@ -767,6 +857,23 @@ export default function TopicPage() {
                         >
                           🏷️ {itemKategori}
                         </span>
+
+                        {/* 💡 INDIKATOR JIKA ADA KEMBARAN DI DATABASE */}
+                        {sibling && (
+                          <span
+                            className="badge badge-neutral"
+                            style={{
+                              color: "#f87171",
+                              background: "rgba(239, 68, 68, 0.15)",
+                              border: "1px solid rgba(239, 68, 68, 0.3)",
+                              fontSize: 10,
+                              fontWeight: 600
+                            }}
+                          >
+                            ⚠️ Mirip: {cleanTitle(sibling.judul).slice(0, 30)}...
+                          </span>
+                        )}
+
                         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: "var(--text-primary)", lineHeight: 1.35 }}>
                           {cleanTitle(item.judul)}
                         </h3>
