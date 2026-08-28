@@ -67,15 +67,16 @@ export async function POST(req: NextRequest) {
     }
 
     const {
-      kategori = "Curious Human History",
+      kategori = "Sains & Fakta Unik",
       durasi = "45-60 detik",
       topikDisukai = "",
       topikDitolak = "",
       jumlah = 5,
       referenceProfileId = null,
-      rejectedHistory = [], // 💡 MENERIMA DAFTAR TOPIK YANG PERNAH DIABAIKAN USER
+      rejectedHistory = [],
     } = await req.json();
 
+    // EKSEKUSI KUERI PARALEL (PROFIL REFERENSI + RIWAYAT DATABASE)
     const [profileRes, historyRes] = await Promise.all([
       referenceProfileId
         ? supabase
@@ -92,22 +93,28 @@ export async function POST(req: NextRequest) {
         .limit(100),
     ]);
 
+    let isProfileMode = false;
+    let channelName = "";
     let referenceContextText = "";
+
+    // 💡 JIKA MEMILIH REFERENSI CHANNEL (MISAL: JURNAL KUMAL ATAU DAFIOLOGY)
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
+      isProfileMode = true;
+      channelName = profileRes.data.profile_name;
+      
       const samples = profileRes.data.channel_analysis_entries
-        .map((e: any, idx: number) => `[CONTOH POLA ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
+        .map((e: any, idx: number) => `[CONTOH NASKAH ASLI ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
 
-      referenceContextText = `\n\n=== POLA GAYA CHANNEL "${profileRes.data.profile_name}" ===\n${samples}`;
+      referenceContextText = `\n\n=== CONTOH POLA & NASKAH ASLI CHANNEL "${channelName}" ===\n${samples}`;
     }
 
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
       const daftarJudul = historyRes.data.map((t: any, idx: number) => `${idx + 1}. ${t.judul}`).join("\n");
-      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG KERAS MENGULANG TEMA/BENDA INI):\n${daftarJudul}`;
+      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG MENGULANG TEMA INI):\n${daftarJudul}`;
     }
 
-    // 💡 DAFTAR BLACKLIST: TOPIK YANG DITOLAK USER & YANG PERNAH DIABAIKAN SEBELUMNYA
     let blacklistText = "";
     const combinedRejected = [
       ...(topikDitolak ? [topikDitolak] : []),
@@ -116,55 +123,88 @@ export async function POST(req: NextRequest) {
 
     if (combinedRejected.length > 0) {
       const list = combinedRejected.slice(0, 40).map((r: string) => `- ${r}`).join("\n");
-      blacklistText = `\n\n⛔ DAFTAR TOPIK YANG SUDAH DITOLAK/DIABAIKAN PENGGUNA (DILARANG MUNCUL LAGI):\n${list}`;
+      blacklistText = `\n\n⛔ DAFTAR TOPIK DITOLAK/DIABAIKAN PENGGUNA (DILARANG MUNCUL LAGI):\n${list}`;
     }
 
     let tavilyContext = "";
     try {
       const searchQuery = topikDisukai
-        ? `bizarre origins human history oddities ${topikDisukai}`
-        : `bizarre origins of everyday objects forgotten ancient professions weird historical customs unusual events`;
+        ? `fakta unik sejarah menarik ${topikDisukai}`
+        : isProfileMode
+        ? `fakta unik sejarah aneh menarik ${channelName}`
+        : `fakta unik menarik sejarah peradaban manusia`;
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA FAKTA RISET WEB]:\n${tavilyRes}`;
+        tavilyContext = `\n\n[DATA FAKTA RISET WEB TERBARU]:\n${tavilyRes}`;
       }
     } catch (e) {
       console.warn("[Topik] Tavily fallback:", e);
     }
 
-    const systemPrompt = `Kamu adalah Lead Content Director & Topic Architect untuk YouTube Shorts Curious Human History (Gaya Dafiology).
+    // 💡 SYSTEM PROMPT 100% DINAMIS (MENYESUAIKAN DENGAN CHANNEL YANG DIPILIH)
+    const systemPrompt = isProfileMode
+      ? `Kamu adalah Lead Content Strategist & Topic Architect kelas dunia. 
+TUGAS UTAMA: Analisis, serap, dan tiru secara presisi DNA gaya konten, tone narasi, sudut pandang unik, dan struktur topik dari channel "${channelName}" berdasarkan contoh-contoh naskah aslinya di bawah.
 
-🎯 4 PILAR KATEGORI UTAMA:
-1. "Asal-Usul Benda": Benda/fashion sehari-hari dengan asal-usul tak terduga.
-2. "Profesi Kuno": Pekerjaan nyata masa lalu yang terdengar janggal/unik.
-3. "Tradisi & Perilaku": Kebiasaan/tren absurd masa lalu.
-4. "Peristiwa & Taktik": Taktik aneh atau peristiwa unik masa lalu.
-
-⚖️ ATURAN GAYA BAHASA (ANTI-VULGAR & ANTI-LEBAY):
-1. DILARANG VULGAR/JOROK KASAR: Gunakan istilah yang wajar dan santun (misal: bukan 'nyebokin', tapi 'membersihkan').
-2. DILARANG LEBAY/HIPERBOLA: Gunakan bahasa LUGAS, SANTAI, dan CERDAS.
-3. DILARANG DUPLIKAT: Periksa daftar topik database DAN daftar topik yang diabaikan. JANGAN PERNAH membuat topik yang sudah ada di daftar tersebut!
+⚖️ ATURAN KUALITAS & GAYA BAHASA:
+1. GAYA BAHASA: Tiru gaya bertutur khas channel "${channelName}". Gunakan bahasa yang LUGAS, CERDAS, dan SANTAI.
+2. DILARANG VULGAR KASAR & DILARANG LEBAY/HIPERBOLA.
+3. DILARANG MENGULANG TEMA/SUBJEK yang sudah ada di database atau yang ditolak pengguna.
 
 FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Khas Dafiology (Lugas, Cerdas, Alami, Hook Kuat)",
-      "kategori": "Profesi Kuno",
-      "penjelasan": "Uraian 2-3 kalimat mengenai fakta otentik dan alasan kenapa ini sangat menarik secara historis.",
-      "skor": { "total": 49 },
+      "judul": "Judul Sesuai Pola ${channelName} (Lugas, Hook Kuat)",
+      "kategori": "Asal-Usul Benda", // Pilih salah satu: "Asal-Usul Benda" | "Profesi Kuno" | "Tradisi & Perilaku" | "Peristiwa & Taktik"
+      "penjelasan": "Uraian singkat 2-3 kalimat mengenai fakta otentik dan alasan kenapa ini menarik.",
+      "skor": { "total": 48 },
+      "alasanKelulusan": "Alasan kelulusan skor >= 40/50 sesuai pola ${channelName}."
+    }
+  ]
+}`
+      : `Kamu adalah Lead Content Strategist & Topic Architect untuk YouTube Shorts spesialis kategori "${kategori}".
+
+⚖️ ATURAN KUALITAS & GAYA BAHASA:
+1. Hasilkan ide topik berkualitas tinggi yang berakar pada fakta otentik dan berpotensi viral tinggi.
+2. Gunakan bahasa yang LUGAS, CERDAS, dan SANTAI (Anti-Vulgar & Anti-Lebay).
+3. DILARANG MENGULANG TEMA/SUBJEK yang sudah ada di database atau yang ditolak pengguna.
+
+FORMAT JSON OUTPUT PERSIS:
+{
+  "candidates": [
+    {
+      "judul": "Judul Menarik & Konkret",
+      "kategori": "Asal-Usul Benda", // Pilih salah satu: "Asal-Usul Benda" | "Profesi Kuno" | "Tradisi & Perilaku" | "Peristiwa & Taktik"
+      "penjelasan": "Uraian singkat 2-3 kalimat mengenai fakta otentik.",
+      "skor": { "total": 48 },
       "alasanKelulusan": "Alasan kelulusan skor >= 40/50."
     }
   ]
 }`;
 
-    const userPrompt = `${referenceContextText}
+    const userPrompt = isProfileMode
+      ? `${referenceContextText}
 ${riwayatTopikText}
 ${blacklistText}
 ${tavilyContext}
 
-Instruksi:
-Hasilkan ${jumlah} ide topik video YouTube Shorts berkualitas tinggi yang 100% BARU dan BELUM PERNAH ADA di database maupun daftar topik yang diabaikan di atas. Output murni JSON.`;
+INSTRUKSI EKSEKUSI:
+Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENIRU GAYA CHANNEL "${channelName}".
+- Pelajari pola judul dan naskah channel di atas.
+- Pastikan topik bervariasi antar-kategori dan belum ada di database.
+- Output murni JSON.`
+      : `Parameter Pencarian:
+- Kategori: ${kategori}
+- Durasi: ${durasi}
+- Preferensi: ${topikDisukai || "Fakta unik, sejarah, peristiwa menarik"}
+- Topik Ditolak: ${topikDitolak || "Tidak ada"}
+- Jumlah: ${jumlah} kandidat
+${riwayatTopikText}
+${blacklistText}
+${tavilyContext}
+
+Hasilkan ${jumlah} ide topik berkualitas tinggi dalam format JSON murni.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
