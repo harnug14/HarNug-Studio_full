@@ -8,7 +8,7 @@ import { fetchTavilySearchResults } from "@/lib/tavily";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-// OTAK UTAMA RESMI GOOGLE: GEMINI 3.6 FLASH
+// OTAK UTAMA RESMI: GEMINI 3.6 FLASH
 const MAIN_MODEL = "gemini-3.6-flash";
 
 async function requestGoogleGemini(
@@ -26,6 +26,7 @@ async function requestGoogleGemini(
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           responseMimeType: "application/json",
+          temperature: 0.7,
         },
       }),
     }
@@ -68,7 +69,7 @@ export async function POST(req: NextRequest) {
     }
 
     const {
-      kategori = "Sejarah Unik & Fakta Kehidupan",
+      kategori = "Curious History & Sejarah Unik Kehidupan Manusia",
       durasi = "45-60 detik",
       topikDisukai = "",
       topikDitolak = "",
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
         .select("judul")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(50),
+        .limit(100),
     ]);
 
     let referenceContextText = "";
@@ -98,7 +99,6 @@ export async function POST(req: NextRequest) {
 
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
-      
       const samples = profileRes.data.channel_analysis_entries
         .map((e: any, idx: number) => {
           return `Contoh Naskah ${idx + 1}: ${e.title}\nNaskah Utuh:\n${e.full_script || ""}`;
@@ -111,61 +111,73 @@ export async function POST(req: NextRequest) {
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
       const daftarJudul = historyRes.data
-        .map((t: any, idx: number) => `${idx + 1}. ${t.judul}`)
+        .map((t: any, idx: number) => `- ${t.judul}`)
         .join("\n");
-      riwayatTopikText = `\n\n--- DAFTAR TOPIK LAMA YANG WAJIB DIHINDARI ---\n${daftarJudul}\n\nSetiap kandidat topik baru WAJIB memiliki INTI CERITA/FAKTA yang BENAR-BENAR BERBEDA dari daftar di atas.`;
+      riwayatTopikText = `\n\n--- DAFTAR TOPIK YANG SUDAH PERNAH DIBUAT (WAJIB DIHINDARI 100%) ---\n${daftarJudul}\n\nATURAN ANTI-DUPLIKASI MUTLAK: Dilarang keras membuat topik dengan INTI CERITA/SUBJEK yang sama dari daftar di atas (misal: jika sudah ada sejarah popok, DILARANG membuat topik popok lagi meskipun judul/penjelasannya berbeda).`;
     }
 
-    // 💡 AMBIL DATA RISET REAL-TIME VIA TAVILY (AKURAT & ANTI-HALUSINASI)
+    // 💡 ATURAN MUTLAK BLACKLIST (TOPIK DITOLAK)
+    let blacklistInstruction = "";
+    if (topikDitolak && topikDitolak.trim()) {
+      blacklistInstruction = `\n\n⛔ PROTOKOL BLACKLIST MUTLAK (DILARANG KERAS):
+Pengguna secara tegas MENOLAK topik terkait: "${topikDitolak}".
+KAMU DILARANG KERAS menghasilkan kandidat topik apa pun yang menyebut, membahas, atau berkaitan langsung maupun tidak langsung dengan "${topikDitolak}". Pelanggaran aturan ini dianggap kegagalan fatal.`;
+    }
+
+    // 💡 AMBIL DATA RISET DARI TAVILY
     let tavilyContext = "";
     try {
       const searchQuery = topikDisukai
-        ? `fakta sejarah unik asal usul ${topikDisukai}`
-        : `fakta sejarah unik aneh manusia asal usul barang peristiwa masa lalu nyata trivia`;
+        ? `fakta sejarah unik aneh manusia ${topikDisukai}`
+        : `peristiwa sejarah unik aneh misteri kehidupan manusia masa lalu trivia mendalam`;
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA RISET FAKTA SEJARAH OTENTIK DARI WEB]:\n${tavilyRes}\n\nGunakan fakta-fakta otentik di atas sebagai rujukan validasi agar naskah/topik 100% akurat dan nyata.`;
+        tavilyContext = `\n\n[DATA FAKTA SEJARAH OTENTIK DARI WEB]:\n${tavilyRes}\n\nGunakan fakta otentik di atas sebagai rujukan validasi agar topik 100% berbasis peristiwa nyata.`;
       }
     } catch (e) {
       console.warn("[Topik] Gagal fetch Tavily, lanjut tanpa search tambahan:", e);
     }
 
-    const systemPrompt = `Kamu adalah seorang Expert Content Strategist & Topic Researcher kelas dunia spesialis niche Curious History, Fakta Unik Asal-usul, dan Sejarah Kehidupan Manusia.
-Hasilkan ${jumlah} ide topik video YouTube Shorts/Reels berkualitas tinggi yang orisinal, kaya fakta menarik, dan berpotensi viral tinggi.
+    const systemPrompt = `Kamu adalah seorang Lead Content Strategist & Topic Curator kelas dunia spesialis niche Curious Pop History & Sejarah Unik Kehidupan Manusia (standar channel Dafiology).
+
+KRITERIA KUALITAS TOPIK TINGGI (ANTI-SEPELE):
+1. WAJIB BERBOBOT: Topik harus memiliki unsur KONSEKUENSI NYATA, BENTURAN BUDAYA, DILEMA MORAL, atau KEANEHAN EKSTREM peradaban masa lalu. JANGAN memilih hal sepele yang membosankan tanpa intrik cerita.
+2. HOOK PENASARAN: Judul harus memicu rasa ingin tahu yang kuat (Curiosity Gap) tapi tetap konkret dan elegan.
+3. KAYA FAKTA OTENTIK: Berakar pada sejarah nyata dunia yang bisa diverifikasi.
 
 RUBRIK VALIDASI SKOR (/50):
-- Relevansi/Familiaritas Audiens (/10)
-- Potensi Visual (/10)
-- Kekuatan Struktur/Timeline (/10)
-- Potensi Hook (/10)
-- Potensi Viral (/10)
+- Relevansi & Ketertarikan Audiens (/10)
+- Potensi Visual Dramatis (/10)
+- Kekuatan Konflik & Cerita (/10)
+- Kekuatan Hook (/10)
+- Potensi Retensi Viral (/10)
 Total skor WAJIB >= 40/50.
 
 FORMAT JSON OUTPUT PERSIS (pure JSON object):
 {
   "candidates": [
     {
-      "judul": "Judul Ide Topik yang Menarik, Memancing Rasa Penasaran, dan Konkret",
-      "penjelasan": "Penjelasan singkat 2-3 kalimat mengenai fakta otentik di balik topik ini dan bagaimana eksekusi ceritanya.",
-      "skor": { "total": 45 },
-      "alasanKelulusan": "Penjelasan singkat kenapa topik ini lolos skor >= 40/50 dan memiliki dasar fakta sejarah yang kuat."
+      "judul": "Judul Ide Topik yang Memikat, Dramatis, dan Konkret",
+      "penjelasan": "Penjelasan 2-3 kalimat mengenai inti konflik/kejadian sejarah di balik topik ini dan kenapa ini menarik.",
+      "skor": { "total": 46 },
+      "alasanKelulusan": "Penjelasan kenapa topik ini berbobot tinggi dan lolos skor >= 40/50."
     }
   ]
-}${riwayatTopikText}`;
+}${riwayatTopikText}${blacklistInstruction}`;
 
     const userPrompt = isProfileMode
       ? `PROFIL CHANNEL DIPILIH:${referenceContextText}${tavilyContext}
 
-Instruksi Tambahan:
-Analisis seluruh gaya bahasa, tone, topik, dan struktur dari naskah utuh channel di atas. Hasilkan ${jumlah} kandidat ide topik baru yang konsisten dengan pola channel referensi tersebut dalam JSON murni.`
+Instruksi:
+Pelajari pola channel di atas. Hasilkan ${jumlah} kandidat ide topik baru yang berbobot tinggi, bebas duplikasi, dan PATUHI protokol blacklist jika ada. Berikan dalam format JSON murni.`
       : `Parameter Ideation Topic:
-- Kategori Niche: ${kategori}
-- Target Durasi Video: ${durasi}
-- Topik/Preferensi yang Disukai: ${topikDisukai || "Sejarah unik, asal-usul barang/kebiasaan, peristiwa aneh masa lalu yang nyata"}
-- Topik yang Ditolak: ${topikDitolak || "Tidak ada"}
-- Jumlah Kandidat: ${jumlah} kandidat${tavilyContext}
+- Niche: ${kategori}
+- Durasi Target: ${durasi}
+- Fokus yang Disukai: ${topikDisukai || "Peristiwa unik, dilema masa lalu, asal-usul yang mengejutkan"}
+- Topik Ditolak: ${topikDitolak || "Tidak ada"}
+- Jumlah: ${jumlah} kandidat${tavilyContext}
 
-Hasilkan ${jumlah} kandidat ide topik yang lolos skor >= 40/50 dalam JSON murni sekarang.`;
+Hasilkan ${jumlah} ide topik berbobot tinggi yang lolos skor >= 40/50 dalam JSON murni sekarang.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
