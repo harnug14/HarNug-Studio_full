@@ -123,63 +123,6 @@ function getCleanCategory(item: TopikItem): string {
   return cat;
 }
 
-// 💡 80+ DAFTAR KATA UMUM YANG DIELIMINASI DARI PENILAIAN
-const COMPREHENSIVE_STOPWORDS = new Set([
-  "sejarah", "asalusul", "asal", "usul", "sebelum", "ada", "yang", "dan", "di", "dari",
-  "ke", "pada", "untuk", "cuma", "buat", "bikin", "jadi", "saat", "era", "zaman", "kuno",
-  "masa", "lalu", "dulu", "abad", "ini", "itu", "dalam", "dengan", "orang", "rakyat", "bangsa",
-  "rahasia", "solusi", "masalah", "sederhana", "pertama", "dunia", "fantastis", "sangat", "paling",
-  "tentang", "mengapa", "kenapa", "alasan", "bagaimana", "cara", "ketika", "sampai", "hingga",
-  "malah", "bisa", "harus", "rela", "hanya", "oleh", "tahu", "punya", "bukan", "bukanlah",
-  "seperti", "tapi", "tetapi", "namun", "bahkan", "tanpa", "selama", "sebuah", "suatu",
-  "banyak", "ratusan", "ribuan", "jutaan", "tahun", "tewas", "mati", "hidup", "kematian",
-  "gila", "aneh", "absurd", "unik", "nyata", "resmi", "resminya", "gaya", "pamer", "karena",
-  "pria", "wanita", "anak", "kaum", "warga", "masyarakat", "kisah", "fakta", "misteri"
-]);
-
-function extractCleanNouns(title: string): string[] {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .split(/\s+/)
-    .filter((w) => w.length >= 3 && !COMPREHENSIVE_STOPWORDS.has(w));
-}
-
-function getPrefixSubject(title: string): string {
-  if (!title.includes(":")) return "";
-  const prefix = title.split(":")[0].toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
-  return prefix
-    .replace(/^(sejarah|asal\s*usul|sebelum\s*ada|misteri|kisah|taktik|profesi|tren)\s*/i, "")
-    .trim();
-}
-
-// 💡 DETEKTOR KEMBAR PRESISI TINGGI
-function findSimilarSibling(target: TopikItem, allItems: TopikItem[]): TopikItem | null {
-  const targetTitle = cleanTitle(target.judul);
-  const targetPrefix = getPrefixSubject(targetTitle);
-  const targetNouns = extractCleanNouns(targetTitle);
-
-  for (const other of allItems) {
-    if (other.id === target.id) continue;
-    const otherTitle = cleanTitle(other.judul);
-    const otherPrefix = getPrefixSubject(otherTitle);
-    const otherNouns = extractCleanNouns(otherTitle);
-
-    // KONDISI 1: Subjek sebelum titik dua persis sama (misal: "kulkas" === "kulkas")
-    if (targetPrefix.length >= 3 && otherPrefix.length >= 3 && targetPrefix === otherPrefix) {
-      return other;
-    }
-
-    // KONDISI 2: Memiliki minimal 2 kata benda inti yang sama persis (misal: "whipping" + "boy")
-    const overlap = targetNouns.filter((w) => otherNouns.includes(w));
-    if (overlap.length >= 2) {
-      return other;
-    }
-  }
-
-  return null;
-}
-
 export default function TopicPage() {
   const router = useRouter();
   const [items, setItems] = useState<TopikItem[]>([]);
@@ -212,8 +155,11 @@ export default function TopicPage() {
   const [editJudul, setEditJudul] = useState("");
   const [editCatatan, setEditCatatan] = useState("");
 
-  // 💡 FILTER TAB: ALL | PROCESSED | UNPROCESSED | DUPLICATES
-  const [filterStatus, setFilterStatus] = useState<"ALL" | "PROCESSED" | "UNPROCESSED" | "DUPLICATES">("ALL");
+  // Filter Status (ALL | PROCESSED | UNPROCESSED)
+  const [filterStatus, setFilterStatus] = useState<"ALL" | "PROCESSED" | "UNPROCESSED">("ALL");
+
+  // 💡 STATE PENCARIAN REAL-TIME
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -478,14 +424,22 @@ export default function TopicPage() {
     });
   }
 
-  // Hitung jumlah topik yang benar-benar memiliki kembaran
-  const duplicateItems = items.filter((item) => findSimilarSibling(item, items) !== null);
-
+  // 💡 FILTER DAFTAR TOPIK BERDASARKAN STATUS DAN KATA KUNCI PENCARIAN
   const filteredItems = items.filter((item) => {
     const hasNaskah = checkHasNaskah(item);
-    if (filterStatus === "PROCESSED") return hasNaskah;
-    if (filterStatus === "UNPROCESSED") return !hasNaskah;
-    if (filterStatus === "DUPLICATES") return findSimilarSibling(item, items) !== null;
+    
+    // 1. Filter Status
+    if (filterStatus === "PROCESSED" && !hasNaskah) return false;
+    if (filterStatus === "UNPROCESSED" && hasNaskah) return false;
+
+    // 2. Filter Kotak Pencarian
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const titleMatch = cleanTitle(item.judul).toLowerCase().includes(q);
+      const noteMatch = (item.catatan || "").toLowerCase().includes(q);
+      if (!titleMatch && !noteMatch) return false;
+    }
+
     return true;
   });
 
@@ -717,91 +671,83 @@ export default function TopicPage() {
         </div>
       )}
 
-      {/* Daftar Topic List */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
-        <div className="section-title" style={{ margin: 0 }}>
-          Daftar Topic ({filteredItems.length} dari {items.length})
+      {/* Header Daftar Topic List + Filter + Search Bar */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+          <div className="section-title" style={{ margin: 0 }}>
+            Daftar Topic ({filteredItems.length} dari {items.length})
+          </div>
+
+          <div style={{ display: "flex", gap: 6, background: "var(--bg-secondary)", padding: 4, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+            <button
+              type="button"
+              onClick={() => setFilterStatus("ALL")}
+              style={{
+                padding: "4px 10px",
+                fontSize: 11,
+                fontWeight: 600,
+                borderRadius: "var(--radius-xs)",
+                border: "none",
+                cursor: "pointer",
+                background: filterStatus === "ALL" ? "#38bdf8" : "transparent",
+                color: filterStatus === "ALL" ? "#000" : "var(--text-secondary)"
+              }}
+            >
+              Semua
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterStatus("UNPROCESSED")}
+              style={{
+                padding: "4px 10px",
+                fontSize: 11,
+                fontWeight: 600,
+                borderRadius: "var(--radius-xs)",
+                border: "none",
+                cursor: "pointer",
+                background: filterStatus === "UNPROCESSED" ? "rgba(255, 255, 255, 0.15)" : "transparent",
+                color: filterStatus === "UNPROCESSED" ? "#fff" : "var(--text-secondary)",
+                display: "flex",
+                alignItems: "center",
+                gap: 4
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#9ca3af", display: "inline-block" }} />
+              Belum Naskah
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterStatus("PROCESSED")}
+              style={{
+                padding: "4px 10px",
+                fontSize: 11,
+                fontWeight: 600,
+                borderRadius: "var(--radius-xs)",
+                border: "none",
+                cursor: "pointer",
+                background: filterStatus === "PROCESSED" ? "rgba(34, 197, 94, 0.2)" : "transparent",
+                color: filterStatus === "PROCESSED" ? "#4ade80" : "var(--text-secondary)",
+                display: "flex",
+                alignItems: "center",
+                gap: 4
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
+              Sudah Naskah
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: 6, background: "var(--bg-secondary)", padding: 4, borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={() => setFilterStatus("ALL")}
-            style={{
-              padding: "4px 10px",
-              fontSize: 11,
-              fontWeight: 600,
-              borderRadius: "var(--radius-xs)",
-              border: "none",
-              cursor: "pointer",
-              background: filterStatus === "ALL" ? "#38bdf8" : "transparent",
-              color: filterStatus === "ALL" ? "#000" : "var(--text-secondary)"
-            }}
-          >
-            Semua
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterStatus("UNPROCESSED")}
-            style={{
-              padding: "4px 10px",
-              fontSize: 11,
-              fontWeight: 600,
-              borderRadius: "var(--radius-xs)",
-              border: "none",
-              cursor: "pointer",
-              background: filterStatus === "UNPROCESSED" ? "rgba(255, 255, 255, 0.15)" : "transparent",
-              color: filterStatus === "UNPROCESSED" ? "#fff" : "var(--text-secondary)",
-              display: "flex",
-              alignItems: "center",
-              gap: 4
-            }}
-          >
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#9ca3af", display: "inline-block" }} />
-            Belum Naskah
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterStatus("PROCESSED")}
-            style={{
-              padding: "4px 10px",
-              fontSize: 11,
-              fontWeight: 600,
-              borderRadius: "var(--radius-xs)",
-              border: "none",
-              cursor: "pointer",
-              background: filterStatus === "PROCESSED" ? "rgba(34, 197, 94, 0.2)" : "transparent",
-              color: filterStatus === "PROCESSED" ? "#4ade80" : "var(--text-secondary)",
-              display: "flex",
-              alignItems: "center",
-              gap: 4
-            }}
-          >
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
-            Sudah Naskah
-          </button>
-
-          {/* 💡 TOMBOL FILTER KEMBAR PRESISI TINGGI */}
-          <button
-            type="button"
-            onClick={() => setFilterStatus("DUPLICATES")}
-            style={{
-              padding: "4px 10px",
-              fontSize: 11,
-              fontWeight: 600,
-              borderRadius: "var(--radius-xs)",
-              border: "none",
-              cursor: "pointer",
-              background: filterStatus === "DUPLICATES" ? "rgba(239, 68, 68, 0.25)" : "transparent",
-              color: filterStatus === "DUPLICATES" ? "#f87171" : "var(--text-secondary)",
-              display: "flex",
-              alignItems: "center",
-              gap: 4
-            }}
-          >
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", display: "inline-block" }} />
-            ⚠️ Kembar/Mirip ({duplicateItems.length})
-          </button>
+        {/* 💡 KOTAK PENCARIAN REAL-TIME */}
+        <div>
+          <input
+            type="text"
+            placeholder="🔍 Cari judul topik atau kata kunci (misal: kulkas, lintah, dasi)..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="input-field"
+            style={{ fontSize: 13, padding: "8px 14px" }}
+          />
         </div>
       </div>
 
@@ -811,12 +757,12 @@ export default function TopicPage() {
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="glass-card-static" style={{ padding: 24, textAlign: "center", fontSize: 12, color: "var(--text-tertiary)" }}>
-          {filterStatus === "UNPROCESSED"
+          {searchQuery
+            ? `Tidak ditemukan topik yang mengandung kata "${searchQuery}".`
+            : filterStatus === "UNPROCESSED"
             ? "Semua topik sudah dibuatkan naskah!"
             : filterStatus === "PROCESSED"
             ? "Belum ada topik yang diproses ke naskah."
-            : filterStatus === "DUPLICATES"
-            ? "Bagus! Tidak ada topik kembar di database Anda."
             : "Belum ada topik tersimpan."}
         </div>
       ) : (
@@ -826,10 +772,9 @@ export default function TopicPage() {
             const hasNaskah = checkHasNaskah(item);
             const itemKategori = getCleanCategory(item);
             const cleanNotes = getCleanNotes(item.catatan);
-            const sibling = findSimilarSibling(item, items);
 
             return (
-              <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18, borderColor: sibling ? "rgba(239, 68, 68, 0.3)" : undefined }}>
+              <div key={item.id} id={item.id} className="glass-card-static" style={{ padding: 18 }}>
                 {isEditing ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input
@@ -876,23 +821,6 @@ export default function TopicPage() {
                         >
                           🏷️ {itemKategori}
                         </span>
-
-                        {/* 💡 BADGE HANYA JIKA BENAR-BENAR ADA KEMBARAN */}
-                        {sibling && (
-                          <span
-                            className="badge badge-neutral"
-                            style={{
-                              color: "#f87171",
-                              background: "rgba(239, 68, 68, 0.15)",
-                              border: "1px solid rgba(239, 68, 68, 0.3)",
-                              fontSize: 10,
-                              fontWeight: 600
-                            }}
-                          >
-                            ⚠️ Kembar: {cleanTitle(sibling.judul).slice(0, 25)}...
-                          </span>
-                        )}
-
                         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: "var(--text-primary)", lineHeight: 1.35 }}>
                           {cleanTitle(item.judul)}
                         </h3>
