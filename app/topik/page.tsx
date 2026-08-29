@@ -13,6 +13,7 @@ type TopikCandidate = {
   retentionAngle?: string;
   targetDurasi?: string;
   kategori?: string;
+  channelRef?: string;
 };
 
 type TopikItem = {
@@ -73,7 +74,7 @@ function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef
     kategori = bracketMatches[0];
     channelRef = bracketMatches[1];
   } else if (bracketMatches.length === 1) {
-    if (["dafiology", "jurnal kumal", "framework murni"].some(c => bracketMatches[0].toLowerCase().includes(c))) {
+    if (["dafiology", "jurnal kumal", "framework murni"].some((c) => bracketMatches[0].toLowerCase().includes(c))) {
       channelRef = bracketMatches[0];
     } else if (bracketMatches[0].toLowerCase() !== "umum") {
       kategori = bracketMatches[0];
@@ -81,16 +82,7 @@ function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef
   }
 
   if (!kategori || kategori.toLowerCase() === "umum") {
-    const text = `${item.judul} ${rawCatatan}`.toLowerCase();
-    if (text.includes("kasus") || text.includes("menuntut") || text.includes("pencuri") || text.includes("petani") || text.includes("koma")) {
-      kategori = "Kasus Unik";
-    } else if (text.includes("profesi") || text.includes("pekerjaan") || text.includes("whipping boy") || text.includes("groom of the stool")) {
-      kategori = "Profesi Kuno";
-    } else if (text.includes("sejarah") || text.includes("asal-usul") || text.includes("dasi") || text.includes("kacamata") || text.includes("lakban")) {
-      kategori = "Asal-Usul Benda";
-    } else {
-      kategori = "Kisah Ekstrem";
-    }
+    kategori = "Kisah Nyata";
   }
 
   return { kategori, channelRef };
@@ -108,7 +100,7 @@ export default function TopicPage() {
   const [referenceProfileId, setReferenceProfileId] = useState("");
   const isManualMode = !referenceProfileId;
 
-  const [kategoriContent, setKategoriContent] = useState("Kisah Individu Nyata");
+  const [kategoriContent, setKategoriContent] = useState("Sains & Fakta Unik");
   const [targetDurasi, setTargetDurasi] = useState("45-60 detik");
   const [topikDisukai, setTopikDisukai] = useState("");
   const [topikDitolak, setTopikDitolak] = useState("");
@@ -158,7 +150,6 @@ export default function TopicPage() {
     }
   }
 
-  // 💡 CATAT SEMUA TOPIK YANG TIDAK DISIMPAN KE DAFTAR HITAM LOKAL
   function recordIgnoredCandidates(discarded: TopikCandidate[]) {
     if (typeof window === "undefined" || discarded.length === 0) return;
     try {
@@ -237,7 +228,6 @@ export default function TopicPage() {
     setGenerating(true);
     setGenError("");
 
-    // Otomatis masukkan kandidat yang sedang tampil dan belum disimpan ke daftar hitam
     if (candidates.length > 0) {
       recordIgnoredCandidates(candidates);
     }
@@ -273,9 +263,7 @@ export default function TopicPage() {
       const json = await res.json();
       if (json.error) {
         setGenError(json.error);
-      } else if (json.data && json.data.candidates && Array.isArray(json.data.candidates)) {
-        updateCandidates(json.data.candidates);
-      } else if (Array.isArray(json.data)) {
+      } else if (json.data && Array.isArray(json.data)) {
         updateCandidates(json.data);
       } else {
         setGenError("Gagal mengambil ide topik. Silakan coba lagi.");
@@ -294,9 +282,8 @@ export default function TopicPage() {
       const numericScore = getScoreNumber(candidate.skor);
       const explanation = getExplanationText(candidate);
       
-      const activeProfile = channelProfiles.find((p) => p.id === referenceProfileId);
-      const channelRefName = activeProfile ? activeProfile.profile_name : "Framework Murni";
-      const categoryTag = candidate.kategori || "Kisah Ekstrem";
+      const channelRefName = candidate.channelRef || (channelProfiles.find((p) => p.id === referenceProfileId)?.profile_name) || "Framework Murni";
+      const categoryTag = candidate.kategori || "Kisah Nyata";
       
       let notes = `[${categoryTag}] [${channelRefName}] Skor: ${numericScore}/50 | ${explanation}`;
       if (candidate.hookFormula) notes += `\nHook: ${candidate.hookFormula}`;
@@ -415,8 +402,6 @@ export default function TopicPage() {
     return true;
   });
 
-  const activeChannelProfile = channelProfiles.find((p) => p.id === referenceProfileId);
-
   return (
     <div className="animate-fade-in">
       <div style={{ marginBottom: 16 }}>
@@ -468,10 +453,10 @@ export default function TopicPage() {
                     onChange={(e) => setKategoriContent(e.target.value)}
                     className="select-field"
                   >
-                    <option value="Kisah Individu Nyata">Kisah Individu Nyata</option>
-                    <option value="Kasus Unik & Hukum">Kasus Unik & Hukum</option>
-                    <option value="Fenomena Manusia Ekstrem">Fenomena Manusia Ekstrem</option>
+                    <option value="Kisah Nyata & Human Interest">Kisah Nyata & Human Interest</option>
                     <option value="Sains & Fakta Unik">Sains & Fakta Unik</option>
+                    <option value="Sejarah & Konspirasi">Sejarah & Konspirasi</option>
+                    <option value="Misteri & Horor">Misteri & Horor</option>
                   </select>
                 </div>
 
@@ -508,7 +493,7 @@ export default function TopicPage() {
                 <label className="form-label">Topik Disukai / Fokus (Opsional)</label>
                 <input
                   type="text"
-                  placeholder="Contoh: Kasus persidangan, Obsesi nyeleneh..."
+                  placeholder="Fokus topik..."
                   value={topikDisukai}
                   onChange={(e) => setTopikDisukai(e.target.value)}
                   className="input-field"
@@ -518,7 +503,7 @@ export default function TopicPage() {
                 <label className="form-label">Topik Ditolak (Opsional)</label>
                 <input
                   type="text"
-                  placeholder="Contoh: Bencana, Korupsi..."
+                  placeholder="Topik yang dihindari..."
                   value={topikDitolak}
                   onChange={(e) => setTopikDitolak(e.target.value)}
                   className="input-field"
@@ -527,7 +512,7 @@ export default function TopicPage() {
             </div>
 
             <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
-              {generating ? <><span className="spinner" /> Meriset Kisah Individu Nyata & Viral Potential...</> : "Generate Ide Topik"}
+              {generating ? <><span className="spinner" /> Meriset Data Otentik & Menghasilkan Ide...</> : "Generate Ide Topik"}
             </button>
           </form>
 
@@ -614,7 +599,8 @@ export default function TopicPage() {
                           </span>
                         )}
 
-                        {activeChannelProfile && (
+                        {/* 💡 BADGE MEMBACA METADATA KANDIDAT YANG DIHASILKAN, BUKAN DROPDOWN SAAT INI */}
+                        {cand.channelRef && (
                           <span
                             className="badge badge-neutral"
                             style={{
@@ -624,7 +610,7 @@ export default function TopicPage() {
                               fontWeight: 600
                             }}
                           >
-                            📺 {activeChannelProfile.profile_name}
+                            📺 {cand.channelRef}
                           </span>
                         )}
 
@@ -728,7 +714,6 @@ export default function TopicPage() {
           </div>
         </div>
 
-        {/* 💡 KOTAK PENCARIAN REAL-TIME */}
         <div>
           <input
             type="text"
@@ -800,7 +785,6 @@ export default function TopicPage() {
                           }}
                         />
 
-                        {/* 💡 BADGE KATEGORI (BIRU) */}
                         <span
                           className="badge badge-neutral"
                           style={{
@@ -814,7 +798,6 @@ export default function TopicPage() {
                           🏷️ {itemKategori}
                         </span>
 
-                        {/* 💡 BADGE CHANNEL REFERENSI (UNGU) */}
                         {itemChannel && (
                           <span
                             className="badge badge-neutral"
