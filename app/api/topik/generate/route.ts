@@ -24,7 +24,7 @@ async function requestGoogleGemini(
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.85,
+          temperature: 0.8,
         },
       }),
     }
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const {
-      kategori = "Kisah Individu Nyata & Manusia",
+      kategori = "Umum & Edukasi",
       durasi = "45-60 detik",
       topikDisukai = "",
       topikDitolak = "",
@@ -93,80 +93,110 @@ export async function POST(req: NextRequest) {
     ]);
 
     let isProfileMode = false;
-    let channelName = "";
+    let channelName = "Framework Murni";
     let referenceContextText = "";
-    let sampleTitlesList: string[] = [];
+    let sampleTitles: string[] = [];
 
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name;
-      sampleTitlesList = profileRes.data.channel_analysis_entries.map((e: any) => e.title).filter(Boolean);
+      sampleTitles = profileRes.data.channel_analysis_entries.map((e: any) => e.title).filter(Boolean);
 
       const samples = profileRes.data.channel_analysis_entries
-        .map((e: any, idx: number) => `[CONTOH NASKAH ASLI ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
+        .map((e: any, idx: number) => `[SAMPEL NASKAH ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
 
-      referenceContextText = `\n\n=== CONTOH POLA & NASKAH ASLI CHANNEL "${channelName}" ===\n${samples}`;
+      referenceContextText = `\n\n=== CONTOH POLA KONTEN CHANNEL "${channelName}" ===\n${samples}`;
     }
 
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
       const daftarJudul = historyRes.data.map((t: any, idx: number) => `${idx + 1}. ${t.judul}`).join("\n");
-      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK SUDAH ADA DI DATABASE (DILARANG MENGULANG INI):\n${daftarJudul}`;
+      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK DI DATABASE USER (DILARANG MENGULANG INI):\n${daftarJudul}`;
     }
 
-    // 💡 DAFTAR BLACKLIST TOTAL (DITOLAK + YANG PERNAH DIABAIKAN USER)
-    let blacklistText = "";
+    // Blacklist komprehensif termasuk penolakan pengguna & klise internet
     const combinedRejected = [
       ...(topikDitolak ? [topikDitolak] : []),
       ...(Array.isArray(rejectedHistory) ? rejectedHistory : []),
+      "Kekuatan super setelah koma",
+      "Savant syndrome ajaib",
+      "Tersambar petir jadi jenius",
+      "Selamat kecelakaan berkali-kali",
+      "Tinggal di bandara / runway",
+      "Menjual Menara Eiffel",
+      "Groom of the stool",
+      "Perang Emu",
+      "Kaki teratai",
+      "Cornflakes hawa nafsu",
+      "Sirup heroin bayer"
     ];
 
-    if (combinedRejected.length > 0) {
-      const list = combinedRejected.slice(0, 60).map((r: string) => `- ${r}`).join("\n");
-      blacklistText = `\n\n⛔ DAFTAR TOPIK YANG SUDAH DITOLAK/DIABAIKAN PENGGUNA (DILARANG KERAS MUNCUL LAGI):\n${list}`;
-    }
+    const blacklistText = `\n\n⛔ DAFTAR MERAH / DILARANG KERAS MUNCUL:\n${combinedRejected.slice(0, 60).map((r) => `- ${r}`).join("\n")}`;
 
-    // 💡 TAVILY: RISET MURNI KISAH INDIVIDU NYATA & KASUS MANUSIA EKSTREM
     let tavilyContext = "";
     try {
-      const searchQuery = topikDisukai
-        ? `shocking true stories of individuals real people bizarre cases ${topikDisukai}`
-        : `shocking true stories of individuals unbelievable bizarre real people cases news strange human decisions`;
+      let searchQuery = "";
+      if (isProfileMode) {
+        const titleHints = sampleTitles.slice(0, 2).join(" ").replace(/[^a-zA-Z0-9\s]/g, "").slice(0, 80);
+        searchQuery = topikDisukai
+          ? `fakta unik nyata menarik ${topikDisukai}`
+          : `fakta unik otentik ${titleHints}`;
+      } else {
+        searchQuery = topikDisukai
+          ? `${kategori} fakta unik ${topikDisukai}`
+          : `${kategori} fakta unik menarik otentik`;
+      }
 
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA FAKTA KISAH NYATA MANUSIA DARI WEB]:\n${tavilyRes}`;
+        tavilyContext = `\n\n[DATA FAKTA RISET WEB]:\n${tavilyRes}`;
       }
     } catch (e) {
-      console.warn("[Topik] Tavily fallback:", e);
+      console.warn("[Topik] Tavily error:", e);
     }
 
-    // 💡 SYSTEM PROMPT MUTLAK: KISAH 1 INDIVIDU NYATA
-    const systemPrompt = `Kamu adalah Lead Content Strategist kelas dunia spesialis niche "KISAH INDIVIDU NYATA & AKSI MANUSIA EKSTREM" (Real Human Stories & Bizarre Individuals).
+    const systemPrompt = isProfileMode
+      ? `Kamu adalah Content Strategist kelas dunia.
+TUGAS UTAMA:
+Pelajari seluruh sampel naskah dari channel "${channelName}" di bawah. Identifikasi niche spesifiknya, gaya berceritanya, pola konflik, dan formula judulnya.
+Hasilkan ide topik baru yang 100% KONSISTEN dengan tema dan gaya channel "${channelName}".
 
-🎯 ATURAN MUTLAK NICHE KISAH MANUSIA (MANDATORI 100%):
-1. WAJIB 1 TOKOH INDIVIDU NYATA: Setiap ide topik WAJIB berpusat pada SATU sosok manusia nyata (sebutkan nama tokoh asli, profesi, atau julukannya).
-2. FOKUS PADA AKSI / KEPUTUSAN EKSTREM: Ceritakan tindakan nekat, keputusan gila, obsesi aneh, atau kasus hukum unik yang dilakukan oleh orang tersebut.
-3. ALUR NYATA & BERBOBOT: Memiliki awal mula kejadian $\rightarrow$ tindakan nekat sang tokoh $\rightarrow$ hasil akhir/hukuman/konsekuensinya.
-4. DILARANG: Membahas benda mati, sejarah perang umum, atau peristiwa tanpa tokoh manusia spesifik.
-
-⛔ ATURAN ANTI-REPETISI MUTLAK:
-Periksa daftar topik di database dan daftar topik yang diabaikan di bawah. JANGAN PERNAH memunculkan kembali topik atau tokoh yang sudah ada di daftar tersebut!
-
-⚖️ GAYA BAHASA:
-- Gunakan bahasa LUGAS, CERDAS, SANTAI, dan memicu rasa heran penonton secara alami.
-- Dilarang vulgar kasar & dilarang lebay/clickbait murahan.
+⛔ LARANGAN MUTLAK KONTEN SENSASIONALISME / KLISE:
+- DILARANG mitos kekuatan super / mendadak jenius setelah koma / petir.
+- DILARANG kisah selamat kecelakaan berkali-kali yang tidak masuk akal.
+- DILARANG kisah basi tinggal di bandara atau trik penipuan usang.
+- DILARANG mengulang topik dari database user.
 
 FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Menyoroti Kisah Tokoh Secara Menarik (Lugas & Hook Kuat)",
-      "kategori": "Kisah Ekstrem", // Pilih: "Kasus Unik" | "Kisah Ekstrem" | "Sosial & Manusia" | "Tradisi & Perilaku"
-      "penjelasan": "Uraian 2-3 kalimat: siapa nama tokohnya, apa tindakan gila/unik yang dilakukannya, dan bagaimana nasib akhirnya.",
-      "skor": { "total": 49 },
-      "alasanKelulusan": "Alasan kenapa kisah individu ini sangat memikat penonton dan bebas duplikasi."
+      "judul": "Judul Konkret Sesuai Pola ${channelName}",
+      "kategori": "Kisah Nyata",
+      "channelRef": "${channelName}",
+      "penjelasan": "Uraian fakta otentik 2-3 kalimat mengenai peristiwa/sosok tersebut.",
+      "skor": { "total": 48 },
+      "alasanKelulusan": "Alasan kelulusan skor >= 40/50 sesuai standar ${channelName}."
+    }
+  ]
+}`
+      : `Kamu adalah Content Strategist untuk YouTube Shorts spesialis kategori "${kategori}".
+
+⛔ LARANGAN MUTLAK:
+- DILARANG topik mitos fiksi/kekuatan super/sensasionalisme clickbait basi.
+- DILARANG mengulang topik yang sudah ada di database.
+
+FORMAT JSON OUTPUT PERSIS:
+{
+  "candidates": [
+    {
+      "judul": "Judul Menarik & Konkret",
+      "kategori": "Umum",
+      "channelRef": "Framework Murni",
+      "penjelasan": "Uraian ringkas fakta otentik.",
+      "skor": { "total": 48 },
+      "alasanKelulusan": "Alasan kelulusan skor >= 40/50."
     }
   ]
 }`;
@@ -176,11 +206,7 @@ ${riwayatTopikText}
 ${blacklistText}
 ${tavilyContext}
 
-INSTRUKSI EKSEKUSI:
-Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MURNI MENCERITAKAN KISAH 1 INDIVIDU NYATA (Tokoh Manusia Spesifik).
-${isProfileMode ? `- Sesuaikan tone narasi dan pola judul dengan channel "${channelName}".` : ""}
-- Pastikan setiap kandidat menceritakan orang yang berbeda-beda dan belum pernah ada di database.
-- Output murni JSON.`;
+Hasilkan ${jumlah} ide topik berkualitas tinggi dalam format JSON murni.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
@@ -190,7 +216,13 @@ ${isProfileMode ? `- Sesuaikan tone narasi dan pola judul dengan channel "${chan
 
     const parsedData: any = parseJsonResponse(rawResponse, { candidates: [] });
 
-    return NextResponse.json({ data: parsedData.candidates || [] });
+    // Pastikan setiap kandidat membawa channelRef yang konsisten
+    const formattedCandidates = (parsedData.candidates || []).map((c: any) => ({
+      ...c,
+      channelRef: c.channelRef || channelName,
+    }));
+
+    return NextResponse.json({ data: formattedCandidates });
   } catch (err: any) {
     console.error("Error generating topic candidates:", err);
     return NextResponse.json(
