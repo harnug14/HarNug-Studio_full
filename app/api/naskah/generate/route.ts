@@ -4,9 +4,11 @@ import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 import { fetchTavilySearchResults } from "@/lib/tavily";
 
+// VERCEL TIMEOUT PROTECTOR (60 DETIK)
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
+// OTAK UTAMA TUNGGAL: GEMINI 3.6 FLASH
 const MAIN_MODEL = "gemini-3.6-flash";
 
 async function requestGoogleGemini(
@@ -24,7 +26,7 @@ async function requestGoogleGemini(
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.8,
+          temperature: 0.85,
         },
       }),
     }
@@ -81,41 +83,38 @@ export async function POST(req: NextRequest) {
 
     let referenceContextText = "";
     let isProfileMode = false;
-    let channelName = "Framework Murni";
 
+    // 💡 AMBIL CONTOH NASKAH ASLI CHANNEL DARI DATABASE SUPABASE
     if (referenceProfileId) {
-      const { data: channelProfile } = await supabase
+      const { data: channelProfile, error: profileErr } = await supabase
         .from("channel_analysis")
         .select("profile_name, channel_analysis_entries(title, full_script)")
         .eq("id", referenceProfileId)
         .single();
 
-      if (channelProfile && channelProfile.channel_analysis_entries?.length) {
+      if (!profileErr && channelProfile && channelProfile.channel_analysis_entries?.length) {
         isProfileMode = true;
-        channelName = channelProfile.profile_name;
-        
         const samples = channelProfile.channel_analysis_entries
-          .map((e: any, idx: number) => `[CONTOH NASKAH ASLI ${idx + 1} (${e.title})]:\n"${e.full_script || ""}"`)
+          .map((e: any, idx: number) => `Contoh Naskah ${idx + 1} (${e.title}):\n"${e.full_script || ""}"`)
           .join("\n\n---\n\n");
-
-        referenceContextText = `\n\n=== CONTOH POLA & GAYA BAHASA ASLI CHANNEL "${channelName}" ===\n${samples}`;
+        referenceContextText = `\n\nCONTOH REFERENSI KALIBRASI NASKAH ASLI CHANNEL ("${channelProfile.profile_name}"):\n${samples}`;
       }
     }
 
-    // 💡 TAVILY: RISET FAKTA KRONOLOGI OTENTIK BERDASARKAN JUDUL TOPIK
+    // 💡 TAVILY: RISET FAKTA OTENTIK REAL-TIME BERDASARKAN JUDUL TOPIK
     let tavilyContext = "";
     try {
-      const searchQuery = `fakta detail kronologi peristiwa ${judulTopik} ${catatanTopik || ""}`.trim();
+      const searchQuery = `fakta detail peristiwa ${judulTopik} ${catatanTopik || ""}`.trim();
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA FAKTA & KRONOLOGI RISET WEB VIA TAVILY]:\n${tavilyRes}\n\nATURAN WAJIB AKURASI: Susun alur cerita, nama tokoh, tahun, dan peristiwa berdasarkan fakta otentik di atas (100% fakta nyata, dilarang halusinasi).`;
+        tavilyContext = `\n\n[DATA FAKTA RISET WEB REAL-TIME]:\n${tavilyRes}\n\nGunakan fakta di atas sebagai rujukan akurat untuk detail peristiwa, nama tokoh, dan tahun.`;
       }
     } catch (e) {
-      console.warn("[Naskah] Tavily fallback:", e);
+      console.warn("[Naskah] Tavily search fallback:", e);
     }
 
     const systemPrompt = `Kamu adalah Scriptwriter & Narrative Strategist tingkat dunia untuk YouTube Shorts.
-Tugasmu adalah menyusun NASKAH UTUH YouTube Shorts berkualitas tinggi yang mengalir sangat natural, organik, dan berbobot berdasarkan fakta nyata.
+Tugasmu adalah menyusun NASKAH UTUH YouTube Shorts berkualitas tinggi yang mengalir sangat natural, organik, dan berbobot.
 
 --- ATURAN MUTLAK KUALITAS PENULISAN (MANDATORI) ---
 1. MENELURUSI DAN MENELIMINASI SEMUA FRASA AI KLISE / TEMPLATE:
@@ -130,23 +129,27 @@ Tugasmu adalah menyusun NASKAH UTUH YouTube Shorts berkualitas tinggi yang menga
      * "Siapa sangka..."
      * "Usut punya usut..."
      * "Ternyata oh ternyata..."
-   - HOOK (0-5s): Harus langsung masuk ke inti masalah, kontradiksi, atau kejutan cerita secara natural dan dramatis tanpa pertanyaan klise.
-   - TRANSISI: Alur transisi antar kalimat mengalir mulus tanpa jembatan kata buatan yang kaku khas AI.
-   - ENDING: Penutup klimaks, punchline kuat, atau kesimpulan berkesan tanpa ajakan berlangganan generik.
+   - HOOK (0-5s): Harus langsung masuk ke inti permasalahan, konflik utama, atau kejutan cerita secara natural dan dramatis tanpa diawali pertanyaan klise.
+   - TRANSISI: Alur transisi antar kalimat harus mengalir mulus tanpa kata sambung atau jembatan buatan yang kaku khas AI.
+   - ENDING: Penutup harus tajam, memberikan punchline kuat atau kesimpulan mendalam tanpa ajakan berlangganan generik.
 
 2. ATURAN DIKSI & LARANGAN KATA INFORMAL SLANG:
    - DILARANG KERAS MENGGUNAKAN KATA "gue", "gua", "gwe", "lu", "loe", "eloh", MAUPUN VARIASINYA DALAM BENTUK APA PUN.
-   - Gunakan ragam bahasa tutur Indonesia yang natural, hidup, lugas, santai namun tetap berbobot ("kamu", "Anda", atau tuturan naratif langsung).
+   - Gunakan ragam bahasa tutur Indonesia yang natural, hidup, lugas, namun tetap berbobot dan persuasif ("kamu", "Anda", atau tuturan naratif langsung).
 
-3. ADOPSI POLA REFERENCE ANALYSIS (APABILA ADA REFERENSI):
-   - Jika naskah referensi channel diberikan, serap dan tiru DNA penulisan tersebut: gaya bertutur, pilihan kata, ritme per kalimat, dan dinamika khas channel "${channelName}".
+3. ADOPSI ALAMI DNA REFERENCE ANALYSIS (APABILA ADA REFERENSI):
+   - Jika contoh naskah referensi diberikan, serap dan adopsi DNA penulisan tersebut secara alami: gaya bahasa, pilihan kata, ritme per kalimat, serta dinamika bertutur khas channel tersebut.
+   - JANGAN pernah merubah pacing, struktur narasi utama, atau alur storytelling cerita yang sudah ada.
 
-4. STRUKTUR NASKAH (Durasi ${targetPanjang}):
+4. INTEGRITAS FAKTA & ALUR CERITA:
+   - Pertahankan 100% akurasi fakta sejarah, kronologi waktu, urutan peristiwa, nama tokoh, lokasi, dan makna asli naskah. Dilarang mengubah fakta atau menambah narasi fiktif.
+
+5. STRUKTUR NASKAH SHORTS (Linear Forward Timeline):
    - [HOOK 0-5s]: Pembuka berdampak tinggi, murni naratif.
-   - [TIMELINE / ISI]: Alur cerita selalu maju secara kronologis/logis per 1-3 kalimat.
-   - [ENDING]: Penutup klimaks atau kesimpulan berkesan.
+   - [TIMELINE / ISI UTAMA]: Alur cerita selalu maju secara kronologis/logis per 1-3 kalimat untuk menandai perubahan situasi visual.
+   - [ENDING]: Penutup klimaks, punchline kuat, atau kesimpulan berkesan.
 
-5. FORMAT OUTPUT JSON PERSIS (pure JSON object):
+6. FORMAT OUTPUT JSON PERSIS (pure JSON object):
 {
   "judul": "Naskah - ${judulTopik.replace(/"/g, "'")}",
   "isiNaskah": "Naskah lengkap dari Hook hingga Ending...",
@@ -159,16 +162,18 @@ Tugasmu adalah menyusun NASKAH UTUH YouTube Shorts berkualitas tinggi yang menga
     const userPrompt = isProfileMode
       ? `Detail Topik Naskah:
 - Judul Topik: ${judulTopik}
-- Catatan / Konteks: ${catatanTopik || "Tidak ada"}
-${referenceContextText}${tavilyContext}
+- Catatan / Konteks Topik: ${catatanTopik || "Tidak ada"}
+${referenceContextText}
+${tavilyContext}
 
 Instruksi Tambahan:
-Gunakan contoh-contoh naskah channel "${channelName}" di atas untuk mengadopsi tone suara, ritme kalimat, kepanjangan/durasi, serta gaya bertuturnya secara persis. Patuhi seluruh aturan anti-klise dan larangan kata "gue/lu". Buatkan Script Draft terbaik dalam format JSON murni.`
+Gunakan contoh-contoh naskah kalibrasi channel di atas untuk mengadopsi tone suara, ritme kalimat, kepanjangan/durasi, serta gaya bertutur channel tersebut secara persis. Hindari frasa klise AI pada hook/transisi/ending dan DILARANG KERAS menggunakan kata "gue/lu" atau variasinya. Buatkan Script Draft terbaik dalam format JSON murni.`
       : `Detail Topik Naskah (Manual):
 - Judul Topik: ${judulTopik}
-- Catatan / Konteks: ${catatanTopik || "Tidak ada"}
+- Catatan / Konteks Topik: ${catatanTopik || "Tidak ada"}
 - Tone Suara: ${tone}
-- Target Panjang / Durasi: ${targetPanjang}${tavilyContext}
+- Target Panjang / Durasi: ${targetPanjang}
+${tavilyContext}
 
 Buatkan Script Draft terbaik mengikuti aturan kualitas penulisan tinggi di atas sekarang dalam format JSON murni.`;
 
