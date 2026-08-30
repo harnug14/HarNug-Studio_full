@@ -63,6 +63,7 @@ function getCleanNotes(catatan: string | null): string {
   return catatan.replace(/^(\[.*?\]\s*)+/, "").trim();
 }
 
+// 💡 EKSTRAKSI LABEL 4 KATEGORI UTAMA & NAMA CHANNEL
 function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef: string | null } {
   const rawCatatan = item.catatan || "";
   const bracketMatches = Array.from(rawCatatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
@@ -76,13 +77,63 @@ function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef
   } else if (bracketMatches.length === 1) {
     if (["dafiology", "jurnal kumal", "framework murni"].some((c) => bracketMatches[0].toLowerCase().includes(c))) {
       channelRef = bracketMatches[0];
-    } else if (bracketMatches[0].toLowerCase() !== "umum") {
+    } else if (bracketMatches[0].toLowerCase() !== "umum" && bracketMatches[0].toLowerCase() !== "kisah nyata") {
       kategori = bracketMatches[0];
     }
   }
 
-  if (!kategori || kategori.toLowerCase() === "umum") {
-    kategori = "Kisah Nyata";
+  // 💡 AUTO-MAPPING 4 KATEGORI RESMI UNTUK SELURUH DATA LAMA
+  if (!kategori || kategori.toLowerCase() === "umum" || kategori.toLowerCase() === "kisah nyata") {
+    const text = `${item.judul} ${rawCatatan}`.toLowerCase();
+
+    if (
+      text.includes("profesi") ||
+      text.includes("pekerjaan") ||
+      text.includes("whipping boy") ||
+      text.includes("groom of the stool") ||
+      text.includes("knocker") ||
+      text.includes("tukang") ||
+      text.includes("digaji")
+    ) {
+      kategori = "Profesi Kuno";
+    } else if (
+      text.includes("taktik") ||
+      text.includes("perang") ||
+      text.includes("pelusium") ||
+      text.includes("trepanasi") ||
+      text.includes("bedah") ||
+      text.includes("operasi") ||
+      text.includes("bencana") ||
+      text.includes("hantu")
+    ) {
+      kategori = "Peristiwa & Taktik";
+    } else if (
+      text.includes("sejarah") ||
+      text.includes("asal-usul") ||
+      text.includes("dasi") ||
+      text.includes("kacamata") ||
+      text.includes("sepatu") ||
+      text.includes("shampo") ||
+      text.includes("bantal") ||
+      text.includes("kulkas") ||
+      text.includes("es batu") ||
+      text.includes("mentega") ||
+      text.includes("sedotan") ||
+      text.includes("popok") ||
+      text.includes("deodoran") ||
+      text.includes("uang") ||
+      text.includes("lakban") ||
+      text.includes("jam ") ||
+      text.includes("alarm")
+    ) {
+      kategori = "Asal-Usul Benda";
+    } else {
+      kategori = "Tradisi & Perilaku";
+    }
+  }
+
+  if (!channelRef) {
+    channelRef = "Dafiology";
   }
 
   return { kategori, channelRef };
@@ -100,7 +151,7 @@ export default function TopicPage() {
   const [referenceProfileId, setReferenceProfileId] = useState("");
   const isManualMode = !referenceProfileId;
 
-  const [kategoriContent, setKategoriContent] = useState("Sains & Fakta Unik");
+  const [kategoriContent, setKategoriContent] = useState("Curious History");
   const [targetDurasi, setTargetDurasi] = useState("45-60 detik");
   const [topikDisukai, setTopikDisukai] = useState("");
   const [topikDitolak, setTopikDitolak] = useState("");
@@ -282,8 +333,8 @@ export default function TopicPage() {
       const numericScore = getScoreNumber(candidate.skor);
       const explanation = getExplanationText(candidate);
       
-      const channelRefName = candidate.channelRef || (channelProfiles.find((p) => p.id === referenceProfileId)?.profile_name) || "Framework Murni";
-      const categoryTag = candidate.kategori || "Kisah Nyata";
+      const channelRefName = candidate.channelRef || "Dafiology";
+      const categoryTag = candidate.kategori || "Asal-Usul Benda";
       
       let notes = `[${categoryTag}] [${channelRefName}] Skor: ${numericScore}/50 | ${explanation}`;
       if (candidate.hookFormula) notes += `\nHook: ${candidate.hookFormula}`;
@@ -453,10 +504,10 @@ export default function TopicPage() {
                     onChange={(e) => setKategoriContent(e.target.value)}
                     className="select-field"
                   >
-                    <option value="Kisah Nyata & Human Interest">Kisah Nyata & Human Interest</option>
+                    <option value="Curious History">Curious History</option>
+                    <option value="Asal-Usul Benda & Norma">Asal-Usul Benda & Norma</option>
                     <option value="Sains & Fakta Unik">Sains & Fakta Unik</option>
                     <option value="Sejarah & Konspirasi">Sejarah & Konspirasi</option>
-                    <option value="Misteri & Horor">Misteri & Horor</option>
                   </select>
                 </div>
 
@@ -493,7 +544,7 @@ export default function TopicPage() {
                 <label className="form-label">Topik Disukai / Fokus (Opsional)</label>
                 <input
                   type="text"
-                  placeholder="Fokus topik..."
+                  placeholder="Contoh: Benda sehari-hari, Profesi kuno..."
                   value={topikDisukai}
                   onChange={(e) => setTopikDisukai(e.target.value)}
                   className="input-field"
@@ -503,7 +554,7 @@ export default function TopicPage() {
                 <label className="form-label">Topik Ditolak (Opsional)</label>
                 <input
                   type="text"
-                  placeholder="Topik yang dihindari..."
+                  placeholder="Contoh: Bencana, Korupsi..."
                   value={topikDitolak}
                   onChange={(e) => setTopikDitolak(e.target.value)}
                   className="input-field"
@@ -512,7 +563,7 @@ export default function TopicPage() {
             </div>
 
             <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
-              {generating ? <><span className="spinner" /> Meriset Data Otentik & Menghasilkan Ide...</> : "Generate Ide Topik"}
+              {generating ? <><span className="spinner" /> Meriset Fakta Dafiology & Viral Potential...</> : "Generate Ide Topik"}
             </button>
           </form>
 
@@ -582,6 +633,7 @@ export default function TopicPage() {
                 <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div>
+                      {/* 💡 BADGE GANDA: KATEGORI BIRU + CHANNEL UNGU */}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                         <span className="badge badge-neutral">Skor: {numericScore}/50</span>
                         
@@ -599,7 +651,6 @@ export default function TopicPage() {
                           </span>
                         )}
 
-                        {/* 💡 BADGE MEMBACA METADATA KANDIDAT YANG DIHASILKAN, BUKAN DROPDOWN SAAT INI */}
                         {cand.channelRef && (
                           <span
                             className="badge badge-neutral"
@@ -717,7 +768,7 @@ export default function TopicPage() {
         <div>
           <input
             type="text"
-            placeholder="🔍 Cari judul topik, kata kunci, atau nama channel (misal: bandara, dasi, jurnal kumal)..."
+            placeholder="🔍 Cari judul topik, kata kunci, atau nama channel (misal: dasi, kulkas, dafiology)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="input-field"
@@ -785,6 +836,7 @@ export default function TopicPage() {
                           }}
                         />
 
+                        {/* 💡 BADGE KATEGORI BIRU */}
                         <span
                           className="badge badge-neutral"
                           style={{
@@ -798,6 +850,7 @@ export default function TopicPage() {
                           🏷️ {itemKategori}
                         </span>
 
+                        {/* 💡 BADGE CHANNEL UNGU */}
                         {itemChannel && (
                           <span
                             className="badge badge-neutral"
