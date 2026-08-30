@@ -48,7 +48,7 @@ function getChannelBadge(
   topikList: Topik[],
   channelProfiles: ChannelProfile[]
 ): string | null {
-  // 1. Cek dari catatan Topik sumbernya
+  // 1. Cek dari topik sumbernya di database
   if (naskah.sumber_topik_id) {
     const t = topikList.find((x) => x.id === naskah.sumber_topik_id);
     if (t && t.catatan) {
@@ -61,7 +61,7 @@ function getChannelBadge(
     }
   }
 
-  // 2. Fallback deteksi cerdas berdasarkan judul
+  // 2. Fallback deteksi berdasarkan kata kunci judul
   const judulLower = cleanTitle(naskah.judul).toLowerCase();
   if (
     judulLower.includes("menuntut") ||
@@ -202,6 +202,7 @@ function NaskahContent() {
     }
   }, [items]);
 
+  // 💡 OTOMATIS PILIH REFERENSI DARI TOPIK SUMBER SAAT DIBUKA DARI MENU TOPIK
   useEffect(() => {
     if (queryTopikId && queryJudul) {
       setSelectedTopikId(queryTopikId);
@@ -215,6 +216,20 @@ function NaskahContent() {
     if (t) {
       setJudulTopik(cleanTitle(t.judul));
       setCatatanTopik(t.catatan || "");
+
+      // Otomatis deteksi & pilih channel referensi dari catatan topik
+      if (t.catatan && channelProfiles.length > 0) {
+        const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
+        for (const m of matches) {
+          const matchedProfile = channelProfiles.find(
+            (p) => p.profile_name.toLowerCase() === m.toLowerCase()
+          );
+          if (matchedProfile) {
+            setReferenceProfileId(matchedProfile.id);
+            break;
+          }
+        }
+      }
     }
   }
 
@@ -493,7 +508,6 @@ function NaskahContent() {
         </div>
       )}
 
-      {/* Manual Form */}
       {activeTab === "manual" && (
         <div className="glass-card-static" style={{ padding: 22, marginBottom: 24 }}>
           <form onSubmit={handleManualAdd}>
@@ -694,7 +708,6 @@ function NaskahContent() {
 
                           {item.english_script && <span className="badge badge-neutral">English</span>}
 
-                          {/* Badge Visual Status */}
                           <span className="badge badge-neutral" style={{ fontSize: 10, display: "inline-flex", alignItems: "center", gap: 4 }}>
                             {hasVisual ? (
                               <span style={{ color: "#4ade80" }}>🟢 Sudah Ada Visual</span>
