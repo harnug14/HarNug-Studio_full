@@ -55,7 +55,7 @@ async function callGeminiApi(
   });
 }
 
-// Timeout helper untuk mencegah bottleneck Tavily memicu 504
+// Timeout helper untuk Tavily agar tidak memicu 504
 async function fetchTavilyWithTimeout(query: string, timeoutMs = 5000): Promise<string> {
   try {
     const tavilyPromise = fetchTavilySearchResults(query);
@@ -67,6 +67,16 @@ async function fetchTavilyWithTimeout(query: string, timeoutMs = 5000): Promise<
     console.warn("[Topik] Tavily search fallback/timeout:", e);
     return "";
   }
+}
+
+// Helper normalisasi teks untuk deteksi duplikasi ketat
+function normalizeText(str: string): string {
+  return (str || "")
+    .toLowerCase()
+    .replace(/^(visual\s*package|naskah|topik|sejarah|asal[- ]usul)\s*[-:]\s*/i, "")
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export async function POST(req: NextRequest) {
@@ -90,7 +100,7 @@ export async function POST(req: NextRequest) {
       rejectedHistory = [],
     } = await req.json();
 
-    // 1. Ambil data profil beserta seluruh entri (*) secara universal
+    // 1. Ambil seluruh data profil dan seluruh topik user di database (hingga 1000 entri)
     const [profileRes, historyRes] = await Promise.all([
       referenceProfileId
         ? supabase
@@ -104,7 +114,7 @@ export async function POST(req: NextRequest) {
         .select("judul")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(50),
+        .limit(1000),
     ]);
 
     let isProfileMode = false;
@@ -112,7 +122,7 @@ export async function POST(req: NextRequest) {
     let referenceContextText = "";
     let sampleTitlesList: string[] = [];
 
-    // 2. Ekstraksi fleksibel (mendeteksi title/video_title/judul & full_script/script/naskah/transcript)
+    // 2. Ekstraksi naskah referensi asli
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length > 0) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name || "Referensi";
@@ -133,32 +143,27 @@ export async function POST(req: NextRequest) {
         })
         .join("\n\n---\n\n");
 
-      referenceContextText = `\n\n=== DATA ACUAN UTAMA DARI MENU REFERENSI CHANNEL "${channelName}" ===\n${samples}`;
+      referenceContextText = `\n\n=== DATA ACUAN GAYA & FORMAT DARI CHANNEL "${channelName}" ===\n${samples}`;
     }
 
-    let riwayatTopikText = "";
-    if (historyRes.data && historyRes.data.length > 0) {
-      const daftarJudul = historyRes.data
-        .map((t: any, idx: number) => `${idx + 1}. ${t.judul}`)
-        .join("\n");
-      riwayatTopikText = `\n\n⛔ DAFTAR TOPIK DI DATABASE (DILARANG MENGULANG INI):\n${daftarJudul}`;
-    }
+    // 3. Bangun Blacklist Ketat (Topik DB + Judul Contoh Referensi + Riwayat Ditolak)
+    const existingDbTitles = (historyRes.data || []).map((t: any) => t.judul).filter(Boolean);
+    const allForbiddenTitles = Array.from(
+      new Set([
+        ...existingDbTitles,
+        ...sampleTitlesList,
+        ...(topikDitolak ? [topikDitolak] : []),
+        ...(Array.isArray(rejectedHistory) ? rejectedHistory : []),
+      ])
+    );
 
-    let blacklistText = "";
-    const combinedRejected = [
-      ...(topikDitolak ? [topikDitolak] : []),
-      ...(Array.isArray(rejectedHistory) ? rejectedHistory : []),
-    ];
+    const blacklistItemsText = allForbiddenTitles
+      .map((item: string, idx: number) => `${idx + 1}. ${item}`)
+      .join("\n");
 
-    if (combinedRejected.length > 0) {
-      const list = combinedRejected
-        .slice(0, 40)
-        .map((r: string) => `- ${r}`)
-        .join("\n");
-      blacklistText = `\n\n⛔ DAFTAR TOPIK DITOLAK PENGGUNA (JANGAN DIBUAT LAGI):\n${list}`;
-    }
+    const blacklistText = `\n\n⛔ DAFTAR TOPIK YANG SUDAH ADA / DILARANG DIHASILKAN ULANG (TOTAL: ${allForbiddenTitles.length} TOPIK):\n${blacklistItemsText}`;
 
-    // 3. Riset fakta web real-time Tavily (dengan pelindung timeout)
+    // 4. Riset fakta web real-time Tavily
     let tavilyContext = "";
     let searchQuery = "";
 
@@ -166,11 +171,11 @@ export async function POST(req: NextRequest) {
       const sampleKeywords = sampleTitlesList.slice(0, 3).join(" ").replace(/[^a-zA-Z0-9\s]/g, "").slice(0, 60);
       searchQuery = topikDisukai
         ? `fakta unik sejarah menarik ${topikDisukai}`
-        : `fakta unik sejarah misteri ${sampleKeywords}`;
+        : `fakta unik sejarah baru unik ${sampleKeywords}`;
     } else {
       searchQuery = topikDisukai
         ? `${kategori} fakta sejarah unik ${topikDisukai}`
-        : `${kategori} fakta sejarah unik menarik`;
+        : `${kategori} fakta sejarah unik menarik baru`;
     }
 
     const tavilyRes = await fetchTavilyWithTimeout(searchQuery, 5000);
@@ -178,27 +183,31 @@ export async function POST(req: NextRequest) {
       tavilyContext = `\n\n[DATA FAKTA RISET WEB REAL-TIME TAVILY]:\n${tavilyRes}`;
     }
 
-    // 4. System Prompt murni berbasis data referensi
+    // 5. System Prompt & Instruksi AI
+    const requestedAmount = Math.max(Number(jumlah) || 5, 3);
+    const askCount = requestedAmount + 4; // Generate cadangan agar pas setelah deduplikasi
+
     const systemPrompt = isProfileMode
       ? `Kamu adalah Content Strategist & Storyteller YouTube Shorts.
 TUGAS UTAMA:
-Pelajari seluruh contoh naskah dan judul asli dari channel "${channelName}" yang terlampir di bawah.
-Tiru gaya bertutur, tema unik (sejarah/asal-usul/fakta manusia), sudut pandang (curiosity hook), dan ritme penceritaannya.
-Hasilkan ide topik baru yang 100% KONSISTEN dengan DNA channel "${channelName}".
+Pelajari seluruh contoh naskah dan judul asli dari channel "${channelName}" di bawah.
+Tiru gaya bertutur, sudut pandang rasa penasaran (curiosity hook), dan ritme penceritaannya.
+Hasilkan ${askCount} ide topik video baru yang 100% KONSISTEN dengan karakter channel "${channelName}".
 
-ATURAN WAJIB:
-- Gunakan bahasa Indonesia yang santai, cerdas, mengalir, dan memikat (anti-lebay/clickbait murahan).
-- Kategori topik harus relevan (misal: "Asal-Usul Benda", "Profesi Kuno", "Tradisi & Perilaku", "Peristiwa & Taktik", "Curious History").
-- Dilarang mengulang topik yang sudah ada di database atau daftar ditolak.
+ATURAN MUTLAK ANTI-DUPLIKASI:
+- DILARANG KERAS membuat ulang judul/topik yang terdaftar di daftar larangan.
+- DILARANG menyalin judul contoh referensi. Topik harus BARU, segar, dan belum pernah dibahas.
+- Gunakan bahasa Indonesia yang santai, cerdas, mengalir, dan memikat.
+- Tentukan kategori yang sesuai (misal: "Asal-Usul Benda", "Profesi Kuno", "Tradisi & Perilaku", "Peristiwa & Taktik", atau "Curious History").
 
 FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Khas Sesuai Gaya Channel Referensi",
+      "judul": "Judul Baru Unik Sesuai Gaya Channel Referensi",
       "kategori": "Kategori Sesuai Topik",
       "channelRef": "${channelName}",
-      "penjelasan": "Uraian fakta singkat 2 kalimat mengenai inti cerita dan daya tariknya.",
+      "penjelasan": "Uraian fakta otentik 2 kalimat mengenai daya tarik cerita.",
       "skor": { "total": 48 },
       "alasanKelulusan": "Alasan kelulusan topik sesuai DNA channel."
     }
@@ -206,11 +215,14 @@ FORMAT JSON OUTPUT PERSIS:
 }`
       : `Kamu adalah Content Strategist untuk YouTube Shorts spesialis kategori "${kategori}".
 
+ATURAN MUTLAK ANTI-DUPLIKASI:
+- DILARANG KERAS membuat ulang topik yang ada di daftar larangan.
+
 FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Menarik & Konkret",
+      "judul": "Judul Baru Unik & Konkret",
       "kategori": "${kategori}",
       "channelRef": "Framework Murni",
       "penjelasan": "Uraian fakta singkat 2 kalimat.",
@@ -222,24 +234,22 @@ FORMAT JSON OUTPUT PERSIS:
 
     const userPrompt = isProfileMode
       ? `${referenceContextText}
-${riwayatTopikText}
 ${blacklistText}
 ${tavilyContext}
 
 INSTRUKSI:
-Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENGADOPSI DNA KONTEN CHANNEL REFERENSI DI ATAS.
+Hasilkan ${askCount} ide topik video YouTube Shorts BARU yang meniru gaya channel di atas tetapi TIDAK BOLEH SAMA DENGAN DAFTAR LARANGAN.
 Format murni JSON valid.`
       : `Parameter:
 - Kategori: ${kategori}
 - Durasi: ${durasi}
 - Preferensi: ${topikDisukai || "Bebas"}
 - Ditolak: ${topikDitolak || "Tidak ada"}
-- Jumlah: ${jumlah}
-${riwayatTopikText}
+- Target: ${askCount} topik baru
 ${blacklistText}
 ${tavilyContext}
 
-Hasilkan ${jumlah} ide topik dalam format JSON valid.`;
+Hasilkan ${askCount} ide topik baru yang belum pernah ada dalam format JSON valid.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
@@ -248,13 +258,37 @@ Hasilkan ${jumlah} ide topik dalam format JSON valid.`;
     );
 
     const parsedData: any = parseJsonResponse(rawResponse, { candidates: [] });
+    const rawCandidates: any[] = Array.isArray(parsedData.candidates) ? parsedData.candidates : [];
 
-    const formattedCandidates = (parsedData.candidates || []).map((c: any) => ({
+    // 6. PROGRAMMATIC DEDUPLICATION FILTER DI BACKEND
+    const normalizedForbiddenSet = new Set(allForbiddenTitles.map(normalizeText));
+
+    const uniqueCandidates = rawCandidates.filter((c: any) => {
+      if (!c || !c.judul) return false;
+      const normJudul = normalizeText(c.judul);
+      if (!normJudul || normJudul.length < 3) return false;
+
+      // Cek apakah persis atau mengandung judul yang sudah ada
+      for (const forbidden of normalizedForbiddenSet) {
+        if (!forbidden) continue;
+        if (normJudul === forbidden) return false;
+        // Jika kemiripan sangat tinggi
+        if (normJudul.length > 8 && forbidden.length > 8) {
+          if (normJudul.includes(forbidden) || forbidden.includes(normJudul)) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
+
+    // Potong sesuai jumlah permintaan pengguna
+    const finalCandidates = uniqueCandidates.slice(0, requestedAmount).map((c: any) => ({
       ...c,
       channelRef: c.channelRef || channelName,
     }));
 
-    return NextResponse.json({ data: formattedCandidates });
+    return NextResponse.json({ data: finalCandidates });
   } catch (err: any) {
     console.error("[Topik API Error]:", err);
     return NextResponse.json(
