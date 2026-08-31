@@ -148,24 +148,61 @@ export async function POST(req: NextRequest) {
     let isProfileMode = false;
     let channelName = "Framework Murni";
     let referenceContextText = "";
+    let styleDnaMissing = false;
 
-    // 2. Ekstraksi naskah asli dari database Supabase
+    // 2. Susun konteks referensi dari DNA Gaya (hasil analisis terstruktur) + 1-2 contoh naskah mentah
+    //    sebagai pelengkap. DNA Gaya jadi ACUAN UTAMA karena sudah berupa pola eksplisit yang mudah
+    //    diikuti AI, bukan naskah mentah yang harus "ditebak" polanya di tengah proses generate.
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length > 0) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name || "Referensi";
 
       const entries = profileRes.data.channel_analysis_entries;
+      const styleDna = profileRes.data.style_dna;
+      const dnaEntryCount = profileRes.data.style_dna_entry_count || 0;
 
-      const samples = entries
-        .map((e: any, idx: number) => {
-          const entryTitle = e.title || e.video_title || e.judul || `Video Asli ${idx + 1}`;
-          const fullScript =
-            e.full_script || e.script || e.naskah || e.transcript || e.content || "";
-          return `--- CONTOH NASKAH ASLI YOUTUBE ${idx + 1} (${channelName}) ---\nJudul Asli: "${entryTitle}"\nNaskah Utuh:\n${fullScript}`;
-        })
-        .join("\n\n====================\n\n");
+      if (styleDna && dnaEntryCount === entries.length) {
+        // DNA Gaya tersedia dan up-to-date (jumlah entri sama seperti saat dianalisis)
+        const dnaBlock = `
+=== DNA GAYA CHANNEL "${channelName}" (HASIL ANALISIS POLA - ACUAN UTAMA & MUTLAK) ===
+1. POLA HOOK PEMBUKA: ${styleDna.hookPattern || "-"}
+2. STRUKTUR BEAT NASKAH: ${(styleDna.strukturBeat || []).map((s: string, i: number) => `${i + 1}) ${s}`).join(" -> ") || "-"}
+3. GAYA BAHASA: ${styleDna.gayaBahasa || "-"}
+4. DIKSI/FRASA KHAS YANG SERING DIPAKAI: ${(styleDna.diksiKhas || []).join(", ") || "-"}
+5. TEKNIK TRANSISI ANTAR KALIMAT: ${styleDna.teknikTransisi || "-"}
+6. POLA PENUTUP: ${styleDna.closingPattern || "-"}
+7. RITME & PANJANG KALIMAT: ${styleDna.panjangKalimatRataRata || "-"}
+8. HAL YANG WAJIB DIHINDARI (channel ini TIDAK PERNAH pakai pola ini): ${(styleDna.halYangDihindari || []).join("; ") || "-"}
+9. RINGKASAN KARAKTER PENULISAN: ${styleDna.ringkasanKarakter || "-"}`;
 
-      referenceContextText = `\n\n=== CETAK BIRU NASKAH ASLI YOUTUBE DARI CHANNEL "${channelName}" (ACUAN GAYA & RITME MUTLAK) ===\n${samples}`;
+        // Sertakan maksimal 2 contoh naskah mentah sebagai referensi konkret sekunder
+        const sampleEntries = entries.slice(0, 2);
+        const rawSamples = sampleEntries
+          .map((e: any, idx: number) => {
+            const entryTitle = e.title || e.video_title || e.judul || `Video Asli ${idx + 1}`;
+            const fullScript =
+              e.full_script || e.script || e.naskah || e.transcript || e.content || "";
+            return `[Contoh Naskah Asli ${idx + 1} - "${entryTitle}"]:\n${fullScript}`;
+          })
+          .join("\n\n");
+
+        referenceContextText = `\n\n${dnaBlock}\n\n=== CONTOH NASKAH ASLI (REFERENSI KONKRET, SEKUNDER) ===\n${rawSamples}`;
+      } else {
+        // DNA Gaya belum ada / sudah usang -> fallback ke naskah mentah seperti sebelumnya,
+        // tapi beri tanda supaya frontend bisa menyarankan user menjalankan analisis DNA dulu.
+        styleDnaMissing = true;
+
+        const samples = entries
+          .map((e: any, idx: number) => {
+            const entryTitle = e.title || e.video_title || e.judul || `Video Asli ${idx + 1}`;
+            const fullScript =
+              e.full_script || e.script || e.naskah || e.transcript || e.content || "";
+            return `--- CONTOH NASKAH ASLI YOUTUBE ${idx + 1} (${channelName}) ---\nJudul Asli: "${entryTitle}"\nNaskah Utuh:\n${fullScript}`;
+          })
+          .join("\n\n====================\n\n");
+
+        referenceContextText = `\n\n=== CETAK BIRU NASKAH ASLI YOUTUBE DARI CHANNEL "${channelName}" (ACUAN GAYA & RITME MUTLAK) ===\n${samples}`;
+      }
     }
 
     // 3. Konteks Fakta Real-Time Tavily
@@ -178,12 +215,20 @@ export async function POST(req: NextRequest) {
       ? `Kamu adalah Penulis Naskah dan Narator Persona Resmi dari channel YouTube "${channelName}".
 TUGAS UTAMA:
 Tulis naskah YouTube Shorts berdurasi 45-60 detik (130-160 kata) untuk topik baru: "${escapedJudul}".
-Naskah ini HARUS terasa 100% seperti ditulis oleh orang yang sama yang membuat contoh-contoh naskah asli channel "${channelName}" di bawah.
+Naskah ini HARUS terasa 100% seperti ditulis oleh orang yang sama yang membuat naskah-naskah asli channel "${channelName}".
 
-INSTRUKSI MENIRU GAYA CHANNEL "${channelName}":
-1. HOOK PEMBUKA (0-5s): Tiru cara channel "${channelName}" membuka video di 3 detik pertama (langsung masuk ke fakta aneh/kontras/aksi tanpa basa-basi). DILARANG menggunakan pertanyaan klise AI seperti "Tahukah kamu", "Pernahkah kamu membayangkan", dll.
-2. RITME & TEMPO: Tiru panjang kalimat lisan naratif, pilihan diksi, tempo bicara, dan cara channel "${channelName}" menyambung kalimat demi kalimat.
-3. INTEGRASI FAKTA: Ambil fakta peristiwa dari data riset web Tavily terlampir, lalu ceritakan ulang menggunakan bahasa bertutur khas channel "${channelName}".
+CARA KERJA WAJIB:
+Bagian "DNA GAYA CHANNEL" di bawah adalah hasil bedah pola gaya penulisan channel ini secara eksplisit -
+JADIKAN INI SEBAGAI ACUAN UTAMA, bukan sekadar inspirasi. Ikuti PERSIS poin per poin di dalamnya:
+setiap butir (pola hook, struktur beat, gaya bahasa, diksi khas, transisi, penutup, ritme kalimat, hal yang
+dihindari) adalah instruksi konkret, bukan deskripsi umum. Contoh naskah asli yang disertakan setelahnya
+hanya sebagai referensi konkret tambahan untuk mengecek nuansa - JANGAN menyalin kalimatnya, tapi
+gunakan untuk memvalidasi bahwa naskah barumu benar-benar terasa seperti ditulis penulis yang sama.
+
+INSTRUKSI TAMBAHAN:
+1. HOOK PEMBUKA (0-5s): Ikuti persis "POLA HOOK PEMBUKA" dari DNA Gaya. DILARANG menggunakan pertanyaan klise AI seperti "Tahukah kamu", "Pernahkah kamu membayangkan", kecuali itu memang pola asli channel ini.
+2. INTEGRASI FAKTA: Ambil fakta peristiwa dari data riset web Tavily terlampir, lalu ceritakan ulang mengikuti "GAYA BAHASA" dan "RITME & PANJANG KALIMAT" dari DNA Gaya.
+3. HAL YANG DIHINDARI: Baca poin "HAL YANG WAJIB DIHINDARI" di DNA Gaya dan pastikan tidak satupun pola itu muncul di naskah barumu.
 4. PANJANG KATA: WAJIB berkisar antara 130 hingga 160 kata (pas untuk durasi voiceover 45-60 detik).
 5. FORMAT NASKAH: Narasi suara/voiceover murni. DILARANG menyisipkan tanda kurung adegan visual seperti [Visual:], [Scene:], [Music:], dsb.
 
@@ -228,6 +273,12 @@ ${catatanTopik ? `[Catatan Konteks]:\n${catatanTopik}\n` : ""}
 INSTRUKSI:
 Tulis naskah YouTube Shorts untuk topik: "${escapedJudul}" dengan tone "${tone}" dan durasi "${targetPanjang}".
 Output format JSON valid.`;
+
+    if (isProfileMode && styleDnaMissing) {
+      console.warn(
+        `[Naskah] Profil "${channelName}" belum punya DNA Gaya yang up-to-date. Fallback ke naskah mentah. Sarankan user analisis ulang di Menu Referensi.`
+      );
+    }
 
     const rawResponse = await callGeminiApi(
       supabase,
@@ -276,6 +327,8 @@ Output format JSON valid.`;
         created_at: new Date().toISOString(),
       },
       parsed: parsedData,
+      styleDnaMissing: isProfileMode && styleDnaMissing,
+      channelName: isProfileMode ? channelName : null,
     });
   } catch (err: any) {
     console.error("[Naskah API Error]:", err);
