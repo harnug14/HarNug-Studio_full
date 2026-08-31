@@ -150,9 +150,11 @@ export async function POST(req: NextRequest) {
     let referenceContextText = "";
     let styleDnaMissing = false;
 
-    // 2. Susun konteks referensi dari DNA Gaya (hasil analisis terstruktur) + 1-2 contoh naskah mentah
-    //    sebagai pelengkap. DNA Gaya jadi ACUAN UTAMA karena sudah berupa pola eksplisit yang mudah
-    //    diikuti AI, bukan naskah mentah yang harus "ditebak" polanya di tengah proses generate.
+    // 2. Susun konteks referensi dari DNA Gaya (hasil analisis terstruktur dari SEMUA entri naskah).
+    //    DNA Gaya jadi SATU-SATUNYA acuan gaya saat generate -- karena sudah representasi lengkap dari
+    //    seluruh naskah referensi (bukan cuma sebagian), dan berupa pola eksplisit yang mudah diikuti AI.
+    //    Naskah mentah sengaja TIDAK disertakan lagi di tahap ini, supaya AI tidak "tertarik" ke isi
+    //    cerita/topik spesifik dari contoh lama dan benar-benar fokus meniru pola gayanya saja.
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length > 0) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name || "Referensi";
@@ -164,7 +166,7 @@ export async function POST(req: NextRequest) {
       if (styleDna && dnaEntryCount === entries.length) {
         // DNA Gaya tersedia dan up-to-date (jumlah entri sama seperti saat dianalisis)
         const dnaBlock = `
-=== DNA GAYA CHANNEL "${channelName}" (HASIL ANALISIS POLA - ACUAN UTAMA & MUTLAK) ===
+=== DNA GAYA CHANNEL "${channelName}" (HASIL ANALISIS POLA DARI ${entries.length} NASKAH REFERENSI - SATU-SATUNYA ACUAN GAYA) ===
 1. POLA HOOK PEMBUKA: ${styleDna.hookPattern || "-"}
 2. STRUKTUR BEAT NASKAH: ${(styleDna.strukturBeat || []).map((s: string, i: number) => `${i + 1}) ${s}`).join(" -> ") || "-"}
 3. GAYA BAHASA: ${styleDna.gayaBahasa || "-"}
@@ -175,18 +177,7 @@ export async function POST(req: NextRequest) {
 8. HAL YANG WAJIB DIHINDARI (channel ini TIDAK PERNAH pakai pola ini): ${(styleDna.halYangDihindari || []).join("; ") || "-"}
 9. RINGKASAN KARAKTER PENULISAN: ${styleDna.ringkasanKarakter || "-"}`;
 
-        // Sertakan maksimal 2 contoh naskah mentah sebagai referensi konkret sekunder
-        const sampleEntries = entries.slice(0, 2);
-        const rawSamples = sampleEntries
-          .map((e: any, idx: number) => {
-            const entryTitle = e.title || e.video_title || e.judul || `Video Asli ${idx + 1}`;
-            const fullScript =
-              e.full_script || e.script || e.naskah || e.transcript || e.content || "";
-            return `[Contoh Naskah Asli ${idx + 1} - "${entryTitle}"]:\n${fullScript}`;
-          })
-          .join("\n\n");
-
-        referenceContextText = `\n\n${dnaBlock}\n\n=== CONTOH NASKAH ASLI (REFERENSI KONKRET, SEKUNDER) ===\n${rawSamples}`;
+        referenceContextText = `\n\n${dnaBlock}`;
       } else {
         // DNA Gaya belum ada / sudah usang -> fallback ke naskah mentah seperti sebelumnya,
         // tapi beri tanda supaya frontend bisa menyarankan user menjalankan analisis DNA dulu.
@@ -219,11 +210,10 @@ Naskah ini HARUS terasa 100% seperti ditulis oleh orang yang sama yang membuat n
 
 CARA KERJA WAJIB:
 Bagian "DNA GAYA CHANNEL" di bawah adalah hasil bedah pola gaya penulisan channel ini secara eksplisit -
-JADIKAN INI SEBAGAI ACUAN UTAMA, bukan sekadar inspirasi. Ikuti PERSIS poin per poin di dalamnya:
-setiap butir (pola hook, struktur beat, gaya bahasa, diksi khas, transisi, penutup, ritme kalimat, hal yang
-dihindari) adalah instruksi konkret, bukan deskripsi umum. Contoh naskah asli yang disertakan setelahnya
-hanya sebagai referensi konkret tambahan untuk mengecek nuansa - JANGAN menyalin kalimatnya, tapi
-gunakan untuk memvalidasi bahwa naskah barumu benar-benar terasa seperti ditulis penulis yang sama.
+JADIKAN INI SEBAGAI ACUAN UTAMA DAN MUTLAK. Ikuti PERSIS poin per poin di dalamnya: setiap butir
+(pola hook, struktur beat, gaya bahasa, diksi khas, transisi, penutup, ritme kalimat, hal yang dihindari)
+adalah instruksi konkret, bukan deskripsi umum. DNA ini sudah merangkum pola dari SELURUH naskah referensi
+channel ini, jadi jangan tambahkan gaya lain di luar yang tertulis di DNA ini.
 
 INSTRUKSI TAMBAHAN:
 1. HOOK PEMBUKA (0-5s): Ikuti persis "POLA HOOK PEMBUKA" dari DNA Gaya. DILARANG menggunakan pertanyaan klise AI seperti "Tahukah kamu", "Pernahkah kamu membayangkan", kecuali itu memang pola asli channel ini.
@@ -266,7 +256,7 @@ ${tavilyContext}
 ${catatanTopik ? `[Catatan Konteks]:\n${catatanTopik}\n` : ""}
 INSTRUKSI:
 Tulis naskah video YouTube Shorts baru untuk topik: "${escapedJudul}".
-Tiru 100% gaya bahasa, hook, ritme, dan karakter penceritaan dari contoh naskah asli channel "${channelName}" di atas.
+Tiru 100% gaya bahasa, hook, ritme, dan karakter penceritaan sesuai DNA Gaya channel "${channelName}" di atas.
 Output murni format JSON valid.`
       : `${tavilyContext}
 ${catatanTopik ? `[Catatan Konteks]:\n${catatanTopik}\n` : ""}
