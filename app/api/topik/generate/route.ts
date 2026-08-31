@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     const {
-      kategori = "Curious Human History & Asal-Usul",
+      kategori = "Sains & Fakta Unik",
       durasi = "45-60 detik",
       topikDisukai = "",
       topikDitolak = "",
@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
       rejectedHistory = [],
     } = await req.json();
 
+    // 💡 1. MENYEDOT LANGSUNG DARI MENU REFERENSI (Tabel channel_analysis & entries)
     const [profileRes, historyRes] = await Promise.all([
       referenceProfileId
         ? supabase
@@ -93,18 +94,24 @@ export async function POST(req: NextRequest) {
     ]);
 
     let isProfileMode = false;
-    let channelName = "Dafiology";
+    let channelName = "Framework Murni";
     let referenceContextText = "";
+    let sampleTitlesList: string[] = [];
 
+    // 💡 2. MERANGKAI CONTOH KONTEN ASLI DARI MENU REFERENSI SEBAGAI ACUAN UTAMA
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name;
+      
+      sampleTitlesList = profileRes.data.channel_analysis_entries
+        .map((e: any) => e.title)
+        .filter(Boolean);
 
       const samples = profileRes.data.channel_analysis_entries
-        .map((e: any, idx: number) => `[SAMPEL NASKAH ASLI ${idx + 1}]: "${e.title}"\nNaskah:\n${e.full_script || ""}`)
+        .map((e: any, idx: number) => `[CONTOH KONTEN ASLI ${idx + 1} DARI MENU REFERENSI]:\nJudul: "${e.title}"\nNaskah Utuh:\n${e.full_script || ""}`)
         .join("\n\n---\n\n");
 
-      referenceContextText = `\n\n=== CONTOH POLA KONTEN ASLI CHANNEL "${channelName}" ===\n${samples}`;
+      referenceContextText = `\n\n=== DATA ACUAN UTAMA DARI MENU REFERENSI ("${channelName}") ===\n${samples}`;
     }
 
     let riwayatTopikText = "";
@@ -113,72 +120,102 @@ export async function POST(req: NextRequest) {
       riwayatTopikText = `\n\n⛔ DAFTAR TOPIK DI DATABASE (DILARANG MENGULANG INI):\n${daftarJudul}`;
     }
 
+    let blacklistText = "";
     const combinedRejected = [
       ...(topikDitolak ? [topikDitolak] : []),
       ...(Array.isArray(rejectedHistory) ? rejectedHistory : []),
-      "Dancing Plague 1518",
-      "Radithor",
-      "Scheele Green",
-      "Banjir Molasses Boston",
-      "Bubuk Mumi",
     ];
 
-    const blacklistText = `\n\n⛔ DAFTAR BLACKLIST (DILARANG MUNCUL LAGI):\n${combinedRejected.slice(0, 80).map((r) => `- ${r}`).join("\n")}`;
+    if (combinedRejected.length > 0) {
+      const list = combinedRejected.slice(0, 60).map((r: string) => `- ${r}`).join("\n");
+      blacklistText = `\n\n⛔ DAFTAR TOPIK DITOLAK/DIABAIKAN PENGGUNA (JANGAN DIBUAT LAGI):\n${list}`;
+    }
 
-    // 💡 TAVILY: RISET SEJARAH ASAL-USUL BENDA, PROFESI, & TRADISI KUNO
+    // 💡 3. TAVILY REAL-TIME DINAMIS (MENGIKUTI CONTOH JUDUL MENU REFERENSI)
     let tavilyContext = "";
     try {
-      const searchQuery = topikDisukai
-        ? `bizarre origins human history oddities ${topikDisukai}`
-        : `bizarre origins of everyday objects forgotten ancient professions weird historical customs`;
+      let searchQuery = "";
+      if (isProfileMode) {
+        const titleKeywords = sampleTitlesList.slice(0, 3).join(" ").replace(/[^a-zA-Z0-9\s]/g, "").slice(0, 100);
+        searchQuery = topikDisukai
+          ? `fakta unik menarik nyata ${topikDisukai}`
+          : `fakta unik menarik nyata ${titleKeywords}`;
+      } else {
+        searchQuery = topikDisukai
+          ? `${kategori} fakta unik menarik ${topikDisukai}`
+          : `${kategori} fakta unik menarik`;
+      }
 
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
       if (tavilyRes) {
-        tavilyContext = `\n\n[DATA FAKTA RISET WEB]:\n${tavilyRes}`;
+        tavilyContext = `\n\n[DATA FAKTA RISET WEB REAL-TIME TAVILY]:\n${tavilyRes}`;
       }
     } catch (e) {
-      console.warn("[Topik] Tavily fallback:", e);
+      console.warn("[Topik] Tavily search fallback:", e);
     }
 
-    // 💡 SYSTEM PROMPT RESMI FOKUS MURNI DAFIOLOGY
-    const systemPrompt = `Kamu adalah Lead Content Director & Topic Architect untuk YouTube Shorts Curious Human History (Gaya Dafiology).
+    // 💡 4. SYSTEM PROMPT MURNI MENGACU PADA DATA MENU REFERENSI
+    const systemPrompt = isProfileMode
+      ? `Kamu adalah Content Strategist dan DNA Cloner untuk YouTube Shorts.
+TUGAS UTAMA:
+Pelajari seluruh contoh judul dan naskah asli dari channel "${channelName}" yang terlampir dari Menu Referensi di bawah.
+Identifikasi gaya bertuturnya, tema pembahasannya, sudut pandang ceritanya, dan formula judulnya.
+Hasilkan ide topik baru yang 100% KONSISTEN dengan karakter konten dari Menu Referensi tersebut.
 
-🎯 4 PILAR KATEGORI UTAMA (WAJIB BERIKAN KOMBINASI DARI 4 PILAR INI):
-1. "Asal-Usul Benda": Benda/fashion/alat sehari-hari dengan asal-usul tak terduga di masa lalu (misal: Dasi, High Heels, Kacamata, Bantal, Jam Alarm).
-2. "Profesi Kuno": Pekerjaan nyata masa lalu yang terdengar gila/unik (misal: Groom of the Stool, Whipping Boy, Knocker-up).
-3. "Tradisi & Perilaku": Kebiasaan/tren absurd manusia zaman dulu (misal: Sewa Nanas, Pengadilan Hewan, Tradisi Gardyloo).
-4. "Peristiwa & Taktik": Taktik aneh atau peristiwa sejarah unik (misal: Taktik Kucing Pelusium, Operasi Cepat Liston).
-
-⚖️ ATURAN GAYA BAHASA & KUALITAS:
-1. GAYA BAHASA: Lugas, santai, cerdas, dan memikat penonton secara alami.
-2. DILARANG VULGAR KASAR & DILARANG LEBAY/CLICKBAIT BOMBATIS.
-3. DILARANG MENGULANG SUBJEK/TOPIK yang sudah ada di database.
-4. LABEL KATEGORI: WAJIB memilih salah satu dari 4 kategori di atas secara tepat!
+ATURAN:
+- Gunakan bahasa yang lugas, santai, cerdas, dan memikat (anti-vulgar & anti-lebay/clickbait murahan).
+- Dilarang mengulang topik yang sudah ada di database atau yang diabaikan pengguna.
 
 FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Khas Dafiology (Lugas, Cerdas, Hook Kuat)",
-      "kategori": "Asal-Usul Benda", // WAJIB SALAH SATU: "Asal-Usul Benda" | "Profesi Kuno" | "Tradisi & Perilaku" | "Peristiwa & Taktik"
-      "channelRef": "Dafiology",
-      "penjelasan": "Uraian 2-3 kalimat mengenai fakta otentik dan alasan kenapa ini sangat menarik.",
-      "skor": { "total": 49 },
-      "alasanKelulusan": "Alasan kelulusan skor >= 40/50 sesuai standar Dafiology."
+      "judul": "Judul Khas Sesuai Karakter Menu Referensi",
+      "kategori": "Kisah Nyata",
+      "channelRef": "${channelName}",
+      "penjelasan": "Uraian singkat 2-3 kalimat mengenai fakta otentik dan daya tarik ceritanya.",
+      "skor": { "total": 48 },
+      "alasanKelulusan": "Alasan kelulusan skor >= 40/50 sesuai acuan Menu Referensi."
+    }
+  ]
+}`
+      : `Kamu adalah Content Strategist untuk YouTube Shorts spesialis kategori "${kategori}".
+
+FORMAT JSON OUTPUT PERSIS:
+{
+  "candidates": [
+    {
+      "judul": "Judul Menarik & Konkret",
+      "kategori": "Umum",
+      "channelRef": "Framework Murni",
+      "penjelasan": "Uraian fakta otentik.",
+      "skor": { "total": 48 },
+      "alasanKelulusan": "Alasan kelulusan skor >= 40/50."
     }
   ]
 }`;
 
-    const userPrompt = `${referenceContextText}
+    const userPrompt = isProfileMode
+      ? `${referenceContextText}
 ${riwayatTopikText}
 ${blacklistText}
 ${tavilyContext}
 
 INSTRUKSI:
-Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENIRU FORMULA DAFIOLOGY.
-- Berikan variasi seimbang dari 4 pilar kategori (Asal-Usul Benda, Profesi Kuno, Tradisi & Perilaku, Peristiwa & Taktik).
-- Pastikan topik baru belum ada di database.
-- Output murni JSON.`;
+Hasilkan ${jumlah} ide topik video YouTube Shorts yang 100% MENIRU KARAKTER DAN POLA KONTEN DARI MENU REFERENSI DI ATAS.
+- Pastikan topik baru didukung oleh fakta riset web dan belum ada di database.
+- Output murni JSON.`
+      : `Parameter:
+- Kategori: ${kategori}
+- Durasi: ${durasi}
+- Preferensi: ${topikDisukai || "Bebas"}
+- Ditolak: ${topikDitolak || "Tidak ada"}
+- Jumlah: ${jumlah}
+${riwayatTopikText}
+${blacklistText}
+${tavilyContext}
+
+Hasilkan ${jumlah} ide topik berkualitas tinggi dalam format JSON murni.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
