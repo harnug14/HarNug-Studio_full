@@ -42,48 +42,28 @@ function cleanTitle(text: string) {
   return cleaned.trim();
 }
 
-// 💡 DETEKTOR BADGE NAMA CHANNEL UNTUK KARTU NASKAH
+// 💡 DETEKTOR BADGE CHANNEL 100% DINAMIS DARI SUPABASE
 function getChannelBadge(
   naskah: Naskah,
   topikList: Topik[],
   channelProfiles: ChannelProfile[]
 ): string | null {
-  // 1. Cek dari topik sumbernya di database
   if (naskah.sumber_topik_id) {
     const t = topikList.find((x) => x.id === naskah.sumber_topik_id);
     if (t && t.catatan) {
       const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
+
+      // 1. Cocokkan dengan profil channel yang ada di database
       for (const m of matches) {
         const found = channelProfiles.find((p) => p.profile_name.toLowerCase() === m.toLowerCase());
         if (found) return found.profile_name;
       }
-      if (matches.length >= 2) return matches[1];
+
+      // 2. Jika tidak persis, ambil bracket kedua (posisi nama channel di catatan topik)
+      if (matches.length >= 2 && matches[1].toLowerCase() !== "framework murni") {
+        return matches[1];
+      }
     }
-  }
-
-  // 2. Fallback deteksi berdasarkan kata kunci judul
-  const judulLower = cleanTitle(naskah.judul).toLowerCase();
-  if (
-    judulLower.includes("menuntut") ||
-    judulLower.includes("pencuri") ||
-    judulLower.includes("koma") ||
-    judulLower.includes("salah transfer") ||
-    judulLower.includes("bandara") ||
-    judulLower.includes("mobil mewah")
-  ) {
-    return "Jurnal Kumal";
-  }
-
-  if (
-    judulLower.includes("asal-usul") ||
-    judulLower.includes("sejarah") ||
-    judulLower.includes("groom of the stool") ||
-    judulLower.includes("dasi") ||
-    judulLower.includes("kulkas") ||
-    judulLower.includes("pelusium") ||
-    judulLower.includes("uang kertas")
-  ) {
-    return "Dafiology";
   }
 
   return null;
@@ -202,7 +182,7 @@ function NaskahContent() {
     }
   }, [items]);
 
-  // 💡 OTOMATIS PILIH REFERENSI DARI TOPIK SUMBER SAAT DIBUKA DARI MENU TOPIK
+  // Otomatis sinkronisasi referensi topik saat dibuka dari Menu Topik
   useEffect(() => {
     if (queryTopikId && queryJudul) {
       setSelectedTopikId(queryTopikId);
@@ -217,7 +197,7 @@ function NaskahContent() {
       setJudulTopik(cleanTitle(t.judul));
       setCatatanTopik(t.catatan || "");
 
-      // Otomatis deteksi & pilih channel referensi dari catatan topik
+      // Otomatis deteksi profil channel dari catatan topik
       if (t.catatan && channelProfiles.length > 0) {
         const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
         for (const m of matches) {
@@ -445,7 +425,7 @@ function NaskahContent() {
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label className="form-label" style={{ marginBottom: 6 }}>Referensi Kalibrasi Gaya (Opsional)</label>
+              <label className="form-label" style={{ marginBottom: 6 }}>Referensi Channel</label>
               <select
                 value={referenceProfileId}
                 onChange={(e) => setReferenceProfileId(e.target.value)}
@@ -563,7 +543,7 @@ function NaskahContent() {
               border: "none",
               cursor: "pointer",
               background: filterStatus === "ALL" ? "#38bdf8" : "transparent",
-              color: filterStatus === "ALL" ? "#000" : "var(--text-secondary)"
+              color: filterStatus === "ALL" ? "#000" : "var(--text-secondary)",
             }}
           >
             Semua
@@ -582,7 +562,7 @@ function NaskahContent() {
               color: filterStatus === "UNPROCESSED" ? "#fff" : "var(--text-secondary)",
               display: "flex",
               alignItems: "center",
-              gap: 4
+              gap: 4,
             }}
           >
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#9ca3af", display: "inline-block" }} />
@@ -602,7 +582,7 @@ function NaskahContent() {
               color: filterStatus === "PROCESSED" ? "#4ade80" : "var(--text-secondary)",
               display: "flex",
               alignItems: "center",
-              gap: 4
+              gap: 4,
             }}
           >
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
@@ -677,7 +657,7 @@ function NaskahContent() {
                               borderRadius: "50%",
                               background: hasVisual ? "#22c55e" : "#9ca3af",
                               boxShadow: hasVisual ? "0 0 8px rgba(34, 197, 94, 0.6)" : "none",
-                              flexShrink: 0
+                              flexShrink: 0,
                             }}
                           />
                           <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: "var(--text-primary)" }}>
@@ -690,7 +670,7 @@ function NaskahContent() {
                             {item.status === "approved" ? "✓ Terverifikasi" : item.status === "review" ? "Perlu Review" : "Draft"}
                           </span>
 
-                          {/* 💡 BADGE NAMA CHANNEL REFERENSI (UNGU) */}
+                          {/* BADGE CHANNEL REFERENSI (UNGU DINAMIS) */}
                           {channelBadge && (
                             <span
                               className="badge badge-neutral"
@@ -699,7 +679,7 @@ function NaskahContent() {
                                 background: "rgba(192, 132, 252, 0.12)",
                                 border: "1px solid rgba(192, 132, 252, 0.3)",
                                 fontSize: 10,
-                                fontWeight: 600
+                                fontWeight: 600,
                               }}
                             >
                               📺 {channelBadge}
@@ -786,7 +766,7 @@ function NaskahContent() {
           alignItems: "center",
           justifyContent: "center",
           zIndex: 1000,
-          padding: 16
+          padding: 16,
         }}>
           <div className="glass-card-static" style={{ maxWidth: 600, width: "100%", maxHeight: "80vh", overflowY: "auto", padding: 22 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -802,7 +782,7 @@ function NaskahContent() {
               fontSize: 12,
               lineHeight: 1.6,
               color: "var(--text-primary)",
-              whiteSpace: "pre-wrap"
+              whiteSpace: "pre-wrap",
             }}>
               {activeModalItem.naskah.english_script || "Script belum diterjemahkan."}
             </div>
