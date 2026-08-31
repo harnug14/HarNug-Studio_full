@@ -55,7 +55,7 @@ async function callGeminiApi(
   });
 }
 
-// Timeout helper mandiri untuk Tavily agar tidak memicu 504 di Vercel
+// Timeout helper mandiri untuk Tavily agar aman dari batas Vercel
 async function fetchTavilyFast(query: string, timeoutMs = 4500): Promise<string> {
   if (!query || !query.trim()) return "";
   try {
@@ -65,7 +65,7 @@ async function fetchTavilyFast(query: string, timeoutMs = 4500): Promise<string>
     );
     return await Promise.race([tavilyPromise, timeoutPromise]);
   } catch (e) {
-    console.warn("[Naskah] Tavily search fallback/timeout:", e);
+    console.warn("[Naskah] Tavily search fallback:", e);
     return "";
   }
 }
@@ -92,13 +92,16 @@ export async function POST(req: NextRequest) {
 
     if (!judulTopik || !judulTopik.trim()) {
       return NextResponse.json(
-        { error: "Judul topik wajib ada untuk membuat naskah" },
+        { error: "Judul topik wajib diisi" },
         { status: 400 }
       );
     }
 
+    const cleanJudul = judulTopik.trim();
+    const escapedJudul = cleanJudul.replace(/"/g, "'");
+
     // 1. Eksekusi paralel Supabase & Riset Tavily
-    const tavilyQuery = `kronologi fakta detail sejarah nyata asal usul ${judulTopik} ${catatanTopik ? catatanTopik.slice(0, 100) : ""}`.trim();
+    const tavilyQuery = `kronologi fakta detail sejarah nyata asal usul ${cleanJudul}`;
 
     const [profileRes, tavilyRes] = await Promise.all([
       referenceProfileId
@@ -115,7 +118,7 @@ export async function POST(req: NextRequest) {
     let channelName = "Framework Murni";
     let referenceContextText = "";
 
-    // 2. Rangkai contoh naskah asli dari database
+    // 2. Ekstraksi naskah asli dari database
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length > 0) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name || "Referensi";
@@ -131,52 +134,51 @@ export async function POST(req: NextRequest) {
         })
         .join("\n\n---\n\n");
 
-      referenceContextText = `\n\n=== CONTOH NASKAH ASLI ACUAN UTAMA DARI CHANNEL "${channelName}" ===\n${samples}`;
+      referenceContextText = `\n\n=== CONTOH NASKAH ASLI ACUAN UTAMA CHANNEL "${channelName}" ===\n${samples}`;
     }
 
-    // 3. Konteks Fakta Web Real-Time Tavily
+    // 3. Konteks Fakta Web Real-Time
     const tavilyContext = tavilyRes
-      ? `\n\n[DATA FAKTA KRONOLOGI RISET WEB REAL-TIME TAVILY]:\n${tavilyRes}\n\nGunakan fakta otentik di atas sebagai rujukan akurat untuk detail peristiwa, nama tokoh, dan tahun.`
+      ? `\n\n[DATA FAKTA KRONOLOGI RISET WEB REAL-TIME TAVILY]:\n${tavilyRes}\n\nGunakan fakta otentik di atas sebagai rujukan detail peristiwa, nama tokoh, dan tahun.`
       : "";
 
-    // 4. System Prompt & Instruksi Penulisan
+    // 4. System Prompt & Instruksi
     const systemPrompt = isProfileMode
-      ? `Kamu adalah Scriptwriter Profesional untuk YouTube Shorts.
+      ? `Kamu adalah Scriptwriter Profesional YouTube Shorts.
 TUGAS UTAMA:
-Tulis naskah YouTube Shorts berdurasi 45-60 detik (130-160 kata) untuk topik video: "${judulTopik}".
+Tulis naskah YouTube Shorts berdurasi 45-60 detik (130-160 kata) untuk topik video: "${escapedJudul}".
 TIRU 100% GAYA BAHASA, NADA BICARA, RITME KALIMAT, DAN STRUKTUR PENCERITAAN DARI CONTOH NASKAH ASLI CHANNEL "${channelName}" DI BAWAH.
 
 ATURAN PENULISAN:
 - Serap dan adopsi gaya pembuka (hook), cara penyampaian fakta, dan gaya penutup khas channel "${channelName}".
-- Panjang naskah WAJIB berkisar antara 130 hingga 160 kata (pas untuk durasi voiceover 45-60 detik).
-- Gunakan bahasa tutur Indonesia yang natural, hidup, mengalir, dan memikat pendengar dari detik pertama.
+- Panjang naskah WAJIB 130 hingga 160 kata (pas untuk voiceover 45-60 detik).
+- Gunakan bahasa tutur Indonesia yang natural, hidup, mengalir, dan memikat pendengar.
 - Fakta cerita harus akurat berdasarkan data riset web yang dilampirkan.
-- HANYA hasilkan narasi suara/voiceover murni. DILARANG menyisipkan label adegan buatan seperti [Visual:], [Scene:], [Musik:], atau tanda kurung lainnya.
+- HANYA hasilkan teks voiceover murni. DILARANG menyisipkan label adegan seperti [Visual:], [Scene:], atau tanda kurung.
 
 FORMAT JSON OUTPUT PERSIS:
 {
-  "judul": "${judulTopik}",
+  "judul": "${escapedJudul}",
   "isiNaskah": "Teks naskah voiceover utuh 130-160 kata dari awal hingga akhir...",
-  "hook": "Kalimat pembuka hook naskah",
-  "ending": "Kalimat penutup naskah",
+  "hook": "Kalimat pembuka hook",
+  "ending": "Kalimat penutup",
   "wordCount": 145,
   "estimasiDurasi": "50 detik"
 }`
       : `Kamu adalah Scriptwriter Profesional YouTube Shorts bertema curious history & fakta unik.
-TUGAS UTAMA:
-Tulis naskah YouTube Shorts berdurasi ${targetPanjang} dengan nada suara "${tone}" untuk topik: "${judulTopik}".
+TUGAS: Tulis naskah YouTube Shorts berdurasi ${targetPanjang} dengan nada suara "${tone}" untuk topik: "${escapedJudul}".
 
 ATURAN:
 - Panjang naskah 130-160 kata (45-60 detik).
-- Narasi suara/voiceover murni tanpa label visual/tanda kurung.
+- Narasi suara/voiceover murni tanpa label adegan/tanda kurung.
 - Mengalir alami, memikat, dan akurat secara fakta.
 
 FORMAT JSON OUTPUT PERSIS:
 {
-  "judul": "${judulTopik}",
+  "judul": "${escapedJudul}",
   "isiNaskah": "Teks naskah voiceover utuh 130-160 kata...",
-  "hook": "Kalimat pembuka hook naskah",
-  "ending": "Kalimat penutup naskah",
+  "hook": "Kalimat pembuka hook",
+  "ending": "Kalimat penutup",
   "wordCount": 145,
   "estimasiDurasi": "50 detik"
 }`;
@@ -187,14 +189,14 @@ ${tavilyContext}
 
 ${catatanTopik ? `[Catatan/Konteks Topik]:\n${catatanTopik}\n` : ""}
 INSTRUKSI:
-Tulis naskah YouTube Shorts untuk topik: "${judulTopik}".
-Pastikan naskah mengadopsi gaya bahasa, ritme, dan karakter storytelling dari contoh channel "${channelName}" di atas.
-Output murni format JSON valid.`
+Tulis naskah YouTube Shorts untuk topik: "${escapedJudul}".
+Pastikan naskah mengadopsi gaya bahasa, ritme, dan karakter storytelling dari channel "${channelName}" di atas.
+Output format JSON valid.`
       : `${tavilyContext}
 ${catatanTopik ? `[Catatan/Konteks Topik]:\n${catatanTopik}\n` : ""}
 INSTRUKSI:
-Tulis naskah YouTube Shorts untuk topik: "${judulTopik}" dengan tone "${tone}" dan target durasi "${targetPanjang}".
-Output murni format JSON valid.`;
+Tulis naskah YouTube Shorts untuk topik: "${escapedJudul}" dengan tone "${tone}" dan target durasi "${targetPanjang}".
+Output format JSON valid.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
@@ -203,22 +205,25 @@ Output murni format JSON valid.`;
     );
 
     const parsedData: any = parseJsonResponse(rawResponse, {
-      judul: judulTopik,
+      judul: cleanJudul,
       isiNaskah: rawResponse,
     });
 
-    const scriptText = (parsedData.isiNaskah || rawResponse).trim();
+    const scriptText = (parsedData.isiNaskah || rawResponse || "").trim();
 
     if (!scriptText) {
-      throw new Error("Gagal menghasilkan isi naskah dari AI");
+      return NextResponse.json(
+        { error: "Gagal menghasilkan teks naskah dari AI" },
+        { status: 500 }
+      );
     }
 
-    // 5. Simpan Naskah Baru ke Database Supabase
+    // 5. Simpan ke database Supabase
     const { data: newNaskah, error: insertErr } = await supabase
       .from("naskah")
       .insert({
         user_id: user.id,
-        judul: parsedData.judul || judulTopik,
+        judul: cleanJudul,
         isi_naskah: scriptText,
         sumber_topik_id: topikId || null,
         status: "draft",
@@ -227,14 +232,17 @@ Output murni format JSON valid.`;
       .single();
 
     if (insertErr) {
-      console.error("[Naskah Insert Error]:", insertErr);
+      console.error("[Naskah DB Insert Error]:", insertErr);
     }
 
     return NextResponse.json({
       data: newNaskah || {
-        judul: parsedData.judul || judulTopik,
+        id: "temp-" + Date.now(),
+        judul: cleanJudul,
         isi_naskah: scriptText,
+        sumber_topik_id: topikId || null,
         status: "draft",
+        created_at: new Date().toISOString(),
       },
       parsed: parsedData,
     });
