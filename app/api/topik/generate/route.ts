@@ -127,28 +127,50 @@ export async function POST(req: NextRequest) {
     let channelName = "Framework Murni";
     let referenceContextText = "";
     let sampleTitlesList: string[] = [];
+    let styleDnaMissing = false;
 
-    // 2. Rangkai NASKAH UTUH (100% Full Script) dari Menu Referensi
+    // 2. Rangkai konteks referensi dari Menu Referensi: DNA Gaya (pola eksplisit) sebagai acuan
+    //    utama, ditambah judul-judul asli untuk formula judul dan sebagai bahan anti-duplikasi.
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length > 0) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name || "Referensi";
 
       const entries = profileRes.data.channel_analysis_entries;
+      const styleDna = profileRes.data.style_dna;
+      const dnaEntryCount = profileRes.data.style_dna_entry_count || 0;
 
       sampleTitlesList = entries
         .map((e: any) => e.title || e.video_title || e.judul || "")
         .filter(Boolean);
 
-      const samples = entries
-        .map((e: any, idx: number) => {
-          const entryTitle = e.title || e.video_title || e.judul || `Contoh ${idx + 1}`;
-          const fullScript =
-            e.full_script || e.script || e.naskah || e.transcript || e.content || "";
-          return `[CONTOH KONTEN ASLI ${idx + 1} - "${channelName}"]:\nJudul: "${entryTitle}"\nNaskah Utuh:\n${fullScript}`;
-        })
-        .join("\n\n---\n\n");
+      if (styleDna && dnaEntryCount === entries.length) {
+        const dnaBlock = `
+=== DNA GAYA CHANNEL "${channelName}" (HASIL ANALISIS POLA - ACUAN UTAMA) ===
+1. POLA HOOK PEMBUKA: ${styleDna.hookPattern || "-"}
+2. STRUKTUR BEAT NASKAH: ${(styleDna.strukturBeat || []).map((s: string, i: number) => `${i + 1}) ${s}`).join(" -> ") || "-"}
+3. GAYA BAHASA: ${styleDna.gayaBahasa || "-"}
+4. DIKSI/FRASA KHAS: ${(styleDna.diksiKhas || []).join(", ") || "-"}
+5. RINGKASAN KARAKTER: ${styleDna.ringkasanKarakter || "-"}
+6. HAL YANG DIHINDARI: ${(styleDna.halYangDihindari || []).join("; ") || "-"}
 
-      referenceContextText = `\n\n=== DATA ACUAN UTAMA DARI MENU REFERENSI CHANNEL "${channelName}" ===\n${samples}`;
+=== CONTOH JUDUL ASLI CHANNEL "${channelName}" (untuk mempelajari formula judul) ===
+${sampleTitlesList.map((t, i) => `${i + 1}. ${t}`).join("\n")}`;
+
+        referenceContextText = `\n\n${dnaBlock}`;
+      } else {
+        styleDnaMissing = true;
+
+        const samples = entries
+          .map((e: any, idx: number) => {
+            const entryTitle = e.title || e.video_title || e.judul || `Contoh ${idx + 1}`;
+            const fullScript =
+              e.full_script || e.script || e.naskah || e.transcript || e.content || "";
+            return `[CONTOH KONTEN ASLI ${idx + 1} - "${channelName}"]:\nJudul: "${entryTitle}"\nNaskah Utuh:\n${fullScript}`;
+          })
+          .join("\n\n---\n\n");
+
+        referenceContextText = `\n\n=== DATA ACUAN UTAMA DARI MENU REFERENSI CHANNEL "${channelName}" ===\n${samples}`;
+      }
     }
 
     // 3. Bangun Blacklist Lengkap Anti-Duplikasi
@@ -181,8 +203,9 @@ export async function POST(req: NextRequest) {
     const systemPrompt = isProfileMode
       ? `Kamu adalah Content Strategist & DNA Cloner untuk YouTube Shorts.
 TUGAS UTAMA:
-Pelajari seluruh contoh naskah utuh dan judul asli dari channel "${channelName}" di bawah.
-Identifikasi dan tiru secara presisi gaya bertuturnya, tema pembahasannya, sudut pandang ceritanya, dan formula judulnya.
+Di bawah ada "DNA GAYA" channel "${channelName}" (hasil bedah pola konten secara eksplisit) beserta contoh judul aslinya.
+JADIKAN DNA GAYA SEBAGAI ACUAN UTAMA - setiap butir di dalamnya adalah instruksi konkret tentang tema, sudut pandang, dan karakter channel ini, bukan sekadar deskripsi umum.
+Pelajari juga formula judul dari contoh judul asli yang disertakan.
 Hasilkan ide topik video baru yang 100% KONSISTEN dengan karakter konten dari channel "${channelName}".
 
 ATURAN WAJIB:
@@ -276,7 +299,10 @@ Hasilkan ${askCount} ide topik baru dalam format JSON valid.`;
       channelRef: c.channelRef || channelName,
     }));
 
-    return NextResponse.json({ data: finalCandidates });
+    return NextResponse.json({
+      data: finalCandidates,
+      styleDnaMissing: isProfileMode && styleDnaMissing,
+    });
   } catch (err: any) {
     console.error("[Topik API Error]:", err);
     return NextResponse.json(
