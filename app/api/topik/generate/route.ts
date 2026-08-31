@@ -24,7 +24,7 @@ async function requestGoogleGemini(
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.8,
+          temperature: 0.85,
         },
       }),
     }
@@ -55,8 +55,9 @@ async function callGeminiApi(
   });
 }
 
-// Timeout helper untuk Tavily agar tidak memicu 504
-async function fetchTavilyWithTimeout(query: string, timeoutMs = 5000): Promise<string> {
+// Timeout helper mandiri untuk Tavily agar tidak membekukan proses serverless
+async function fetchTavilyFast(query: string, timeoutMs = 4000): Promise<string> {
+  if (!query || !query.trim()) return "";
   try {
     const tavilyPromise = fetchTavilySearchResults(query);
     const timeoutPromise = new Promise<string>((_, reject) =>
@@ -64,12 +65,12 @@ async function fetchTavilyWithTimeout(query: string, timeoutMs = 5000): Promise<
     );
     return await Promise.race([tavilyPromise, timeoutPromise]);
   } catch (e) {
-    console.warn("[Topik] Tavily search fallback/timeout:", e);
+    console.warn("[Topik] Tavily fallback/timeout:", e);
     return "";
   }
 }
 
-// Helper normalisasi teks untuk deteksi duplikasi ketat
+// Helper normalisasi deteksi duplikasi
 function normalizeText(str: string): string {
   return (str || "")
     .toLowerCase()
@@ -100,8 +101,12 @@ export async function POST(req: NextRequest) {
       rejectedHistory = [],
     } = await req.json();
 
-    // 1. Ambil seluruh data profil dan seluruh topik user di database (hingga 1000 entri)
-    const [profileRes, historyRes] = await Promise.all([
+    // 1. Jalankan fetch Supabase dan riset Tavily secara PARALEL untuk mencegah 504
+    const initialTavilyQuery = topikDisukai
+      ? `fakta unik sejarah menarik nyata ${topikDisukai}`
+      : `${kategori} fakta sejarah unik menarik nyata`;
+
+    const [profileRes, historyRes, tavilyRes] = await Promise.all([
       referenceProfileId
         ? supabase
             .from("channel_analysis")
@@ -114,7 +119,8 @@ export async function POST(req: NextRequest) {
         .select("judul")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(1000),
+        .limit(500),
+      fetchTavilyFast(initialTavilyQuery, 4000),
     ]);
 
     let isProfileMode = false;
@@ -122,7 +128,7 @@ export async function POST(req: NextRequest) {
     let referenceContextText = "";
     let sampleTitlesList: string[] = [];
 
-    // 2. Ekstraksi naskah referensi asli
+    // 2. Rangkai NASKAH UTUH (100% Full Script) dari Menu Referensi
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length > 0) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name || "Referensi";
@@ -134,19 +140,18 @@ export async function POST(req: NextRequest) {
         .filter(Boolean);
 
       const samples = entries
-        .slice(0, 8)
         .map((e: any, idx: number) => {
           const entryTitle = e.title || e.video_title || e.judul || `Contoh ${idx + 1}`;
-          const entryScript =
+          const fullScript =
             e.full_script || e.script || e.naskah || e.transcript || e.content || "";
-          return `[CONTOH KONTEN ASLI ${idx + 1} - "${channelName}"]:\nJudul: "${entryTitle}"\nNaskah Utuh:\n${entryScript}`;
+          return `[CONTOH KONTEN ASLI ${idx + 1} - "${channelName}"]:\nJudul: "${entryTitle}"\nNaskah Utuh:\n${fullScript}`;
         })
         .join("\n\n---\n\n");
 
-      referenceContextText = `\n\n=== DATA ACUAN GAYA & FORMAT DARI CHANNEL "${channelName}" ===\n${samples}`;
+      referenceContextText = `\n\n=== DATA ACUAN UTAMA DARI MENU REFERENSI CHANNEL "${channelName}" ===\n${samples}`;
     }
 
-    // 3. Bangun Blacklist Ketat (Topik DB + Judul Contoh Referensi + Riwayat Ditolak)
+    // 3. Bangun Blacklist Lengkap Anti-Duplikasi
     const existingDbTitles = (historyRes.data || []).map((t: any) => t.judul).filter(Boolean);
     const allForbiddenTitles = Array.from(
       new Set([
@@ -158,58 +163,44 @@ export async function POST(req: NextRequest) {
     );
 
     const blacklistItemsText = allForbiddenTitles
+      .slice(0, 200)
       .map((item: string, idx: number) => `${idx + 1}. ${item}`)
       .join("\n");
 
-    const blacklistText = `\n\n⛔ DAFTAR TOPIK YANG SUDAH ADA / DILARANG DIHASILKAN ULANG (TOTAL: ${allForbiddenTitles.length} TOPIK):\n${blacklistItemsText}`;
+    const blacklistText = `\n\n⛔ DAFTAR TOPIK YANG SUDAH ADA / DILARANG DIHASILKAN ULANG:\n${blacklistItemsText}`;
 
-    // 4. Riset fakta web real-time Tavily
-    let tavilyContext = "";
-    let searchQuery = "";
-
-    if (isProfileMode) {
-      const sampleKeywords = sampleTitlesList.slice(0, 3).join(" ").replace(/[^a-zA-Z0-9\s]/g, "").slice(0, 60);
-      searchQuery = topikDisukai
-        ? `fakta unik sejarah menarik ${topikDisukai}`
-        : `fakta unik sejarah baru unik ${sampleKeywords}`;
-    } else {
-      searchQuery = topikDisukai
-        ? `${kategori} fakta sejarah unik ${topikDisukai}`
-        : `${kategori} fakta sejarah unik menarik baru`;
-    }
-
-    const tavilyRes = await fetchTavilyWithTimeout(searchQuery, 5000);
-    if (tavilyRes) {
-      tavilyContext = `\n\n[DATA FAKTA RISET WEB REAL-TIME TAVILY]:\n${tavilyRes}`;
-    }
+    // 4. Konteks Hasil Tavily
+    const tavilyContext = tavilyRes
+      ? `\n\n[DATA FAKTA RISET WEB REAL-TIME TAVILY]:\n${tavilyRes}`
+      : "";
 
     // 5. System Prompt & Instruksi AI
     const requestedAmount = Math.max(Number(jumlah) || 5, 3);
-    const askCount = requestedAmount + 4; // Generate cadangan agar pas setelah deduplikasi
+    const askCount = requestedAmount + 3;
 
     const systemPrompt = isProfileMode
-      ? `Kamu adalah Content Strategist & Storyteller YouTube Shorts.
+      ? `Kamu adalah Content Strategist & DNA Cloner untuk YouTube Shorts.
 TUGAS UTAMA:
-Pelajari seluruh contoh naskah dan judul asli dari channel "${channelName}" di bawah.
-Tiru gaya bertutur, sudut pandang rasa penasaran (curiosity hook), dan ritme penceritaannya.
-Hasilkan ${askCount} ide topik video baru yang 100% KONSISTEN dengan karakter channel "${channelName}".
+Pelajari seluruh contoh naskah utuh dan judul asli dari channel "${channelName}" di bawah.
+Identifikasi dan tiru secara presisi gaya bertuturnya, tema pembahasannya, sudut pandang ceritanya, dan formula judulnya.
+Hasilkan ide topik video baru yang 100% KONSISTEN dengan karakter konten dari channel "${channelName}".
 
-ATURAN MUTLAK ANTI-DUPLIKASI:
-- DILARANG KERAS membuat ulang judul/topik yang terdaftar di daftar larangan.
+ATURAN WAJIB:
+- DILARANG KERAS membuat ulang judul atau topik yang ada di daftar larangan.
 - DILARANG menyalin judul contoh referensi. Topik harus BARU, segar, dan belum pernah dibahas.
-- Gunakan bahasa Indonesia yang santai, cerdas, mengalir, dan memikat.
-- Tentukan kategori yang sesuai (misal: "Asal-Usul Benda", "Profesi Kuno", "Tradisi & Perilaku", "Peristiwa & Taktik", atau "Curious History").
+- Gunakan bahasa yang lugas, santai, cerdas, dan memikat (anti-lebay/clickbait murahan).
+- Kategori topik harus merefleksikan isi konten (misal: "Asal-Usul Benda", "Profesi Kuno", "Tradisi & Perilaku", "Peristiwa & Taktik", atau "Curious History").
 
 FORMAT JSON OUTPUT PERSIS:
 {
   "candidates": [
     {
-      "judul": "Judul Baru Unik Sesuai Gaya Channel Referensi",
+      "judul": "Judul Khas Sesuai Karakter Menu Referensi",
       "kategori": "Kategori Sesuai Topik",
       "channelRef": "${channelName}",
-      "penjelasan": "Uraian fakta otentik 2 kalimat mengenai daya tarik cerita.",
+      "penjelasan": "Uraian singkat 2 kalimat mengenai fakta otentik dan daya tarik ceritanya.",
       "skor": { "total": 48 },
-      "alasanKelulusan": "Alasan kelulusan topik sesuai DNA channel."
+      "alasanKelulusan": "Alasan kelulusan skor >= 40/50 sesuai acuan Menu Referensi."
     }
   ]
 }`
@@ -238,18 +229,18 @@ ${blacklistText}
 ${tavilyContext}
 
 INSTRUKSI:
-Hasilkan ${askCount} ide topik video YouTube Shorts BARU yang meniru gaya channel di atas tetapi TIDAK BOLEH SAMA DENGAN DAFTAR LARANGAN.
+Hasilkan ${askCount} ide topik video YouTube Shorts BARU yang 100% MENIRU KARAKTER DAN POLA KONTEN DARI MENU REFERENSI DI ATAS.
+Pastikan tidak mengulang daftar larangan.
 Format murni JSON valid.`
       : `Parameter:
 - Kategori: ${kategori}
 - Durasi: ${durasi}
 - Preferensi: ${topikDisukai || "Bebas"}
 - Ditolak: ${topikDitolak || "Tidak ada"}
-- Target: ${askCount} topik baru
 ${blacklistText}
 ${tavilyContext}
 
-Hasilkan ${askCount} ide topik baru yang belum pernah ada dalam format JSON valid.`;
+Hasilkan ${askCount} ide topik baru dalam format JSON valid.`;
 
     const rawResponse = await callGeminiApi(
       supabase,
@@ -260,7 +251,7 @@ Hasilkan ${askCount} ide topik baru yang belum pernah ada dalam format JSON vali
     const parsedData: any = parseJsonResponse(rawResponse, { candidates: [] });
     const rawCandidates: any[] = Array.isArray(parsedData.candidates) ? parsedData.candidates : [];
 
-    // 6. PROGRAMMATIC DEDUPLICATION FILTER DI BACKEND
+    // 6. Programmatic Deduplication Filter di Backend
     const normalizedForbiddenSet = new Set(allForbiddenTitles.map(normalizeText));
 
     const uniqueCandidates = rawCandidates.filter((c: any) => {
@@ -268,11 +259,9 @@ Hasilkan ${askCount} ide topik baru yang belum pernah ada dalam format JSON vali
       const normJudul = normalizeText(c.judul);
       if (!normJudul || normJudul.length < 3) return false;
 
-      // Cek apakah persis atau mengandung judul yang sudah ada
       for (const forbidden of normalizedForbiddenSet) {
         if (!forbidden) continue;
         if (normJudul === forbidden) return false;
-        // Jika kemiripan sangat tinggi
         if (normJudul.length > 8 && forbidden.length > 8) {
           if (normJudul.includes(forbidden) || forbidden.includes(normJudul)) {
             return false;
@@ -282,7 +271,6 @@ Hasilkan ${askCount} ide topik baru yang belum pernah ada dalam format JSON vali
       return true;
     });
 
-    // Potong sesuai jumlah permintaan pengguna
     const finalCandidates = uniqueCandidates.slice(0, requestedAmount).map((c: any) => ({
       ...c,
       channelRef: c.channelRef || channelName,
