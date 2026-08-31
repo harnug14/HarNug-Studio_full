@@ -111,7 +111,10 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (topikRow?.catatan) {
-        const matches = Array.from(topikRow.catatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
+        const matches = Array.from(topikRow.catatan.matchAll(/\[(.*?)\]/g)).map((m: any) =>
+          m[1] ? String(m[1]).trim() : ""
+        ).filter(Boolean);
+
         if (matches.length > 0) {
           const candidateName = matches.length >= 2 ? matches[1] : matches[0];
           const { data: foundProfile } = await supabase
