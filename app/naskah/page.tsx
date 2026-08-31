@@ -42,7 +42,7 @@ function cleanTitle(text: string) {
   return cleaned.trim();
 }
 
-// 💡 DETEKTOR BADGE CHANNEL 100% DINAMIS DARI SUPABASE
+// 💡 DETEKTOR BADGE CHANNEL DINAMIS DARI SUPABASE
 function getChannelBadge(
   naskah: Naskah,
   topikList: Topik[],
@@ -53,13 +53,11 @@ function getChannelBadge(
     if (t && t.catatan) {
       const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
 
-      // 1. Cocokkan dengan profil channel yang ada di database
       for (const m of matches) {
         const found = channelProfiles.find((p) => p.profile_name.toLowerCase() === m.toLowerCase());
         if (found) return found.profile_name;
       }
 
-      // 2. Jika tidak persis, ambil bracket kedua (posisi nama channel di catatan topik)
       if (matches.length >= 2 && matches[1].toLowerCase() !== "framework murni") {
         return matches[1];
       }
@@ -182,7 +180,6 @@ function NaskahContent() {
     }
   }, [items]);
 
-  // Otomatis sinkronisasi referensi topik saat dibuka dari Menu Topik
   useEffect(() => {
     if (queryTopikId && queryJudul) {
       setSelectedTopikId(queryTopikId);
@@ -197,7 +194,6 @@ function NaskahContent() {
       setJudulTopik(cleanTitle(t.judul));
       setCatatanTopik(t.catatan || "");
 
-      // Otomatis deteksi profil channel dari catatan topik
       if (t.catatan && channelProfiles.length > 0) {
         const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
         for (const m of matches) {
@@ -234,6 +230,11 @@ function NaskahContent() {
         }),
       });
 
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || `Server Error (${res.status}). Silakan coba lagi.`);
+      }
+
       const json = await res.json();
       if (json.error) {
         setGenError(json.error);
@@ -244,7 +245,7 @@ function NaskahContent() {
         setCatatanTopik("");
       }
     } catch (err: any) {
-      setGenError(err.message || "Gagal membuat naskah");
+      setGenError(err.message || "Gagal membuat naskah. Silakan coba lagi.");
     } finally {
       setGenerating(false);
     }
