@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       rejectedHistory = [],
     } = await req.json();
 
-    // 💡 1. MENYEDOT LANGSUNG DARI MENU REFERENSI (Tabel channel_analysis & entries)
+    // 1. Ambil data profil & entri naskah asli dari Supabase
     const [profileRes, historyRes] = await Promise.all([
       referenceProfileId
         ? supabase
@@ -98,17 +98,20 @@ export async function POST(req: NextRequest) {
     let referenceContextText = "";
     let sampleTitlesList: string[] = [];
 
-    // 💡 2. MERANGKAI CONTOH KONTEN ASLI DARI MENU REFERENSI SEBAGAI ACUAN UTAMA
+    // 2. Rangkai contoh naskah asli dari database
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name;
-      
+
       sampleTitlesList = profileRes.data.channel_analysis_entries
         .map((e: any) => e.title)
         .filter(Boolean);
 
       const samples = profileRes.data.channel_analysis_entries
-        .map((e: any, idx: number) => `[CONTOH KONTEN ASLI ${idx + 1} DARI MENU REFERENSI]:\nJudul: "${e.title}"\nNaskah Utuh:\n${e.full_script || ""}`)
+        .map(
+          (e: any, idx: number) =>
+            `[CONTOH KONTEN ASLI ${idx + 1} - "${channelName}"]:\nJudul: "${e.title}"\nNaskah Utuh:\n${e.full_script || ""}`
+        )
         .join("\n\n---\n\n");
 
       referenceContextText = `\n\n=== DATA ACUAN UTAMA DARI MENU REFERENSI ("${channelName}") ===\n${samples}`;
@@ -116,7 +119,9 @@ export async function POST(req: NextRequest) {
 
     let riwayatTopikText = "";
     if (historyRes.data && historyRes.data.length > 0) {
-      const daftarJudul = historyRes.data.map((t: any, idx: number) => `${idx + 1}. ${t.judul}`).join("\n");
+      const daftarJudul = historyRes.data
+        .map((t: any, idx: number) => `${idx + 1}. ${t.judul}`)
+        .join("\n");
       riwayatTopikText = `\n\n⛔ DAFTAR TOPIK DI DATABASE (DILARANG MENGULANG INI):\n${daftarJudul}`;
     }
 
@@ -127,23 +132,30 @@ export async function POST(req: NextRequest) {
     ];
 
     if (combinedRejected.length > 0) {
-      const list = combinedRejected.slice(0, 60).map((r: string) => `- ${r}`).join("\n");
+      const list = combinedRejected
+        .slice(0, 60)
+        .map((r: string) => `- ${r}`)
+        .join("\n");
       blacklistText = `\n\n⛔ DAFTAR TOPIK DITOLAK/DIABAIKAN PENGGUNA (JANGAN DIBUAT LAGI):\n${list}`;
     }
 
-    // 💡 3. TAVILY REAL-TIME DINAMIS (MENGIKUTI CONTOH JUDUL MENU REFERENSI)
+    // 3. Riset fakta web real-time dinamis via Tavily
     let tavilyContext = "";
     try {
       let searchQuery = "";
       if (isProfileMode) {
-        const titleKeywords = sampleTitlesList.slice(0, 3).join(" ").replace(/[^a-zA-Z0-9\s]/g, "").slice(0, 100);
+        const titleKeywords = sampleTitlesList
+          .slice(0, 3)
+          .join(" ")
+          .replace(/[^a-zA-Z0-9\s]/g, "")
+          .slice(0, 100);
         searchQuery = topikDisukai
           ? `fakta unik menarik nyata ${topikDisukai}`
-          : `fakta unik menarik nyata ${titleKeywords}`;
+          : `fakta unik menarik sejarah ${titleKeywords}`;
       } else {
         searchQuery = topikDisukai
           ? `${kategori} fakta unik menarik ${topikDisukai}`
-          : `${kategori} fakta unik menarik`;
+          : `${kategori} fakta unik menarik sejarah`;
       }
 
       const tavilyRes = await fetchTavilySearchResults(searchQuery);
@@ -154,9 +166,9 @@ export async function POST(req: NextRequest) {
       console.warn("[Topik] Tavily search fallback:", e);
     }
 
-    // 💡 4. SYSTEM PROMPT MURNI MENGACU PADA DATA MENU REFERENSI
+    // 4. System Prompt dinamis sesuai data referensi
     const systemPrompt = isProfileMode
-      ? `Kamu adalah Content Strategist dan DNA Cloner untuk YouTube Shorts.
+      ? `Kamu adalah Content Strategist dan Analis Konten untuk YouTube Shorts.
 TUGAS UTAMA:
 Pelajari seluruh contoh judul dan naskah asli dari channel "${channelName}" yang terlampir dari Menu Referensi di bawah.
 Identifikasi gaya bertuturnya, tema pembahasannya, sudut pandang ceritanya, dan formula judulnya.
@@ -164,6 +176,7 @@ Hasilkan ide topik baru yang 100% KONSISTEN dengan karakter konten dari Menu Ref
 
 ATURAN:
 - Gunakan bahasa yang lugas, santai, cerdas, dan memikat (anti-vulgar & anti-lebay/clickbait murahan).
+- Kategori topik harus merefleksikan isi konten (misal: "Asal-Usul Benda", "Profesi Kuno", "Tradisi & Perilaku", "Peristiwa & Taktik", atau "Curious History").
 - Dilarang mengulang topik yang sudah ada di database atau yang diabaikan pengguna.
 
 FORMAT JSON OUTPUT PERSIS:
@@ -171,7 +184,7 @@ FORMAT JSON OUTPUT PERSIS:
   "candidates": [
     {
       "judul": "Judul Khas Sesuai Karakter Menu Referensi",
-      "kategori": "Kisah Nyata",
+      "kategori": "Kategori Sesuai Topik",
       "channelRef": "${channelName}",
       "penjelasan": "Uraian singkat 2-3 kalimat mengenai fakta otentik dan daya tarik ceritanya.",
       "skor": { "total": 48 },
@@ -186,7 +199,7 @@ FORMAT JSON OUTPUT PERSIS:
   "candidates": [
     {
       "judul": "Judul Menarik & Konkret",
-      "kategori": "Umum",
+      "kategori": "${kategori}",
       "channelRef": "Framework Murni",
       "penjelasan": "Uraian fakta otentik.",
       "skor": { "total": 48 },
