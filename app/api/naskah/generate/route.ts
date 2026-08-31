@@ -9,6 +9,12 @@ export const dynamic = "force-dynamic";
 
 const MAIN_MODEL = "gemini-3.6-flash";
 
+/**
+ * ============================================================
+ * GEMINI REQUEST
+ * ============================================================
+ */
+
 async function requestGoogleGemini(
   apiKey: string,
   userPrompt: string,
@@ -18,13 +24,22 @@ async function requestGoogleGemini(
     `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: userPrompt }],
+          },
+        ],
+        systemInstruction: {
+          parts: [{ text: systemPrompt }],
+        },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.75,
+          temperature: 0.7,
         },
       }),
     }
@@ -34,14 +49,23 @@ async function requestGoogleGemini(
 
   if (!response.ok) {
     let errorDetail = rawText;
+
     try {
       const errJson = JSON.parse(rawText);
       errorDetail = errJson.error?.message || rawText;
     } catch {}
+
     throw new Error(`[${response.status}] ${errorDetail}`);
   }
 
-  const json = JSON.parse(rawText);
+  let json: any;
+
+  try {
+    json = JSON.parse(rawText);
+  } catch {
+    throw new Error("Respons Gemini bukan JSON valid.");
+  }
+
   return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 }
 
@@ -55,14 +79,30 @@ async function callGeminiApi(
   });
 }
 
-// Timeout helper mandiri untuk Tavily agar aman dari batas Vercel
-async function fetchTavilyFast(query: string, timeoutMs = 4500): Promise<string> {
+/**
+ * ============================================================
+ * TAVILY
+ * ============================================================
+ *
+ * Tavily tetap menjadi sumber riset real-time.
+ *
+ * Gemini TIDAK menganggap hasil Tavily sebagai naskah.
+ * Hasil Tavily hanya menjadi bahan riset untuk dianalisis.
+ */
+
+async function fetchTavilyFast(
+  query: string,
+  timeoutMs = 4500
+): Promise<string> {
   if (!query || !query.trim()) return "";
+
   try {
     const tavilyPromise = fetchTavilySearchResults(query);
+
     const timeoutPromise = new Promise<string>((_, reject) =>
       setTimeout(() => reject(new Error("Tavily timeout")), timeoutMs)
     );
+
     return await Promise.race([tavilyPromise, timeoutPromise]);
   } catch (e) {
     console.warn("[Naskah] Tavily search fallback:", e);
@@ -70,15 +110,60 @@ async function fetchTavilyFast(query: string, timeoutMs = 4500): Promise<string>
   }
 }
 
+/**
+ * ============================================================
+ * UTILITIES
+ * ============================================================
+ */
+
+function countWords(text: string): number {
+  if (!text || !text.trim()) return 0;
+
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .length;
+}
+
+function extractTargetWordRange(
+  targetPanjang: string
+): { min: number; max: number } {
+  const match = targetPanjang.match(/(\d+)\s*-\s*(\d+)\s*kata/i);
+
+  if (match) {
+    return {
+      min: Number(match[1]),
+      max: Number(match[2]),
+    };
+  }
+
+  // Default produksi Shorts
+  return {
+    min: 130,
+    max: 160,
+  };
+}
+
+/**
+ * ============================================================
+ * POST
+ * ============================================================
+ */
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServerClient();
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Belum login" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Belum login" },
+        { status: 401 }
+      );
     }
 
     const {
@@ -98,11 +183,23 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanJudul = judulTopik.trim();
+
     const escapedJudul = cleanJudul.replace(/"/g, "'");
+
+    const {
+      min: minWords,
+      max: maxWords,
+    } = extractTargetWordRange(targetPanjang);
+
+    /**
+     * ========================================================
+     * 1. RESOLVE REFERENCE PROFILE
+     * ========================================================
+     */
 
     let targetProfileId = referenceProfileId;
 
-    // Safety fallback: jika dipanggil dari topik lama dan ID belum terpilih di UI
+    // Safety fallback untuk topik lama.
     if (!targetProfileId && topikId) {
       const { data: topikRow } = await supabase
         .from("topik")
@@ -111,12 +208,18 @@ export async function POST(req: NextRequest) {
         .single();
 
       if (topikRow?.catatan) {
-        const matches = Array.from(topikRow.catatan.matchAll(/\[(.*?)\]/g)).map((m: any) =>
-          m[1] ? String(m[1]).trim() : ""
-        ).filter(Boolean);
+        const matches = Array.from(
+          topikRow.catatan.matchAll(/\[(.*?)\]/g)
+        )
+          .map((m: any) =>
+            m[1] ? String(m[1]).trim() : ""
+          )
+          .filter(Boolean);
 
         if (matches.length > 0) {
-          const candidateName = matches.length >= 2 ? matches[1] : matches[0];
+          const candidateName =
+            matches.length >= 2 ? matches[1] : matches[0];
+
           const { data: foundProfile } = await supabase
             .from("channel_analysis")
             .select("id")
@@ -131,8 +234,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 1. Eksekusi paralel Supabase & Riset Fakta Real-Time Tavily
-    const tavilyQuery = `kronologi fakta detail sejarah nyata asal usul ${cleanJudul}`;
+    /**
+     * ========================================================
+     * 2. RESEARCH QUERY
+     * ========================================================
+     *
+     * Jangan hanya meminta "fakta sejarah".
+     *
+     * Kita meminta:
+     * - asal-usul
+     * - kronologi
+     * - konteks
+     * - bukti
+     * - istilah
+     * - perubahan
+     *
+     * Tavily tetap menjadi sumber real-time.
+     */
+
+    const tavilyQuery = [
+      `"${cleanJudul}"`,
+      "history",
+      "origin",
+      "historical facts",
+      "timeline",
+      "primary source",
+      "reliable source",
+    ].join(" ");
+
+    /**
+     * ========================================================
+     * 3. FETCH PROFILE + TAVILY SECARA PARALEL
+     * ========================================================
+     */
 
     const [profileRes, tavilyRes] = await Promise.all([
       targetProfileId
@@ -141,134 +275,587 @@ export async function POST(req: NextRequest) {
             .select("*, channel_analysis_entries(*)")
             .eq("id", targetProfileId)
             .single()
-        : Promise.resolve({ data: null, error: null }),
+        : Promise.resolve({
+            data: null,
+            error: null,
+          }),
+
       fetchTavilyFast(tavilyQuery, 4500),
     ]);
+
+    /**
+     * ========================================================
+     * 4. BUILD STYLE DNA
+     * ========================================================
+     */
 
     let isProfileMode = false;
     let channelName = "Framework Murni";
     let referenceContextText = "";
     let styleDnaMissing = false;
 
-    // 2. Susun konteks referensi dari DNA Gaya (hasil analisis terstruktur dari SEMUA entri naskah).
-    //    DNA Gaya jadi SATU-SATUNYA acuan gaya saat generate -- karena sudah representasi lengkap dari
-    //    seluruh naskah referensi (bukan cuma sebagian), dan berupa pola eksplisit yang mudah diikuti AI.
-    //    Naskah mentah sengaja TIDAK disertakan lagi di tahap ini, supaya AI tidak "tertarik" ke isi
-    //    cerita/topik spesifik dari contoh lama dan benar-benar fokus meniru pola gayanya saja.
-    if (profileRes.data && profileRes.data.channel_analysis_entries?.length > 0) {
+    if (
+      profileRes.data &&
+      profileRes.data.channel_analysis_entries?.length > 0
+    ) {
       isProfileMode = true;
-      channelName = profileRes.data.profile_name || "Referensi";
 
-      const entries = profileRes.data.channel_analysis_entries;
+      channelName =
+        profileRes.data.profile_name || "Referensi";
+
+      const entries =
+        profileRes.data.channel_analysis_entries;
+
       const styleDna = profileRes.data.style_dna;
-      const dnaEntryCount = profileRes.data.style_dna_entry_count || 0;
 
-      if (styleDna && dnaEntryCount === entries.length) {
-        // DNA Gaya tersedia dan up-to-date (jumlah entri sama seperti saat dianalisis)
+      const dnaEntryCount =
+        profileRes.data.style_dna_entry_count || 0;
+
+      if (
+        styleDna &&
+        dnaEntryCount === entries.length
+      ) {
         const dnaBlock = `
-=== DNA GAYA CHANNEL "${channelName}" (HASIL ANALISIS POLA DARI ${entries.length} NASKAH REFERENSI - SATU-SATUNYA ACUAN GAYA) ===
-1. POLA HOOK PEMBUKA: ${styleDna.hookPattern || "-"}
-2. STRUKTUR BEAT NASKAH: ${(styleDna.strukturBeat || []).map((s: string, i: number) => `${i + 1}) ${s}`).join(" -> ") || "-"}
-3. GAYA BAHASA: ${styleDna.gayaBahasa || "-"}
-4. DIKSI/FRASA KHAS YANG SERING DIPAKAI: ${(styleDna.diksiKhas || []).join(", ") || "-"}
-5. TEKNIK TRANSISI ANTAR KALIMAT: ${styleDna.teknikTransisi || "-"}
-6. POLA PENUTUP: ${styleDna.closingPattern || "-"}
-7. RITME & PANJANG KALIMAT: ${styleDna.panjangKalimatRataRata || "-"}
-8. HAL YANG WAJIB DIHINDARI (channel ini TIDAK PERNAH pakai pola ini): ${(styleDna.halYangDihindari || []).join("; ") || "-"}
-9. RINGKASAN KARAKTER PENULISAN: ${styleDna.ringkasanKarakter || "-"}`;
+=== DNA GAYA CHANNEL "${channelName}" ===
 
-        referenceContextText = `\n\n${dnaBlock}`;
+DNA ini adalah hasil analisis pola penulisan dari ${entries.length} naskah referensi.
+
+1. POLA HOOK PEMBUKA:
+${styleDna.hookPattern || "-"}
+
+2. STRUKTUR BEAT NASKAH:
+${
+  (styleDna.strukturBeat || [])
+    .map(
+      (s: string, i: number) =>
+        `${i + 1}) ${s}`
+    )
+    .join(" -> ") || "-"
+}
+
+3. GAYA BAHASA:
+${styleDna.gayaBahasa || "-"}
+
+4. DIKSI / FRASA KHAS:
+${(styleDna.diksiKhas || []).join(", ") || "-"}
+
+5. TEKNIK TRANSISI:
+${styleDna.teknikTransisi || "-"}
+
+6. POLA PENUTUP:
+${styleDna.closingPattern || "-"}
+
+7. RITME & PANJANG KALIMAT:
+${styleDna.panjangKalimatRataRata || "-"}
+
+8. HAL YANG WAJIB DIHINDARI:
+${
+  (styleDna.halYangDihindari || [])
+    .join("; ") || "-"
+}
+
+9. RINGKASAN KARAKTER PENULISAN:
+${styleDna.ringkasanKarakter || "-"}
+`;
+
+        referenceContextText = `\n${dnaBlock}\n`;
       } else {
-        // DNA Gaya belum ada / sudah usang -> fallback ke naskah mentah seperti sebelumnya,
-        // tapi beri tanda supaya frontend bisa menyarankan user menjalankan analisis DNA dulu.
+        /**
+         * Fallback tetap dipertahankan.
+         *
+         * Namun sekarang naskah referensi diposisikan sebagai
+         * bahan observasi gaya, BUKAN sumber isi cerita.
+         */
+
         styleDnaMissing = true;
 
         const samples = entries
           .map((e: any, idx: number) => {
-            const entryTitle = e.title || e.video_title || e.judul || `Video Asli ${idx + 1}`;
+            const entryTitle =
+              e.title ||
+              e.video_title ||
+              e.judul ||
+              `Video Referensi ${idx + 1}`;
+
             const fullScript =
-              e.full_script || e.script || e.naskah || e.transcript || e.content || "";
-            return `--- CONTOH NASKAH ASLI YOUTUBE ${idx + 1} (${channelName}) ---\nJudul Asli: "${entryTitle}"\nNaskah Utuh:\n${fullScript}`;
+              e.full_script ||
+              e.script ||
+              e.naskah ||
+              e.transcript ||
+              e.content ||
+              "";
+
+            return `
+--- NASKAH REFERENSI ${idx + 1} ---
+Judul: "${entryTitle}"
+
+Naskah:
+${fullScript}
+`;
           })
           .join("\n\n====================\n\n");
 
-        referenceContextText = `\n\n=== CETAK BIRU NASKAH ASLI YOUTUBE DARI CHANNEL "${channelName}" (ACUAN GAYA & RITME MUTLAK) ===\n${samples}`;
+        referenceContextText = `
+=== REFERENSI GAYA CHANNEL "${channelName}" ===
+
+Gunakan materi berikut HANYA untuk memahami:
+- ritme
+- struktur
+- cara membuka cerita
+- cara melakukan transisi
+- cara memberikan payoff
+- karakter bahasa
+
+JANGAN mengambil fakta, cerita, tokoh, atau kejadian dari naskah referensi
+untuk dimasukkan ke topik baru.
+
+${samples}
+`;
       }
     }
 
-    // 3. Konteks Fakta Real-Time Tavily
+    /**
+     * ========================================================
+     * 5. TAVILY RESEARCH CONTEXT
+     * ========================================================
+     */
+
     const tavilyContext = tavilyRes
-      ? `\n\n[FAKTA SEJARAH OTENTIK HASIL RISET WEB REAL-TIME]:\n${tavilyRes}\n\n(Gunakan fakta di atas sebagai bahan isi cerita: kronologi, tahun, tokoh, dan fakta peristiwa).`
-      : "";
+      ? `
+=== HASIL RISET WEB REAL-TIME TAVILY ===
 
-    // 4. System Prompt & Persona Cloning Engine
-    const systemPrompt = isProfileMode
-      ? `Kamu adalah Penulis Naskah dan Narator Persona Resmi dari channel YouTube "${channelName}".
-TUGAS UTAMA:
-Tulis naskah YouTube Shorts berdurasi 45-60 detik (130-160 kata) untuk topik baru: "${escapedJudul}".
-Naskah ini HARUS terasa 100% seperti ditulis oleh orang yang sama yang membuat naskah-naskah asli channel "${channelName}".
+Gunakan data ini sebagai BAHAN RISET, bukan sebagai naskah.
 
-CARA KERJA WAJIB:
-Bagian "DNA GAYA CHANNEL" di bawah adalah hasil bedah pola gaya penulisan channel ini secara eksplisit -
-JADIKAN INI SEBAGAI ACUAN UTAMA DAN MUTLAK. Ikuti PERSIS poin per poin di dalamnya: setiap butir
-(pola hook, struktur beat, gaya bahasa, diksi khas, transisi, penutup, ritme kalimat, hal yang dihindari)
-adalah instruksi konkret, bukan deskripsi umum. DNA ini sudah merangkum pola dari SELURUH naskah referensi
-channel ini, jadi jangan tambahkan gaya lain di luar yang tertulis di DNA ini.
+Tugas AI:
+- identifikasi fakta
+- identifikasi kronologi
+- identifikasi fakta paling kuat
+- buang informasi yang tidak relevan
+- jangan mengarang fakta yang tidak terdapat dalam riset
+- jika terdapat konflik informasi, jangan menyatukan dua versi secara sembarangan
 
-INSTRUKSI TAMBAHAN:
-1. HOOK PEMBUKA (0-5s): Ikuti persis "POLA HOOK PEMBUKA" dari DNA Gaya. DILARANG menggunakan pertanyaan klise AI seperti "Tahukah kamu", "Pernahkah kamu membayangkan", kecuali itu memang pola asli channel ini.
-2. INTEGRASI FAKTA: Ambil fakta peristiwa dari data riset web Tavily terlampir, lalu ceritakan ulang mengikuti "GAYA BAHASA" dan "RITME & PANJANG KALIMAT" dari DNA Gaya.
-3. HAL YANG DIHINDARI: Baca poin "HAL YANG WAJIB DIHINDARI" di DNA Gaya dan pastikan tidak satupun pola itu muncul di naskah barumu.
-4. PANJANG KATA: WAJIB berkisar antara 130 hingga 160 kata (pas untuk durasi voiceover 45-60 detik).
-5. FORMAT NASKAH: Narasi suara/voiceover murni. DILARANG menyisipkan tanda kurung adegan visual seperti [Visual:], [Scene:], [Music:], dsb.
+HASIL TAVILY:
+${tavilyRes}
+`
+      : `
+=== RISET WEB ===
 
-FORMAT JSON OUTPUT PERSIS:
+Tavily tidak memberikan hasil yang dapat digunakan.
+
+Jangan mengarang fakta spesifik hanya untuk mengisi kekosongan.
+Gunakan pengetahuan internal hanya untuk fakta yang benar-benar diketahui
+dengan tingkat keyakinan tinggi.
+`;
+
+    /**
+     * ========================================================
+     * 6. SYSTEM PROMPT
+     * ========================================================
+     *
+     * Ini bagian paling penting yang diubah.
+     *
+     * Gemini tidak langsung "menulis".
+     *
+     * Gemini harus menjalankan pipeline editorial internal:
+     *
+     * RESEARCH
+     * -> FACT SELECTION
+     * -> STORY ARCHITECTURE
+     * -> SCRIPT
+     * -> QC
+     */
+
+    const systemPrompt = `
+Kamu adalah **Senior History Shorts Scriptwriter, Story Editor,
+Fact Checker, dan Narrative Director** untuk channel "${channelName}".
+
+Tugasmu bukan sekadar menghasilkan teks 130-160 kata.
+
+Tugasmu adalah mengubah bahan riset sejarah menjadi cerita pendek
+yang terasa natural, menarik, padat, akurat, dan memiliki alur.
+
+============================================================
+PRINSIP UTAMA
+============================================================
+
+Prioritasmu harus selalu:
+
+1. Kebenaran fakta
+2. Kualitas cerita
+3. Kejelasan
+4. Hook
+5. Escalation
+6. Payoff
+7. Ritme
+8. Efisiensi kata
+
+JUMLAH KATA BUKAN TUJUAN UTAMA.
+
+Batas ${minWords}-${maxWords} kata adalah BATAS PRODUKSI.
+
+Jangan menambahkan kalimat filler hanya untuk mencapai jumlah kata.
+
+============================================================
+PIPELINE BERPIKIR WAJIB
+============================================================
+
+Sebelum menghasilkan output final, lakukan proses berikut
+SECARA INTERNAL:
+
+STEP 1 — UNDERSTAND THE TOPIC
+
+Pahami:
+- apa objek/peristiwa yang dibahas
+- apa yang membuatnya menarik
+- apa konflik atau keanehan utamanya
+- apa perubahan historis terpenting
+
+STEP 2 — FACT EXTRACTION
+
+Dari hasil Tavily:
+- identifikasi fakta utama
+- identifikasi tanggal/periode
+- identifikasi tempat
+- identifikasi tokoh jika relevan
+- identifikasi sebab-akibat
+- identifikasi perubahan dari masa lalu ke masa berikutnya
+
+Jangan memasukkan semua fakta.
+
+STEP 3 — FACT PRIORITIZATION
+
+Pilih hanya fakta yang benar-benar membantu cerita.
+
+Prioritaskan fakta yang:
+- mengejutkan
+- konkret
+- mudah dipahami
+- relevan dengan premis
+- membantu escalation
+- menghasilkan payoff
+
+Buang fakta yang hanya menambah informasi tetapi tidak memperkuat cerita.
+
+STEP 4 — STORY ARCHITECTURE
+
+Sebelum menulis, susun struktur:
+
+HOOK
+↓
+SETUP
+↓
+ESCALATION
+↓
+PAYOFF
+↓
+CLOSING
+
+HOOK:
+Langsung masuk ke kejadian, fakta, atau gambaran yang menarik.
+
+SETUP:
+Berikan konteks secukupnya.
+
+ESCALATION:
+Informasi harus berkembang.
+Jangan hanya menumpuk fakta.
+
+PAYOFF:
+Berikan fakta/konsekuensi yang paling kuat setelah buildup.
+
+CLOSING:
+Akhiri dengan kalimat yang terasa sebagai penyelesaian cerita.
+
+Jangan menambahkan closing generik hanya karena naskah harus memiliki ending.
+
+STEP 5 — WRITE
+
+Setelah struktur cerita jelas, baru tulis naskah.
+
+Naskah harus terasa seperti manusia sedang menceritakan sesuatu,
+bukan seperti ensiklopedia yang dipotong menjadi Shorts.
+
+============================================================
+ATURAN NASKAH WAJIB
+============================================================
+
+1. Tidak boleh menggunakan kalimat berbentuk pertanyaan.
+
+Termasuk:
+- pertanyaan langsung
+- pertanyaan retoris
+- "Tahukah kamu..."
+- "Pernahkah kamu..."
+- "Bisa dibayangkan?"
+- "Kenapa?"
+- "Bagaimana?"
+
+Jangan gunakan pertanyaan untuk membuat hook.
+
+2. Jangan menggunakan filler AI.
+
+Hindari pembukaan seperti:
+- "Tahukah kamu..."
+- "Pernahkah kamu membayangkan..."
+- "Hal ini mungkin terdengar..."
+- "Yang lebih mengejutkan..."
+- "Ternyata..."
+- "Pada zaman dahulu..."
+jika tidak benar-benar diperlukan oleh gaya channel.
+
+3. Jangan menulis seperti Wikipedia.
+
+Hindari pola:
+fakta A -> fakta B -> fakta C -> fakta D.
+
+Setiap informasi harus memiliki hubungan dengan cerita.
+
+4. Jangan memaksakan semua hasil Tavily masuk ke naskah.
+
+Tavily adalah sumber riset.
+
+Bukan checklist fakta.
+
+5. Jangan mengarang detail.
+
+Jangan menciptakan:
+- tanggal
+- nama
+- tempat
+- kutipan
+- kebiasaan
+- motif
+- statistik
+- asal-usul
+yang tidak didukung oleh informasi yang tersedia.
+
+6. Jangan mengulang fakta yang sama.
+
+7. Jangan menjelaskan sesuatu dua kali dengan kata berbeda.
+
+8. Jangan menggunakan bahasa terlalu akademis.
+
+9. Jangan menggunakan bahasa terlalu hiperbolis jika faktanya tidak mendukung.
+
+10. Humor boleh digunakan jika natural dan sesuai dengan fakta.
+
+11. Gunakan bahasa yang mudah divisualisasikan.
+
+12. Setiap kalimat harus mempunyai fungsi storytelling.
+
+============================================================
+VISUALIZABILITY RULE
+============================================================
+
+Naskah nantinya akan diproses oleh Visual Director.
+
+Karena itu, prioritaskan informasi yang dapat diterjemahkan menjadi visual konkret:
+
+- manusia
+- benda
+- tempat
+- tindakan
+- perubahan fisik
+- situasi
+- lingkungan
+- kontras masa lalu dan sekarang
+
+Namun JANGAN menulis instruksi visual seperti:
+
+[Scene]
+[Visual]
+[Camera]
+[Shot]
+
+Naskah tetap merupakan voiceover murni.
+
+============================================================
+STYLE DNA
+============================================================
+
+Jika DNA Gaya tersedia, gunakan DNA tersebut sebagai referensi
+gaya dan ritme.
+
+Namun:
+
+DNA Gaya TIDAK BOLEH mengalahkan:
+- fakta
+- storytelling
+- naturalness
+- clarity
+
+Jangan melakukan imitasi mekanis.
+
+Jangan menyalin struktur kalimat dari contoh secara literal.
+
+Yang ditiru adalah POLA, bukan kalimat.
+
+============================================================
+ENDING
+============================================================
+
+Ending harus menyelesaikan cerita.
+
+Pilih salah satu jika cocok:
+
+- payoff
+- historical consequence
+- ironic contrast
+- perubahan menuju kondisi modern
+- punchline natural
+
+Jangan memaksakan pertanyaan kepada penonton.
+
+Jangan menggunakan closing generik seperti:
+"Dan itulah sejarahnya."
+
+============================================================
+WORD COUNT
+============================================================
+
+Target:
+${minWords}-${maxWords} kata.
+
+Setelah menulis, hitung jumlah kata secara internal.
+
+Jika terlalu panjang:
+hapus informasi yang paling tidak penting.
+
+JANGAN memotong kalimat secara brutal.
+
+Jika terlalu pendek:
+tambahkan konteks yang benar-benar memperkuat cerita.
+
+JANGAN menambahkan filler.
+
+============================================================
+SELF-QC INTERNAL
+============================================================
+
+Sebelum memberikan output final, lakukan pemeriksaan internal:
+
+FACT CHECK
+- Apakah ada fakta yang tidak didukung?
+- Apakah kronologi masuk akal?
+- Apakah ada klaim yang terlalu absolut?
+
+STORY CHECK
+- Apakah hook menarik?
+- Apakah cerita berkembang?
+- Apakah ada escalation?
+- Apakah payoff terasa earned?
+- Apakah ending menyelesaikan cerita?
+
+LANGUAGE CHECK
+- Apakah terdengar natural?
+- Apakah ada kalimat terlalu panjang?
+- Apakah ada repetisi?
+- Apakah ada filler?
+
+QUESTION CHECK
+- Pastikan TIDAK ADA kalimat pertanyaan.
+
+WORD COUNT CHECK
+- Pastikan berada pada ${minWords}-${maxWords} kata.
+
+VISUAL CHECK
+- Apakah cerita mudah diterjemahkan menjadi visual?
+- Apakah setiap kalimat memiliki informasi yang berguna?
+
+Jika gagal pada salah satu pemeriksaan, revisi secara internal
+sebelum memberikan output.
+
+============================================================
+OUTPUT
+============================================================
+
+Kembalikan HANYA JSON valid:
+
 {
   "judul": "${escapedJudul}",
-  "isiNaskah": "Teks naskah voiceover utuh 130-160 kata dari awal hingga akhir...",
-  "hook": "Kalimat pembuka hook",
-  "ending": "Kalimat penutup",
+  "isiNaskah": "Naskah voiceover final.",
+  "hook": "Kalimat hook.",
+  "ending": "Kalimat ending.",
   "wordCount": 145,
   "estimasiDurasi": "50 detik"
-}`
-      : `Kamu adalah Scriptwriter YouTube Shorts profesional bertema curious history & fakta unik.
-TUGAS: Tulis naskah YouTube Shorts berdurasi ${targetPanjang} dengan nada suara "${tone}" untuk topik: "${escapedJudul}".
+}
 
-ATURAN:
-- Target kata 130-160 kata (45-60 detik).
-- Narasi suara/voiceover murni tanpa tanda kurung adegan visual.
-- Mengalir alami, memikat, dan akurat secara fakta.
+Jangan memasukkan:
+- story architecture
+- analisis
+- reasoning
+- catatan editor
+- sumber
+- komentar
+di dalam isiNaskah.
 
-FORMAT JSON OUTPUT PERSIS:
-{
-  "judul": "${escapedJudul}",
-  "isiNaskah": "Teks naskah voiceover utuh 130-160 kata...",
-  "hook": "Kalimat pembuka hook",
-  "ending": "Kalimat penutup",
-  "wordCount": 145,
-  "estimasiDurasi": "50 detik"
-}`;
+Semua itu harus digunakan secara INTERNAL sebelum menghasilkan naskah.
+`;
 
-    const userPrompt = isProfileMode
-      ? `${referenceContextText}
+    /**
+     * ========================================================
+     * 7. USER PROMPT
+     * ========================================================
+     */
+
+    const userPrompt = `
+TOPIK UTAMA:
+"${escapedJudul}"
+
+TONE:
+${tone}
+
+TARGET DURASI:
+${targetPanjang}
+
+TARGET JUMLAH KATA:
+${minWords}-${maxWords} kata
+
+${referenceContextText}
+
 ${tavilyContext}
 
-${catatanTopik ? `[Catatan Konteks]:\n${catatanTopik}\n` : ""}
-INSTRUKSI:
-Tulis naskah video YouTube Shorts baru untuk topik: "${escapedJudul}".
-Tiru 100% gaya bahasa, hook, ritme, dan karakter penceritaan sesuai DNA Gaya channel "${channelName}" di atas.
-Output murni format JSON valid.`
-      : `${tavilyContext}
-${catatanTopik ? `[Catatan Konteks]:\n${catatanTopik}\n` : ""}
-INSTRUKSI:
-Tulis naskah YouTube Shorts untuk topik: "${escapedJudul}" dengan tone "${tone}" dan durasi "${targetPanjang}".
-Output format JSON valid.`;
+${
+  catatanTopik
+    ? `
+=== CATATAN DARI TOPIK ===
+${catatanTopik}
+`
+    : ""
+}
+
+============================================================
+TUGAS
+============================================================
+
+Tulis naskah YouTube Shorts untuk topik:
+
+"${escapedJudul}"
+
+Jalankan seluruh pipeline editorial secara internal:
+
+Research
+→ Fact Selection
+→ Story Architecture
+→ Scriptwriting
+→ Self-QC
+
+Jangan menampilkan proses berpikir tersebut.
+
+Output hanya JSON valid sesuai schema yang diberikan.
+`;
 
     if (isProfileMode && styleDnaMissing) {
       console.warn(
-        `[Naskah] Profil "${channelName}" belum punya DNA Gaya yang up-to-date. Fallback ke naskah mentah. Sarankan user analisis ulang di Menu Referensi.`
+        `[Naskah] Profil "${channelName}" belum memiliki DNA Gaya yang up-to-date.`
       );
     }
+
+    /**
+     * ========================================================
+     * 8. GEMINI
+     * ========================================================
+     */
 
     const rawResponse = await callGeminiApi(
       supabase,
@@ -276,54 +863,171 @@ Output format JSON valid.`;
       systemPrompt
     );
 
+    /**
+     * ========================================================
+     * 9. PARSE JSON
+     * ========================================================
+     */
+
     const parsedData: any = parseJsonResponse(rawResponse, {
       judul: cleanJudul,
       isiNaskah: rawResponse,
+      hook: "",
+      ending: "",
+      wordCount: 0,
+      estimasiDurasi: "",
     });
 
-    const scriptText = (parsedData.isiNaskah || rawResponse || "").trim();
+    let scriptText = (
+      parsedData.isiNaskah ||
+      rawResponse ||
+      ""
+    ).trim();
+
+    /**
+     * ========================================================
+     * 10. BASIC OUTPUT CLEANUP
+     * ========================================================
+     *
+     * Jangan mengubah isi secara agresif.
+     * Hanya membersihkan kemungkinan formatting yang salah.
+     */
+
+    scriptText = scriptText
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
 
     if (!scriptText) {
       return NextResponse.json(
-        { error: "Gagal menghasilkan teks naskah dari AI" },
+        {
+          error:
+            "Gagal menghasilkan teks naskah dari AI",
+        },
         { status: 500 }
       );
     }
 
-    // 5. Simpan naskah baru ke database Supabase
-    const { data: newNaskah, error: insertErr } = await supabase
-      .from("naskah")
-      .insert({
-        user_id: user.id,
-        judul: cleanJudul,
-        isi_naskah: scriptText,
-        sumber_topik_id: topikId || null,
-        status: "draft",
-      })
-      .select()
-      .single();
+    /**
+     * ========================================================
+     * 11. WORD COUNT VERIFICATION
+     * ========================================================
+     *
+     * Kita tidak memaksa trimming otomatis karena trimming
+     * bisa merusak storytelling.
+     *
+     * Jika AI sedikit meleset, kita tetap menyimpan hasilnya,
+     * tetapi memberi metadata bahwa hasil perlu diperiksa.
+     */
+
+    const actualWordCount = countWords(scriptText);
+
+    const wordCountWithinTarget =
+      actualWordCount >= minWords &&
+      actualWordCount <= maxWords;
+
+    /**
+     * ========================================================
+     * 12. ESTIMATE DURATION
+     * ========================================================
+     *
+     * Estimasi kasar berdasarkan ~2.8 kata/detik.
+     */
+
+    const estimatedSeconds = Math.round(
+      actualWordCount / 2.8
+    );
+
+    const estimatedDuration =
+      `${estimatedSeconds} detik`;
+
+    /**
+     * ========================================================
+     * 13. SAVE TO SUPABASE
+     * ========================================================
+     */
+
+    const { data: newNaskah, error: insertErr } =
+      await supabase
+        .from("naskah")
+        .insert({
+          user_id: user.id,
+          judul: cleanJudul,
+          isi_naskah: scriptText,
+          sumber_topik_id: topikId || null,
+          status: "draft",
+        })
+        .select()
+        .single();
 
     if (insertErr) {
-      console.error("[Naskah DB Insert Error]:", insertErr);
+      console.error(
+        "[Naskah DB Insert Error]:",
+        insertErr
+      );
     }
 
+    /**
+     * ========================================================
+     * 14. FINAL RESPONSE
+     * ========================================================
+     */
+
     return NextResponse.json({
-      data: newNaskah || {
-        id: "temp-" + Date.now(),
-        judul: cleanJudul,
-        isi_naskah: scriptText,
-        sumber_topik_id: topikId || null,
-        status: "draft",
-        created_at: new Date().toISOString(),
+      data:
+        newNaskah || {
+          id: "temp-" + Date.now(),
+          judul: cleanJudul,
+          isi_naskah: scriptText,
+          sumber_topik_id: topikId || null,
+          status: "draft",
+          created_at:
+            new Date().toISOString(),
+        },
+
+      parsed: {
+        ...parsedData,
+
+        // Gunakan hasil hitungan aplikasi sebagai
+        // sumber kebenaran word count.
+        wordCount: actualWordCount,
+
+        estimasiDurasi:
+          parsedData.estimasiDurasi ||
+          estimatedDuration,
       },
-      parsed: parsedData,
-      styleDnaMissing: isProfileMode && styleDnaMissing,
-      channelName: isProfileMode ? channelName : null,
+
+      styleDnaMissing:
+        isProfileMode && styleDnaMissing,
+
+      channelName:
+        isProfileMode ? channelName : null,
+
+      research: {
+        tavilyUsed: Boolean(tavilyRes),
+      },
+
+      quality: {
+        wordCount: actualWordCount,
+        targetMin: minWords,
+        targetMax: maxWords,
+        withinTarget:
+          wordCountWithinTarget,
+      },
     });
   } catch (err: any) {
-    console.error("[Naskah API Error]:", err);
+    console.error(
+      "[Naskah API Error]:",
+      err
+    );
+
     return NextResponse.json(
-      { error: err.message || "Gagal membuat naskah" },
+      {
+        error:
+          err.message ||
+          "Gagal membuat naskah",
+      },
       { status: 500 }
     );
   }
