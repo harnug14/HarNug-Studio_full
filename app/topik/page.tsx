@@ -63,7 +63,7 @@ function getCleanNotes(catatan: string | null): string {
   return catatan.replace(/^(\[.*?\]\s*)+/, "").trim();
 }
 
-// 💡 EKSTRAKSI LABEL 4 KATEGORI UTAMA & NAMA CHANNEL
+// 💡 EKSTRAKSI LABEL KATEGORI & NAMA CHANNEL DINAMIS DARI SUPABASE
 function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef: string | null } {
   const rawCatatan = item.catatan || "";
   const bracketMatches = Array.from(rawCatatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
@@ -75,14 +75,10 @@ function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef
     kategori = bracketMatches[0];
     channelRef = bracketMatches[1];
   } else if (bracketMatches.length === 1) {
-    if (["dafiology", "jurnal kumal", "framework murni"].some((c) => bracketMatches[0].toLowerCase().includes(c))) {
-      channelRef = bracketMatches[0];
-    } else if (bracketMatches[0].toLowerCase() !== "umum" && bracketMatches[0].toLowerCase() !== "kisah nyata") {
-      kategori = bracketMatches[0];
-    }
+    kategori = bracketMatches[0];
   }
 
-  // 💡 AUTO-MAPPING 4 KATEGORI RESMI UNTUK SELURUH DATA LAMA
+  // 💡 AUTO-MAPPING KATEGORI JIKA KOSONG ATAU UMUM
   if (!kategori || kategori.toLowerCase() === "umum" || kategori.toLowerCase() === "kisah nyata") {
     const text = `${item.judul} ${rawCatatan}`.toLowerCase();
 
@@ -130,10 +126,6 @@ function extractBadgesFromNotes(item: TopikItem): { kategori: string; channelRef
     } else {
       kategori = "Tradisi & Perilaku";
     }
-  }
-
-  if (!channelRef) {
-    channelRef = "Dafiology";
   }
 
   return { kategori, channelRef };
@@ -332,10 +324,10 @@ export default function TopicPage() {
     try {
       const numericScore = getScoreNumber(candidate.skor);
       const explanation = getExplanationText(candidate);
-      
-      const channelRefName = candidate.channelRef || "Dafiology";
+
+      const channelRefName = candidate.channelRef || "Framework Murni";
       const categoryTag = candidate.kategori || "Asal-Usul Benda";
-      
+
       let notes = `[${categoryTag}] [${channelRefName}] Skor: ${numericScore}/50 | ${explanation}`;
       if (candidate.hookFormula) notes += `\nHook: ${candidate.hookFormula}`;
       if (candidate.retentionAngle) notes += `\nAngle: ${candidate.retentionAngle}`;
@@ -439,7 +431,7 @@ export default function TopicPage() {
 
   const filteredItems = items.filter((item) => {
     const hasNaskah = checkHasNaskah(item);
-    
+
     if (filterStatus === "PROCESSED" && !hasNaskah) return false;
     if (filterStatus === "UNPROCESSED" && hasNaskah) return false;
 
@@ -563,7 +555,7 @@ export default function TopicPage() {
             </div>
 
             <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
-              {generating ? <><span className="spinner" /> Meriset Fakta Dafiology & Viral Potential...</> : "Generate Ide Topik"}
+              {generating ? <><span className="spinner" /> Meriset Fakta & Analisis Viral Potential...</> : "Generate Ide Topik"}
             </button>
           </form>
 
@@ -633,10 +625,10 @@ export default function TopicPage() {
                 <div key={idx} className="glass-card-static" style={{ padding: 18 }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <div>
-                      {/* 💡 BADGE GANDA: KATEGORI BIRU + CHANNEL UNGU */}
+                      {/* BADGE GANDA: KATEGORI BIRU + CHANNEL UNGU */}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                         <span className="badge badge-neutral">Skor: {numericScore}/50</span>
-                        
+
                         {cand.kategori && (
                           <span
                             className="badge badge-neutral"
@@ -644,7 +636,7 @@ export default function TopicPage() {
                               color: "#38bdf8",
                               background: "rgba(56, 189, 248, 0.12)",
                               border: "1px solid rgba(56, 189, 248, 0.3)",
-                              fontWeight: 600
+                              fontWeight: 600,
                             }}
                           >
                             🏷️ {cand.kategori}
@@ -658,7 +650,7 @@ export default function TopicPage() {
                               color: "#c084fc",
                               background: "rgba(192, 132, 252, 0.12)",
                               border: "1px solid rgba(192, 132, 252, 0.3)",
-                              fontWeight: 600
+                              fontWeight: 600,
                             }}
                           >
                             📺 {cand.channelRef}
@@ -717,7 +709,7 @@ export default function TopicPage() {
                 border: "none",
                 cursor: "pointer",
                 background: filterStatus === "ALL" ? "#38bdf8" : "transparent",
-                color: filterStatus === "ALL" ? "#000" : "var(--text-secondary)"
+                color: filterStatus === "ALL" ? "#000" : "var(--text-secondary)",
               }}
             >
               Semua
@@ -736,7 +728,7 @@ export default function TopicPage() {
                 color: filterStatus === "UNPROCESSED" ? "#fff" : "var(--text-secondary)",
                 display: "flex",
                 alignItems: "center",
-                gap: 4
+                gap: 4,
               }}
             >
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#9ca3af", display: "inline-block" }} />
@@ -756,7 +748,7 @@ export default function TopicPage() {
                 color: filterStatus === "PROCESSED" ? "#4ade80" : "var(--text-secondary)",
                 display: "flex",
                 alignItems: "center",
-                gap: 4
+                gap: 4,
               }}
             >
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
@@ -768,7 +760,7 @@ export default function TopicPage() {
         <div>
           <input
             type="text"
-            placeholder="🔍 Cari judul topik, kata kunci, atau nama channel (misal: dasi, kulkas, dafiology)..."
+            placeholder="🔍 Cari judul topik, kata kunci, atau nama channel..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="input-field"
@@ -832,11 +824,11 @@ export default function TopicPage() {
                             borderRadius: "50%",
                             background: hasNaskah ? "#22c55e" : "#9ca3af",
                             boxShadow: hasNaskah ? "0 0 8px rgba(34, 197, 94, 0.6)" : "none",
-                            flexShrink: 0
+                            flexShrink: 0,
                           }}
                         />
 
-                        {/* 💡 BADGE KATEGORI BIRU */}
+                        {/* BADGE KATEGORI BIRU */}
                         <span
                           className="badge badge-neutral"
                           style={{
@@ -844,13 +836,13 @@ export default function TopicPage() {
                             background: "rgba(56, 189, 248, 0.12)",
                             border: "1px solid rgba(56, 189, 248, 0.3)",
                             fontSize: 10,
-                            fontWeight: 600
+                            fontWeight: 600,
                           }}
                         >
                           🏷️ {itemKategori}
                         </span>
 
-                        {/* 💡 BADGE CHANNEL UNGU */}
+                        {/* BADGE CHANNEL UNGU */}
                         {itemChannel && (
                           <span
                             className="badge badge-neutral"
@@ -859,7 +851,7 @@ export default function TopicPage() {
                               background: "rgba(192, 132, 252, 0.12)",
                               border: "1px solid rgba(192, 132, 252, 0.3)",
                               fontSize: 10,
-                              fontWeight: 600
+                              fontWeight: 600,
                             }}
                           >
                             📺 {itemChannel}
