@@ -42,7 +42,7 @@ function cleanTitle(text: string) {
   return cleaned.trim();
 }
 
-// 💡 DETEKTOR BADGE CHANNEL DINAMIS DARI SUPABASE
+// 💡 DETEKTOR BADGE CHANNEL 100% DINAMIS DARI DATABASE SUPABASE
 function getChannelBadge(
   naskah: Naskah,
   topikList: Topik[],
@@ -51,7 +51,9 @@ function getChannelBadge(
   if (naskah.sumber_topik_id) {
     const t = topikList.find((x) => x.id === naskah.sumber_topik_id);
     if (t && t.catatan) {
-      const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
+      const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m: any) =>
+        m[1] ? String(m[1]).trim() : ""
+      ).filter(Boolean);
 
       for (const m of matches) {
         const found = channelProfiles.find((p) => p.profile_name.toLowerCase() === m.toLowerCase());
@@ -180,22 +182,50 @@ function NaskahContent() {
     }
   }, [items]);
 
+  // 💡 AUTO-SYNC: Begitu data siap, sinkronkan referensi channel jika dibuka dari link Menu Topik
   useEffect(() => {
-    if (queryTopikId && queryJudul) {
-      setSelectedTopikId(queryTopikId);
-      setJudulTopik(cleanTitle(queryJudul));
+    const activeTopikId = selectedTopikId || queryTopikId;
+    if (activeTopikId && topikList.length > 0) {
+      const t = topikList.find((x) => x.id === activeTopikId);
+      if (t) {
+        setJudulTopik(cleanTitle(t.judul));
+        setCatatanTopik(t.catatan || "");
+
+        if (t.catatan && channelProfiles.length > 0) {
+          const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m: any) =>
+            m[1] ? String(m[1]).trim() : ""
+          ).filter(Boolean);
+
+          for (const m of matches) {
+            const matchedProfile = channelProfiles.find(
+              (p) => p.profile_name.toLowerCase() === m.toLowerCase()
+            );
+            if (matchedProfile) {
+              setReferenceProfileId(matchedProfile.id);
+              break;
+            }
+          }
+        }
+      }
     }
-  }, [queryTopikId, queryJudul]);
+  }, [queryTopikId, selectedTopikId, topikList, channelProfiles]);
 
   function handleSelectTopik(id: string) {
     setSelectedTopikId(id);
+    if (!id) {
+      return;
+    }
+
     const t = topikList.find((x) => x.id === id);
     if (t) {
       setJudulTopik(cleanTitle(t.judul));
       setCatatanTopik(t.catatan || "");
 
       if (t.catatan && channelProfiles.length > 0) {
-        const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m) => m[1].trim());
+        const matches = Array.from(t.catatan.matchAll(/\[(.*?)\]/g)).map((m: any) =>
+          m[1] ? String(m[1]).trim() : ""
+        ).filter(Boolean);
+
         for (const m of matches) {
           const matchedProfile = channelProfiles.find(
             (p) => p.profile_name.toLowerCase() === m.toLowerCase()
@@ -211,7 +241,7 @@ function NaskahContent() {
 
   async function handleGenerateScript(e: React.FormEvent) {
     e.preventDefault();
-    if (!judulTopik.trim()) return alert("Judul topik wajib diisi");
+    if (!judulTopik.trim()) return alert("Judul topik video wajib diisi");
 
     setGenerating(true);
     setGenError("");
@@ -387,7 +417,7 @@ function NaskahContent() {
                   onChange={(e) => handleSelectTopik(e.target.value)}
                   className="select-field"
                 >
-                  <option value="">-- Naskah Baru / Manual --</option>
+                  <option value="">-- Naskah Baru / Mandiri --</option>
                   {topikList.map((t) => {
                     const isGenerated = generatedTopikIds.has(t.id);
                     return (
@@ -405,7 +435,7 @@ function NaskahContent() {
                 </label>
                 <input
                   type="text"
-                  placeholder="Judul topik..."
+                  placeholder="Contoh: Sejarah Dasi, Asal-Usul Kulkas..."
                   value={judulTopik}
                   onChange={(e) => setJudulTopik(e.target.value)}
                   required
@@ -415,9 +445,9 @@ function NaskahContent() {
             </div>
 
             <div style={{ marginBottom: 14 }}>
-              <label className="form-label" style={{ marginBottom: 6 }}>Catatan / Konteks (Opsional)</label>
+              <label className="form-label" style={{ marginBottom: 6 }}>Catatan / Konteks Tambahan (Opsional)</label>
               <textarea
-                placeholder="Detail fakta atau konteks khusus..."
+                placeholder="Detail fakta atau konteks khusus yang ingin dimasukkan..."
                 value={catatanTopik}
                 onChange={(e) => setCatatanTopik(e.target.value)}
                 rows={2}
@@ -426,13 +456,13 @@ function NaskahContent() {
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label className="form-label" style={{ marginBottom: 6 }}>Referensi Channel</label>
+              <label className="form-label" style={{ marginBottom: 6 }}>Referensi Channel (Pilih Gaya Naskah)</label>
               <select
                 value={referenceProfileId}
                 onChange={(e) => setReferenceProfileId(e.target.value)}
                 className="select-field"
               >
-                <option value="">Tanpa Referensi</option>
+                <option value="">Tanpa Referensi (Framework Murni)</option>
                 {channelProfiles.map((prof) => (
                   <option key={prof.id} value={prof.id}>
                     {prof.profile_name}
@@ -477,7 +507,7 @@ function NaskahContent() {
             )}
 
             <button type="submit" disabled={generating} className="btn btn-primary" style={{ width: "100%" }}>
-              {generating ? <><span className="spinner" /> Menyusun Script Sesuai DNA Channel...</> : "Generate Script Draft"}
+              {generating ? <><span className="spinner" /> Menyusun Naskah Sesuai DNA Channel...</> : "Generate Script Draft"}
             </button>
           </form>
 
