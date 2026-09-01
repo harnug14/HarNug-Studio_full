@@ -12,6 +12,7 @@ const MAIN_MODEL = "gemini-3.6-flash";
 const REFERENCE_TEMPERATURE = 0.7; // mode referensi: konsisten meniru
 const GENERIC_TEMPERATURE = 0.85; // mode tanpa referensi: bebas
 const MAX_SAMPLE_CHARS = 20000; // batas aman total karakter naskah contoh yang dikirim
+const ANALYSIS_TIMEOUT_MS = 25000; // batas waktu penulis ringkasan, biar tidak 504
 
 async function requestGoogleGemini(
   apiKey: string,
@@ -59,6 +60,16 @@ async function callGeminiApi(
   return await callGeminiWithRotation(supabase, async (apiKey) => {
     return await requestGoogleGemini(apiKey, userPrompt, systemPrompt, temperature);
   });
+}
+
+// Batas waktu: kalau janji tidak selesai dalam X detik, anggap gagal (biar tidak 504)
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Waktu analisis habis")), ms)
+    ),
+  ]);
 }
 
 // Timeout helper mandiri untuk Tavily agar tidak membekukan proses serverless
@@ -158,8 +169,8 @@ export async function POST(req: NextRequest) {
     let styleDnaMissing = false;
     let dnaAutoAnalyzed = false;
 
-    // 2. Rangkai konteks referensi: DNA Gaya + CONTOH NASKAH ASLI dikirim bersamaan.
-    //    Jika DNA belum ada / basi → OTOMATIS dianalisis dulu di sini (tanpa tombol apa pun).
+    // 2. Rangkai konteks referensi: ringkasan gaya + CONTOH NASKAH ASLI dikirim bersamaan.
+    //    Jika ringkasan belum ada / ketinggalan zaman → ditulis otomatis di sini (dibatasi 25 detik).
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length > 0) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name || "Referensi";
@@ -174,11 +185,17 @@ export async function POST(req: NextRequest) {
       const dnaIsFresh = dnaHasContent && dnaEntryCount === entries.length;
 
       if (!dnaIsFresh) {
-        // AUTO-ANALISIS: tulis "catatan rasa" sekarang juga, simpan, lalu pakai.
+        // OTOMATIS tulis ringkasan sekarang, dengan batas waktu aman.
         try {
-          const entriesForAnalysis = entries.map((e: any) => getEntryField(e));
-          const freshDna = await callGeminiWithRotation(supabase, (apiKey) =>
-            analyzeStyleDna(entriesForAnalysis, apiKey, MAIN_MODEL)
+          const entriesForAnalysis = entries.map((e: any) => {
+            const f = getEntryField(e);
+            return { title: f.title, fullScript: f.fullScript.slice(0, 2000) };
+          });
+          const freshDna = await withTimeout(
+            callGeminiWithRotation(supabase, (apiKey) =>
+              analyzeStyleDna(entriesForAnalysis, apiKey, MAIN_MODEL)
+            ),
+            ANALYSIS_TIMEOUT_MS
           );
           await supabase
             .from("channel_analysis")
@@ -191,7 +208,7 @@ export async function POST(req: NextRequest) {
           styleDna = freshDna;
           dnaAutoAnalyzed = true;
         } catch (e) {
-          console.warn("[Topik] Auto-analisis DNA gagal, pakai mode naskah mentah:", e);
+          console.warn("[Topik] Ringkasan gaya tidak selesai tepat waktu, pakai mode naskah asli:", e);
           styleDnaMissing = true;
         }
       }
