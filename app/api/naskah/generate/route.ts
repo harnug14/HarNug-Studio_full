@@ -9,11 +9,41 @@ export const dynamic = "force-dynamic";
 
 const MAIN_MODEL = "gemini-3.6-flash";
 
-/**
- * ============================================================
- * GEMINI REQUEST
- * ============================================================
- */
+/* =========================================================
+   TYPES
+========================================================= */
+
+type FactStatus =
+  | "VERIFIED"
+  | "PROBABLE"
+  | "UNCERTAIN"
+  | "DISPUTED"
+  | "LEGEND"
+  | "UNSUPPORTED"
+  | "CONTRADICTED";
+
+interface VerifiedFact {
+  claim: string;
+  status: FactStatus;
+  confidence: number;
+  evidence: string;
+  usableInScript: boolean;
+  qualification?: string;
+}
+
+interface FactVerificationResult {
+  topic: string;
+  coreFacts: VerifiedFact[];
+  rejectedClaims: string[];
+  disputedClaims: string[];
+  unknowns: string[];
+  historicalContext: string;
+  safeNarrativeAngle: string;
+}
+
+/* =========================================================
+   GOOGLE GEMINI REQUEST
+========================================================= */
 
 async function requestGoogleGemini(
   apiKey: string,
@@ -39,7 +69,7 @@ async function requestGoogleGemini(
         },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.7,
+          temperature: 0.45,
         },
       }),
     }
@@ -58,16 +88,14 @@ async function requestGoogleGemini(
     throw new Error(`[${response.status}] ${errorDetail}`);
   }
 
-  let json: any;
-
-  try {
-    json = JSON.parse(rawText);
-  } catch {
-    throw new Error("Respons Gemini bukan JSON valid.");
-  }
+  const json = JSON.parse(rawText);
 
   return json.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 }
+
+/* =========================================================
+   GEMINI WRAPPER
+========================================================= */
 
 async function callGeminiApi(
   supabase: any,
@@ -75,20 +103,18 @@ async function callGeminiApi(
   systemPrompt: string
 ): Promise<string> {
   return await callGeminiWithRotation(supabase, async (apiKey) => {
-    return await requestGoogleGemini(apiKey, userPrompt, systemPrompt);
+    return await requestGoogleGemini(
+      apiKey,
+      userPrompt,
+      systemPrompt
+    );
   });
 }
 
-/**
- * ============================================================
- * TAVILY
- * ============================================================
- *
- * Tavily tetap menjadi sumber riset real-time.
- *
- * Gemini TIDAK menganggap hasil Tavily sebagai naskah.
- * Hasil Tavily hanya menjadi bahan riset untuk dianalisis.
- */
+/* =========================================================
+   TAVILY
+   Tavily = EVIDENCE SEARCH, BUKAN SUMBER KEBENARAN MUTLAK
+========================================================= */
 
 async function fetchTavilyFast(
   query: string,
@@ -100,56 +126,556 @@ async function fetchTavilyFast(
     const tavilyPromise = fetchTavilySearchResults(query);
 
     const timeoutPromise = new Promise<string>((_, reject) =>
-      setTimeout(() => reject(new Error("Tavily timeout")), timeoutMs)
+      setTimeout(
+        () => reject(new Error("Tavily timeout")),
+        timeoutMs
+      )
     );
 
-    return await Promise.race([tavilyPromise, timeoutPromise]);
+    return await Promise.race([
+      tavilyPromise,
+      timeoutPromise,
+    ]);
   } catch (e) {
     console.warn("[Naskah] Tavily search fallback:", e);
     return "";
   }
 }
 
-/**
- * ============================================================
- * UTILITIES
- * ============================================================
- */
+/* =========================================================
+   JSON SAFE PARSER
+========================================================= */
+
+function safeParseJson<T = any>(
+  raw: string,
+  fallback: T
+): T {
+  try {
+    return parseJsonResponse(raw, fallback) as T;
+  } catch {
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return fallback;
+    }
+  }
+}
+
+/* =========================================================
+   WORD COUNT
+========================================================= */
 
 function countWords(text: string): number {
-  if (!text || !text.trim()) return 0;
-
   return text
+    .replace(/\s+/g, " ")
     .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .length;
+    .split(" ")
+    .filter(Boolean).length;
 }
 
-function extractTargetWordRange(
-  targetPanjang: string
-): { min: number; max: number } {
-  const match = targetPanjang.match(/(\d+)\s*-\s*(\d+)\s*kata/i);
+/* =========================================================
+   CLEAN SCRIPT
+========================================================= */
 
-  if (match) {
-    return {
-      min: Number(match[1]),
-      max: Number(match[2]),
-    };
+function cleanScriptText(text: string): string {
+  return String(text || "")
+    .replace(/\[Visual:.*?\]/gi, "")
+    .replace(/\[Scene:.*?\]/gi, "")
+    .replace(/\[Music:.*?\]/gi, "")
+    .replace(/\[SFX:.*?\]/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/* =========================================================
+   FACT VERIFICATION ENGINE
+========================================================= */
+
+async function verifyResearchFacts(
+  supabase: any,
+  topic: string,
+  tavilyContext: string,
+  catatanTopik: string
+): Promise<FactVerificationResult> {
+  const verifierSystemPrompt = `
+Kamu adalah HISTORICAL FACT VERIFICATION ENGINE untuk produksi YouTube Shorts.
+
+TUGAS UTAMA:
+Menganalisis hasil pencarian web yang diberikan dan menentukan fakta mana yang
+benar-benar aman digunakan dalam naskah sejarah.
+
+PRINSIP PALING PENTING:
+
+1. HASIL TAVILY BUKAN FAKTA OTOMATIS.
+   Tavily hanya menyediakan bahan pencarian/evidence.
+   Jangan menganggap semua klaim di dalam hasil pencarian sebagai benar.
+
+2. JANGAN MENGISI KEKOSONGAN DENGAN PENGETAHUAN YANG TIDAK DIDUKUNG.
+   Jika bukti tidak cukup, tandai UNCERTAIN atau UNSUPPORTED.
+
+3. JANGAN MENGUBAH LEGENDA MENJADI FAKTA.
+   Jika sebuah cerita historis hanya berupa legenda, folklore, anecdote,
+   popular claim, atau etimologi yang diperdebatkan, jangan menyatakannya
+   sebagai fakta pasti.
+
+4. JANGAN MENGADA-ADA:
+   - angka
+   - tanggal
+   - nama tokoh
+   - ukuran
+   - berat
+   - mekanisme
+   - urutan kejadian
+   - kutipan
+   - efek medis
+   - sebab-akibat
+   - detail dramatis
+
+5. BEDAKAN:
+   VERIFIED
+   PROBABLE
+   UNCERTAIN
+   DISPUTED
+   LEGEND
+   UNSUPPORTED
+   CONTRADICTED
+
+6. VERIFIED hanya boleh diberikan jika evidence yang tersedia cukup kuat
+   untuk mendukung klaim tersebut.
+
+7. PROBABLE bukan berarti VERIFIED.
+   Klaim PROBABLE hanya boleh digunakan dalam naskah jika diberi
+   kualifikasi yang sesuai.
+
+8. Jika dua sumber bertentangan, jangan memilih salah satunya secara
+   sembarangan. Tandai DISPUTED dan jelaskan konflik tersebut.
+
+9. Jika sebuah detail menarik tetapi tidak memiliki dukungan yang cukup,
+   LEBIH BAIK DIBUANG daripada diisi dengan tebakan.
+
+10. Tujuan akhir bukan membuat cerita terdengar spektakuler.
+    Tujuan akhir adalah membuat cerita menarik TANPA MELAMPAUI BUKTI.
+
+OUTPUT HARUS JSON VALID SAJA.
+
+FORMAT:
+
+{
+  "topic": "...",
+  "coreFacts": [
+    {
+      "claim": "...",
+      "status": "VERIFIED",
+      "confidence": 0.95,
+      "evidence": "...",
+      "usableInScript": true,
+      "qualification": ""
+    }
+  ],
+  "rejectedClaims": [],
+  "disputedClaims": [],
+  "unknowns": [],
+  "historicalContext": "...",
+  "safeNarrativeAngle": "..."
+}
+
+CONFIDENCE:
+0.90-1.00 = bukti sangat kuat
+0.75-0.89 = cukup kuat tetapi tetap hati-hati
+0.50-0.74 = kemungkinan benar / evidence terbatas
+<0.50 = tidak aman sebagai fakta
+
+ATURAN USABLE:
+- VERIFIED dengan confidence >= 0.85 → true
+- VERIFIED < 0.85 → false
+- PROBABLE → false kecuali qualification sangat jelas
+- UNCERTAIN → false
+- DISPUTED → false
+- LEGEND → false
+- UNSUPPORTED → false
+- CONTRADICTED → false
+`;
+
+  const verifierUserPrompt = `
+TOPIK:
+${topic}
+
+CATATAN TOPIK:
+${catatanTopik || "-"}
+
+HASIL RISET TAVILY:
+${tavilyContext || "Tidak ada hasil riset yang tersedia."}
+
+ANALISIS BAHAN RISET DI ATAS.
+
+PENTING:
+Jangan menambahkan fakta dari ingatan hanya untuk membuat daftar fakta
+terlihat lengkap.
+
+Setiap claim yang dinyatakan VERIFIED harus memiliki dukungan yang terlihat
+dari bahan riset.
+
+Jika tidak ada bukti yang cukup, masukkan ke unknowns atau rejectedClaims.
+
+Output JSON valid saja.
+`;
+
+  const rawVerification = await callGeminiApi(
+    supabase,
+    verifierUserPrompt,
+    verifierSystemPrompt
+  );
+
+  const fallback: FactVerificationResult = {
+    topic,
+    coreFacts: [],
+    rejectedClaims: [],
+    disputedClaims: [],
+    unknowns: [
+      "Verifikasi fakta gagal menghasilkan data terstruktur."
+    ],
+    historicalContext: "",
+    safeNarrativeAngle:
+      "Jangan membuat klaim historis spesifik tanpa bukti.",
+  };
+
+  const parsed = safeParseJson<FactVerificationResult>(
+    rawVerification,
+    fallback
+  );
+
+  if (!parsed.coreFacts) {
+    parsed.coreFacts = [];
   }
 
-  // Default produksi Shorts
-  return {
-    min: 130,
-    max: 160,
-  };
+  return parsed;
 }
 
-/**
- * ============================================================
- * POST
- * ============================================================
- */
+/* =========================================================
+   BUILD APPROVED FACT BLOCK
+========================================================= */
+
+function buildApprovedFactBlock(
+  verification: FactVerificationResult
+): string {
+  const approved = (verification.coreFacts || []).filter(
+    (fact) =>
+      fact &&
+      fact.usableInScript === true &&
+      fact.status === "VERIFIED" &&
+      Number(fact.confidence || 0) >= 0.85
+  );
+
+  if (approved.length === 0) {
+    return `
+=== APPROVED FACTS ===
+TIDAK ADA FAKTA YANG MEMENUHI AMBANG VERIFIKASI.
+
+ATURAN:
+Jangan mengarang fakta historis untuk mengisi kekosongan.
+`;
+  }
+
+  return `
+=== APPROVED VERIFIED FACTS ===
+Hanya fakta di bawah ini yang boleh digunakan sebagai fakta pasti:
+
+${approved
+  .map(
+    (fact, index) =>
+      `${index + 1}. ${fact.claim}
+Evidence: ${fact.evidence}
+Confidence: ${fact.confidence}`
+  )
+  .join("\n\n")}
+
+=== HISTORICAL CONTEXT ===
+${verification.historicalContext || "-"}
+
+=== SAFE NARRATIVE ANGLE ===
+${verification.safeNarrativeAngle || "-"}
+
+=== CLAIMS THAT MUST NOT BE PRESENTED AS FACT ===
+${(verification.rejectedClaims || []).join("\n- ") || "-"}
+
+${(verification.disputedClaims || []).join("\n- ") || "-"}
+
+${(verification.unknowns || []).join("\n- ") || "-"}
+`;
+}
+
+/* =========================================================
+   STYLE DNA
+========================================================= */
+
+function buildStyleDnaBlock(
+  channelName: string,
+  styleDna: any,
+  entriesLength: number
+): string {
+  return `
+=== DNA GAYA CHANNEL "${channelName}" ===
+
+DNA ini HANYA digunakan untuk meniru:
+- struktur
+- ritme
+- gaya bahasa
+- pola hook
+- pola transisi
+- pola ending
+- karakter narasi
+
+DNA GAYA TIDAK BOLEH digunakan sebagai sumber fakta.
+
+1. POLA HOOK:
+${styleDna.hookPattern || "-"}
+
+2. STRUKTUR BEAT:
+${(styleDna.strukturBeat || [])
+  .map((s: string, i: number) => `${i + 1}) ${s}`)
+  .join(" -> ") || "-"}
+
+3. GAYA BAHASA:
+${styleDna.gayaBahasa || "-"}
+
+4. DIKSI / FRASA KHAS:
+${(styleDna.diksiKhas || []).join(", ") || "-"}
+
+5. TRANSISI:
+${styleDna.teknikTransisi || "-"}
+
+6. CLOSING:
+${styleDna.closingPattern || "-"}
+
+7. RITME:
+${styleDna.panjangKalimatRataRata || "-"}
+
+8. HAL YANG DIHINDARI:
+${(styleDna.halYangDihindari || []).join("; ") || "-"}
+
+9. KARAKTER PENULISAN:
+${styleDna.ringkasanKarakter || "-"}
+
+Jumlah naskah yang dianalisis: ${entriesLength}
+`;
+}
+
+/* =========================================================
+   SCRIPT GENERATOR
+========================================================= */
+
+async function generateScript(
+  supabase: any,
+  topic: string,
+  tone: string,
+  targetPanjang: string,
+  catatanTopik: string,
+  factBlock: string,
+  referenceContextText: string,
+  isProfileMode: boolean,
+  channelName: string
+): Promise<string> {
+  const systemPrompt = isProfileMode
+    ? `
+Kamu adalah PENULIS NASKAH RESMI channel YouTube "${channelName}".
+
+Tulis YouTube Shorts sejarah berdurasi 45-60 detik,
+sekitar 130-160 kata.
+
+DNA GAYA yang diberikan hanya untuk STYLE.
+APPROVED VERIFIED FACTS adalah satu-satunya sumber fakta.
+
+==================================================
+ATURAN FAKTA — ABSOLUT
+==================================================
+
+1. Jangan mengarang fakta.
+
+2. Jangan menambahkan angka, tanggal, nama, ukuran, berat,
+   mekanisme, tokoh, lokasi, atau detail sejarah yang tidak ada
+   dalam APPROVED VERIFIED FACTS.
+
+3. Jangan mengubah PROBABLE, UNCERTAIN, DISPUTED, LEGEND,
+   atau UNSUPPORTED menjadi fakta pasti.
+
+4. Jangan menggunakan "detail dramatis" hanya karena membuat cerita
+   lebih menarik jika detail tersebut tidak didukung.
+
+5. Jangan membuat hubungan sebab-akibat yang tidak dibuktikan.
+
+6. Jika sebuah bagian menarik tetapi tidak memiliki bukti cukup,
+   BUANG bagian tersebut.
+
+7. Fakta boleh disederhanakan untuk Shorts selama maknanya tidak berubah.
+
+8. Jika fakta memiliki qualification, pertahankan qualification tersebut
+   ketika diperlukan agar tidak menyesatkan.
+
+9. Jangan menyebut proses verifikasi, Tavily, AI, sumber, atau database
+   dalam naskah.
+
+==================================================
+ATURAN GAYA
+==================================================
+
+Ikuti DNA gaya channel secara ketat.
+
+Namun:
+FAKTA > GAYA.
+
+Jika gaya referensi bertentangan dengan fakta,
+fakta harus menang.
+
+==================================================
+ATURAN NASKAH
+==================================================
+
+- Voiceover murni.
+- Tidak ada [Visual].
+- Tidak ada [Scene].
+- Tidak ada [Music].
+- Tidak ada catatan produksi.
+- Tidak ada pertanyaan retoris.
+- Hindari pembukaan AI generik.
+- Narasi harus terasa seperti manusia bercerita.
+- Setiap kalimat harus memiliki fungsi.
+- Jangan mengulang informasi yang sama.
+- Jangan memanjangkan naskah dengan filler.
+- Target 130-160 kata.
+- Utamakan fakta yang paling menarik dan paling mudah divisualisasikan.
+
+FORMAT JSON PERSIS:
+
+{
+  "judul": "...",
+  "isiNaskah": "...",
+  "hook": "...",
+  "ending": "...",
+  "wordCount": 145,
+  "estimasiDurasi": "50 detik"
+}
+`
+    : `
+Kamu adalah SCRIPTWRITER YouTube Shorts profesional
+untuk konten curious history dan fakta unik.
+
+Tulis naskah 45-60 detik,
+sekitar 130-160 kata.
+
+==================================================
+ATURAN FAKTA — ABSOLUT
+==================================================
+
+APPROVED VERIFIED FACTS adalah sumber fakta utama.
+
+Jangan mengarang fakta untuk membuat cerita lebih menarik.
+
+Jangan menambahkan:
+- angka
+- tahun
+- nama
+- ukuran
+- berat
+- mekanisme
+- sebab-akibat
+- detail dramatis
+
+jika tidak ada dukungannya di APPROVED VERIFIED FACTS.
+
+Jangan mengubah:
+- PROBABLE
+- UNCERTAIN
+- DISPUTED
+- LEGEND
+- UNSUPPORTED
+
+menjadi fakta pasti.
+
+Jika informasi tidak cukup,
+lebih baik membuat cerita sedikit lebih sederhana
+daripada mengarang.
+
+==================================================
+ATURAN NASKAH
+==================================================
+
+- Voiceover murni.
+- Tidak ada [Visual].
+- Tidak ada [Scene].
+- Tidak ada [Music].
+- Tidak ada catatan produksi.
+- Tidak ada pertanyaan retoris.
+- Natural & antusias.
+- 130-160 kata.
+- Padat.
+- Tidak repetitif.
+- Jangan memakai filler untuk mengejar jumlah kata.
+
+FORMAT JSON PERSIS:
+
+{
+  "judul": "...",
+  "isiNaskah": "...",
+  "hook": "...",
+  "ending": "...",
+  "wordCount": 145,
+  "estimasiDurasi": "50 detik"
+}
+`;
+
+  const userPrompt = `
+TOPIK:
+${topic}
+
+TONE:
+${tone}
+
+TARGET PANJANG:
+${targetPanjang}
+
+CATATAN TOPIK:
+${catatanTopik || "-"}
+
+${referenceContextText}
+
+${factBlock}
+
+==================================================
+TUGAS
+==================================================
+
+Tulis satu naskah Shorts baru.
+
+Gunakan fakta VERIFIED sebagai fondasi cerita.
+
+Jangan memasukkan klaim yang berada di bagian
+"CLAIMS THAT MUST NOT BE PRESENTED AS FACT".
+
+Jika jumlah fakta yang tersedia terbatas,
+jangan mengarang fakta tambahan.
+
+Buat cerita tetap menarik melalui:
+- urutan penyampaian
+- pemilihan detail yang paling kuat
+- ritme
+- transisi
+- payoff
+
+bukan dengan menambahkan fakta fiktif.
+
+Output JSON valid saja.
+`;
+
+  return await callGeminiApi(
+    supabase,
+    userPrompt,
+    systemPrompt
+  );
+}
+
+/* =========================================================
+   MAIN POST
+========================================================= */
 
 export async function POST(req: NextRequest) {
   try {
@@ -183,23 +709,14 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanJudul = judulTopik.trim();
-
     const escapedJudul = cleanJudul.replace(/"/g, "'");
 
-    const {
-      min: minWords,
-      max: maxWords,
-    } = extractTargetWordRange(targetPanjang);
-
-    /**
-     * ========================================================
-     * 1. RESOLVE REFERENCE PROFILE
-     * ========================================================
-     */
+    /* =====================================================
+       1. RESOLVE REFERENCE PROFILE
+    ===================================================== */
 
     let targetProfileId = referenceProfileId;
 
-    // Safety fallback untuk topik lama.
     if (!targetProfileId && topikId) {
       const { data: topikRow } = await supabase
         .from("topik")
@@ -218,14 +735,17 @@ export async function POST(req: NextRequest) {
 
         if (matches.length > 0) {
           const candidateName =
-            matches.length >= 2 ? matches[1] : matches[0];
+            matches.length >= 2
+              ? matches[1]
+              : matches[0];
 
-          const { data: foundProfile } = await supabase
-            .from("channel_analysis")
-            .select("id")
-            .eq("user_id", user.id)
-            .ilike("profile_name", candidateName)
-            .maybeSingle();
+          const { data: foundProfile } =
+            await supabase
+              .from("channel_analysis")
+              .select("id")
+              .eq("user_id", user.id)
+              .ilike("profile_name", candidateName)
+              .maybeSingle();
 
           if (foundProfile) {
             targetProfileId = foundProfile.id;
@@ -234,60 +754,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    /**
-     * ========================================================
-     * 2. RESEARCH QUERY
-     * ========================================================
-     *
-     * Jangan hanya meminta "fakta sejarah".
-     *
-     * Kita meminta:
-     * - asal-usul
-     * - kronologi
-     * - konteks
-     * - bukti
-     * - istilah
-     * - perubahan
-     *
-     * Tavily tetap menjadi sumber real-time.
-     */
+    /* =====================================================
+       2. LOAD PROFILE + TAVILY
+    ===================================================== */
 
-    const tavilyQuery = [
-      `"${cleanJudul}"`,
-      "history",
-      "origin",
-      "historical facts",
-      "timeline",
-      "primary source",
-      "reliable source",
-    ].join(" ");
+    const tavilyQuery = `
+historical facts chronology origin development evidence
+"${cleanJudul}"
+`;
 
-    /**
-     * ========================================================
-     * 3. FETCH PROFILE + TAVILY SECARA PARALEL
-     * ========================================================
-     */
+    const [profileRes, tavilyRes] =
+      await Promise.all([
+        targetProfileId
+          ? supabase
+              .from("channel_analysis")
+              .select(
+                "*, channel_analysis_entries(*)"
+              )
+              .eq("id", targetProfileId)
+              .single()
+          : Promise.resolve({
+              data: null,
+              error: null,
+            }),
 
-    const [profileRes, tavilyRes] = await Promise.all([
-      targetProfileId
-        ? supabase
-            .from("channel_analysis")
-            .select("*, channel_analysis_entries(*)")
-            .eq("id", targetProfileId)
-            .single()
-        : Promise.resolve({
-            data: null,
-            error: null,
-          }),
+        fetchTavilyFast(
+          tavilyQuery,
+          4500
+        ),
+      ]);
 
-      fetchTavilyFast(tavilyQuery, 4500),
-    ]);
-
-    /**
-     * ========================================================
-     * 4. BUILD STYLE DNA
-     * ========================================================
-     */
+    /* =====================================================
+       3. BUILD STYLE CONTEXT
+    ===================================================== */
 
     let isProfileMode = false;
     let channelName = "Framework Murni";
@@ -301,12 +800,14 @@ export async function POST(req: NextRequest) {
       isProfileMode = true;
 
       channelName =
-        profileRes.data.profile_name || "Referensi";
+        profileRes.data.profile_name ||
+        "Referensi";
 
       const entries =
         profileRes.data.channel_analysis_entries;
 
-      const styleDna = profileRes.data.style_dna;
+      const styleDna =
+        profileRes.data.style_dna;
 
       const dnaEntryCount =
         profileRes.data.style_dna_entry_count || 0;
@@ -315,56 +816,18 @@ export async function POST(req: NextRequest) {
         styleDna &&
         dnaEntryCount === entries.length
       ) {
-        const dnaBlock = `
-=== DNA GAYA CHANNEL "${channelName}" ===
-
-DNA ini adalah hasil analisis pola penulisan dari ${entries.length} naskah referensi.
-
-1. POLA HOOK PEMBUKA:
-${styleDna.hookPattern || "-"}
-
-2. STRUKTUR BEAT NASKAH:
-${
-  (styleDna.strukturBeat || [])
-    .map(
-      (s: string, i: number) =>
-        `${i + 1}) ${s}`
-    )
-    .join(" -> ") || "-"
-}
-
-3. GAYA BAHASA:
-${styleDna.gayaBahasa || "-"}
-
-4. DIKSI / FRASA KHAS:
-${(styleDna.diksiKhas || []).join(", ") || "-"}
-
-5. TEKNIK TRANSISI:
-${styleDna.teknikTransisi || "-"}
-
-6. POLA PENUTUP:
-${styleDna.closingPattern || "-"}
-
-7. RITME & PANJANG KALIMAT:
-${styleDna.panjangKalimatRataRata || "-"}
-
-8. HAL YANG WAJIB DIHINDARI:
-${
-  (styleDna.halYangDihindari || [])
-    .join("; ") || "-"
-}
-
-9. RINGKASAN KARAKTER PENULISAN:
-${styleDna.ringkasanKarakter || "-"}
-`;
-
-        referenceContextText = `\n${dnaBlock}\n`;
+        referenceContextText =
+          buildStyleDnaBlock(
+            channelName,
+            styleDna,
+            entries.length
+          );
       } else {
-        /**
-         * Fallback tetap dipertahankan.
-         *
-         * Namun sekarang naskah referensi diposisikan sebagai
-         * bahan observasi gaya, BUKAN sumber isi cerita.
+        /*
+         * IMPORTANT:
+         * Fallback ini tetap mempertahankan behaviour lama.
+         * Namun naskah referensi hanya digunakan sebagai STYLE,
+         * bukan sumber fakta.
          */
 
         styleDnaMissing = true;
@@ -375,7 +838,7 @@ ${styleDna.ringkasanKarakter || "-"}
               e.title ||
               e.video_title ||
               e.judul ||
-              `Video Referensi ${idx + 1}`;
+              `Video Asli ${idx + 1}`;
 
             const fullScript =
               e.full_script ||
@@ -386,9 +849,8 @@ ${styleDna.ringkasanKarakter || "-"}
               "";
 
             return `
---- NASKAH REFERENSI ${idx + 1} ---
+--- CONTOH GAYA ${idx + 1} ---
 Judul: "${entryTitle}"
-
 Naskah:
 ${fullScript}
 `;
@@ -396,508 +858,115 @@ ${fullScript}
           .join("\n\n====================\n\n");
 
         referenceContextText = `
-=== REFERENSI GAYA CHANNEL "${channelName}" ===
+=== CONTOH GAYA CHANNEL "${channelName}" ===
 
-Gunakan materi berikut HANYA untuk memahami:
+CONTOH DI BAWAH HANYA BOLEH DIGUNAKAN UNTUK:
+- gaya bahasa
 - ritme
 - struktur
-- cara membuka cerita
-- cara melakukan transisi
-- cara memberikan payoff
-- karakter bahasa
+- hook
+- transisi
+- ending
 
-JANGAN mengambil fakta, cerita, tokoh, atau kejadian dari naskah referensi
-untuk dimasukkan ke topik baru.
+DILARANG menggunakan contoh ini sebagai sumber
+fakta sejarah untuk topik baru.
 
 ${samples}
 `;
       }
     }
 
-    /**
-     * ========================================================
-     * 5. TAVILY RESEARCH CONTEXT
-     * ========================================================
-     */
+    /* =====================================================
+       4. TAVILY EVIDENCE BLOCK
+    ===================================================== */
 
     const tavilyContext = tavilyRes
       ? `
-=== HASIL RISET WEB REAL-TIME TAVILY ===
+=== TAVILY WEB RESEARCH ===
 
-Gunakan data ini sebagai BAHAN RISET, bukan sebagai naskah.
+PERINGATAN:
+Data berikut adalah HASIL PENCARIAN WEB.
+Data ini BUKAN fakta terverifikasi.
 
-Tugas AI:
-- identifikasi fakta
-- identifikasi kronologi
-- identifikasi fakta paling kuat
-- buang informasi yang tidak relevan
-- jangan mengarang fakta yang tidak terdapat dalam riset
-- jika terdapat konflik informasi, jangan menyatukan dua versi secara sembarangan
+Gunakan hanya sebagai bahan evidence untuk proses
+FACT VERIFICATION.
 
-HASIL TAVILY:
 ${tavilyRes}
 `
       : `
-=== RISET WEB ===
+=== TAVILY WEB RESEARCH ===
 
-Tavily tidak memberikan hasil yang dapat digunakan.
-
-Jangan mengarang fakta spesifik hanya untuk mengisi kekosongan.
-Gunakan pengetahuan internal hanya untuk fakta yang benar-benar diketahui
-dengan tingkat keyakinan tinggi.
+Tidak ada hasil riset yang berhasil diperoleh.
+Jangan mengarang fakta sebagai pengganti.
 `;
 
-    /**
-     * ========================================================
-     * 6. SYSTEM PROMPT
-     * ========================================================
-     *
-     * Ini bagian paling penting yang diubah.
-     *
-     * Gemini tidak langsung "menulis".
-     *
-     * Gemini harus menjalankan pipeline editorial internal:
-     *
-     * RESEARCH
-     * -> FACT SELECTION
-     * -> STORY ARCHITECTURE
-     * -> SCRIPT
-     * -> QC
-     */
-
-    const systemPrompt = `
-Kamu adalah **Senior History Shorts Scriptwriter, Story Editor,
-Fact Checker, dan Narrative Director** untuk channel "${channelName}".
-
-Tugasmu bukan sekadar menghasilkan teks 130-160 kata.
-
-Tugasmu adalah mengubah bahan riset sejarah menjadi cerita pendek
-yang terasa natural, menarik, padat, akurat, dan memiliki alur.
-
-============================================================
-PRINSIP UTAMA
-============================================================
-
-Prioritasmu harus selalu:
-
-1. Kebenaran fakta
-2. Kualitas cerita
-3. Kejelasan
-4. Hook
-5. Escalation
-6. Payoff
-7. Ritme
-8. Efisiensi kata
-
-JUMLAH KATA BUKAN TUJUAN UTAMA.
-
-Batas ${minWords}-${maxWords} kata adalah BATAS PRODUKSI.
-
-Jangan menambahkan kalimat filler hanya untuk mencapai jumlah kata.
-
-============================================================
-PIPELINE BERPIKIR WAJIB
-============================================================
-
-Sebelum menghasilkan output final, lakukan proses berikut
-SECARA INTERNAL:
-
-STEP 1 — UNDERSTAND THE TOPIC
-
-Pahami:
-- apa objek/peristiwa yang dibahas
-- apa yang membuatnya menarik
-- apa konflik atau keanehan utamanya
-- apa perubahan historis terpenting
-
-STEP 2 — FACT EXTRACTION
-
-Dari hasil Tavily:
-- identifikasi fakta utama
-- identifikasi tanggal/periode
-- identifikasi tempat
-- identifikasi tokoh jika relevan
-- identifikasi sebab-akibat
-- identifikasi perubahan dari masa lalu ke masa berikutnya
-
-Jangan memasukkan semua fakta.
-
-STEP 3 — FACT PRIORITIZATION
-
-Pilih hanya fakta yang benar-benar membantu cerita.
-
-Prioritaskan fakta yang:
-- mengejutkan
-- konkret
-- mudah dipahami
-- relevan dengan premis
-- membantu escalation
-- menghasilkan payoff
-
-Buang fakta yang hanya menambah informasi tetapi tidak memperkuat cerita.
-
-STEP 4 — STORY ARCHITECTURE
-
-Sebelum menulis, susun struktur:
-
-HOOK
-↓
-SETUP
-↓
-ESCALATION
-↓
-PAYOFF
-↓
-CLOSING
-
-HOOK:
-Langsung masuk ke kejadian, fakta, atau gambaran yang menarik.
-
-SETUP:
-Berikan konteks secukupnya.
-
-ESCALATION:
-Informasi harus berkembang.
-Jangan hanya menumpuk fakta.
-
-PAYOFF:
-Berikan fakta/konsekuensi yang paling kuat setelah buildup.
-
-CLOSING:
-Akhiri dengan kalimat yang terasa sebagai penyelesaian cerita.
-
-Jangan menambahkan closing generik hanya karena naskah harus memiliki ending.
-
-STEP 5 — WRITE
-
-Setelah struktur cerita jelas, baru tulis naskah.
-
-Naskah harus terasa seperti manusia sedang menceritakan sesuatu,
-bukan seperti ensiklopedia yang dipotong menjadi Shorts.
-
-============================================================
-ATURAN NASKAH WAJIB
-============================================================
-
-1. Tidak boleh menggunakan kalimat berbentuk pertanyaan.
-
-Termasuk:
-- pertanyaan langsung
-- pertanyaan retoris
-- "Tahukah kamu..."
-- "Pernahkah kamu..."
-- "Bisa dibayangkan?"
-- "Kenapa?"
-- "Bagaimana?"
-
-Jangan gunakan pertanyaan untuk membuat hook.
-
-2. Jangan menggunakan filler AI.
-
-Hindari pembukaan seperti:
-- "Tahukah kamu..."
-- "Pernahkah kamu membayangkan..."
-- "Hal ini mungkin terdengar..."
-- "Yang lebih mengejutkan..."
-- "Ternyata..."
-- "Pada zaman dahulu..."
-jika tidak benar-benar diperlukan oleh gaya channel.
-
-3. Jangan menulis seperti Wikipedia.
-
-Hindari pola:
-fakta A -> fakta B -> fakta C -> fakta D.
-
-Setiap informasi harus memiliki hubungan dengan cerita.
-
-4. Jangan memaksakan semua hasil Tavily masuk ke naskah.
-
-Tavily adalah sumber riset.
-
-Bukan checklist fakta.
-
-5. Jangan mengarang detail.
-
-Jangan menciptakan:
-- tanggal
-- nama
-- tempat
-- kutipan
-- kebiasaan
-- motif
-- statistik
-- asal-usul
-yang tidak didukung oleh informasi yang tersedia.
-
-6. Jangan mengulang fakta yang sama.
-
-7. Jangan menjelaskan sesuatu dua kali dengan kata berbeda.
-
-8. Jangan menggunakan bahasa terlalu akademis.
-
-9. Jangan menggunakan bahasa terlalu hiperbolis jika faktanya tidak mendukung.
-
-10. Humor boleh digunakan jika natural dan sesuai dengan fakta.
-
-11. Gunakan bahasa yang mudah divisualisasikan.
-
-12. Setiap kalimat harus mempunyai fungsi storytelling.
-
-============================================================
-VISUALIZABILITY RULE
-============================================================
-
-Naskah nantinya akan diproses oleh Visual Director.
-
-Karena itu, prioritaskan informasi yang dapat diterjemahkan menjadi visual konkret:
-
-- manusia
-- benda
-- tempat
-- tindakan
-- perubahan fisik
-- situasi
-- lingkungan
-- kontras masa lalu dan sekarang
-
-Namun JANGAN menulis instruksi visual seperti:
-
-[Scene]
-[Visual]
-[Camera]
-[Shot]
-
-Naskah tetap merupakan voiceover murni.
-
-============================================================
-STYLE DNA
-============================================================
-
-Jika DNA Gaya tersedia, gunakan DNA tersebut sebagai referensi
-gaya dan ritme.
-
-Namun:
-
-DNA Gaya TIDAK BOLEH mengalahkan:
-- fakta
-- storytelling
-- naturalness
-- clarity
-
-Jangan melakukan imitasi mekanis.
-
-Jangan menyalin struktur kalimat dari contoh secara literal.
-
-Yang ditiru adalah POLA, bukan kalimat.
-
-============================================================
-ENDING
-============================================================
-
-Ending harus menyelesaikan cerita.
-
-Pilih salah satu jika cocok:
-
-- payoff
-- historical consequence
-- ironic contrast
-- perubahan menuju kondisi modern
-- punchline natural
-
-Jangan memaksakan pertanyaan kepada penonton.
-
-Jangan menggunakan closing generik seperti:
-"Dan itulah sejarahnya."
-
-============================================================
-WORD COUNT
-============================================================
-
-Target:
-${minWords}-${maxWords} kata.
-
-Setelah menulis, hitung jumlah kata secara internal.
-
-Jika terlalu panjang:
-hapus informasi yang paling tidak penting.
-
-JANGAN memotong kalimat secara brutal.
-
-Jika terlalu pendek:
-tambahkan konteks yang benar-benar memperkuat cerita.
-
-JANGAN menambahkan filler.
-
-============================================================
-SELF-QC INTERNAL
-============================================================
-
-Sebelum memberikan output final, lakukan pemeriksaan internal:
-
-FACT CHECK
-- Apakah ada fakta yang tidak didukung?
-- Apakah kronologi masuk akal?
-- Apakah ada klaim yang terlalu absolut?
-
-STORY CHECK
-- Apakah hook menarik?
-- Apakah cerita berkembang?
-- Apakah ada escalation?
-- Apakah payoff terasa earned?
-- Apakah ending menyelesaikan cerita?
-
-LANGUAGE CHECK
-- Apakah terdengar natural?
-- Apakah ada kalimat terlalu panjang?
-- Apakah ada repetisi?
-- Apakah ada filler?
-
-QUESTION CHECK
-- Pastikan TIDAK ADA kalimat pertanyaan.
-
-WORD COUNT CHECK
-- Pastikan berada pada ${minWords}-${maxWords} kata.
-
-VISUAL CHECK
-- Apakah cerita mudah diterjemahkan menjadi visual?
-- Apakah setiap kalimat memiliki informasi yang berguna?
-
-Jika gagal pada salah satu pemeriksaan, revisi secara internal
-sebelum memberikan output.
-
-============================================================
-OUTPUT
-============================================================
-
-Kembalikan HANYA JSON valid:
-
-{
-  "judul": "${escapedJudul}",
-  "isiNaskah": "Naskah voiceover final.",
-  "hook": "Kalimat hook.",
-  "ending": "Kalimat ending.",
-  "wordCount": 145,
-  "estimasiDurasi": "50 detik"
-}
-
-Jangan memasukkan:
-- story architecture
-- analisis
-- reasoning
-- catatan editor
-- sumber
-- komentar
-di dalam isiNaskah.
-
-Semua itu harus digunakan secara INTERNAL sebelum menghasilkan naskah.
-`;
-
-    /**
-     * ========================================================
-     * 7. USER PROMPT
-     * ========================================================
-     */
-
-    const userPrompt = `
-TOPIK UTAMA:
-"${escapedJudul}"
-
-TONE:
-${tone}
-
-TARGET DURASI:
-${targetPanjang}
-
-TARGET JUMLAH KATA:
-${minWords}-${maxWords} kata
-
-${referenceContextText}
-
-${tavilyContext}
-
-${
-  catatanTopik
-    ? `
-=== CATATAN DARI TOPIK ===
-${catatanTopik}
-`
-    : ""
-}
-
-============================================================
-TUGAS
-============================================================
-
-Tulis naskah YouTube Shorts untuk topik:
-
-"${escapedJudul}"
-
-Jalankan seluruh pipeline editorial secara internal:
-
-Research
-→ Fact Selection
-→ Story Architecture
-→ Scriptwriting
-→ Self-QC
-
-Jangan menampilkan proses berpikir tersebut.
-
-Output hanya JSON valid sesuai schema yang diberikan.
-`;
-
-    if (isProfileMode && styleDnaMissing) {
-      console.warn(
-        `[Naskah] Profil "${channelName}" belum memiliki DNA Gaya yang up-to-date.`
-      );
-    }
-
-    /**
-     * ========================================================
-     * 8. GEMINI
-     * ========================================================
-     */
-
-    const rawResponse = await callGeminiApi(
-      supabase,
-      userPrompt,
-      systemPrompt
+    /* =====================================================
+       5. FACT VERIFICATION
+    ===================================================== */
+
+    console.log(
+      `[Naskah] Memulai fact verification: ${cleanJudul}`
     );
 
-    /**
-     * ========================================================
-     * 9. PARSE JSON
-     * ========================================================
-     */
+    const verification =
+      await verifyResearchFacts(
+        supabase,
+        cleanJudul,
+        tavilyContext,
+        catatanTopik
+      );
 
-    const parsedData: any = parseJsonResponse(rawResponse, {
-      judul: cleanJudul,
-      isiNaskah: rawResponse,
-      hook: "",
-      ending: "",
-      wordCount: 0,
-      estimasiDurasi: "",
-    });
+    console.log(
+      `[Naskah] Fact verification selesai. Approved: ${
+        verification.coreFacts?.filter(
+          (f) =>
+            f.usableInScript &&
+            f.status === "VERIFIED" &&
+            Number(f.confidence) >= 0.85
+        ).length || 0
+      }`
+    );
 
-    let scriptText = (
+    const approvedFactBlock =
+      buildApprovedFactBlock(
+        verification
+      );
+
+    /* =====================================================
+       6. GENERATE SCRIPT FROM APPROVED FACTS ONLY
+    ===================================================== */
+
+    const rawResponse =
+      await generateScript(
+        supabase,
+        cleanJudul,
+        tone,
+        targetPanjang,
+        catatanTopik,
+        approvedFactBlock,
+        referenceContextText,
+        isProfileMode,
+        channelName
+      );
+
+    /* =====================================================
+       7. PARSE SCRIPT
+    ===================================================== */
+
+    const parsedData: any =
+      safeParseJson(
+        rawResponse,
+        {
+          judul: cleanJudul,
+          isiNaskah: rawResponse,
+        }
+      );
+
+    let scriptText = cleanScriptText(
       parsedData.isiNaskah ||
-      rawResponse ||
-      ""
-    ).trim();
-
-    /**
-     * ========================================================
-     * 10. BASIC OUTPUT CLEANUP
-     * ========================================================
-     *
-     * Jangan mengubah isi secara agresif.
-     * Hanya membersihkan kemungkinan formatting yang salah.
-     */
-
-    scriptText = scriptText
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
+        rawResponse ||
+        ""
+    );
 
     if (!scriptText) {
       return NextResponse.json(
@@ -909,44 +978,27 @@ Output hanya JSON valid sesuai schema yang diberikan.
       );
     }
 
-    /**
-     * ========================================================
-     * 11. WORD COUNT VERIFICATION
-     * ========================================================
-     *
-     * Kita tidak memaksa trimming otomatis karena trimming
-     * bisa merusak storytelling.
-     *
-     * Jika AI sedikit meleset, kita tetap menyimpan hasilnya,
-     * tetapi memberi metadata bahwa hasil perlu diperiksa.
+    /* =====================================================
+       8. WORD COUNT
+    ===================================================== */
+
+    const actualWordCount =
+      countWords(scriptText);
+
+    /*
+     * Jangan membuat ulang naskah hanya karena word count.
+     * Kita hanya mengembalikan jumlah kata aktual agar frontend
+     * tidak menampilkan angka palsu dari model.
      */
 
-    const actualWordCount = countWords(scriptText);
+    const estimatedSeconds =
+      Math.round(
+        (actualWordCount / 2.7)
+      );
 
-    const wordCountWithinTarget =
-      actualWordCount >= minWords &&
-      actualWordCount <= maxWords;
-
-    /**
-     * ========================================================
-     * 12. ESTIMATE DURATION
-     * ========================================================
-     *
-     * Estimasi kasar berdasarkan ~2.8 kata/detik.
-     */
-
-    const estimatedSeconds = Math.round(
-      actualWordCount / 2.8
-    );
-
-    const estimatedDuration =
-      `${estimatedSeconds} detik`;
-
-    /**
-     * ========================================================
-     * 13. SAVE TO SUPABASE
-     * ========================================================
-     */
+    /* =====================================================
+       9. SAVE TO SUPABASE
+    ===================================================== */
 
     const { data: newNaskah, error: insertErr } =
       await supabase
@@ -955,7 +1007,8 @@ Output hanya JSON valid sesuai schema yang diberikan.
           user_id: user.id,
           judul: cleanJudul,
           isi_naskah: scriptText,
-          sumber_topik_id: topikId || null,
+          sumber_topik_id:
+            topikId || null,
           status: "draft",
         })
         .select()
@@ -968,11 +1021,9 @@ Output hanya JSON valid sesuai schema yang diberikan.
       );
     }
 
-    /**
-     * ========================================================
-     * 14. FINAL RESPONSE
-     * ========================================================
-     */
+    /* =====================================================
+       10. RESPONSE
+    ===================================================== */
 
     return NextResponse.json({
       data:
@@ -980,7 +1031,8 @@ Output hanya JSON valid sesuai schema yang diberikan.
           id: "temp-" + Date.now(),
           judul: cleanJudul,
           isi_naskah: scriptText,
-          sumber_topik_id: topikId || null,
+          sumber_topik_id:
+            topikId || null,
           status: "draft",
           created_at:
             new Date().toISOString(),
@@ -988,33 +1040,56 @@ Output hanya JSON valid sesuai schema yang diberikan.
 
       parsed: {
         ...parsedData,
-
-        // Gunakan hasil hitungan aplikasi sebagai
-        // sumber kebenaran word count.
+        judul: cleanJudul,
+        isiNaskah: scriptText,
         wordCount: actualWordCount,
-
         estimasiDurasi:
-          parsedData.estimasiDurasi ||
-          estimatedDuration,
+          `${estimatedSeconds} detik`,
+      },
+
+      /* ===================================================
+         FACT VERIFICATION METADATA
+         Bisa digunakan frontend nanti untuk QC.
+      =================================================== */
+
+      factVerification: {
+        approvedFacts:
+          verification.coreFacts?.filter(
+            (fact) =>
+              fact.usableInScript === true &&
+              fact.status === "VERIFIED" &&
+              Number(fact.confidence) >= 0.85
+          ) || [],
+
+        rejectedClaims:
+          verification.rejectedClaims || [],
+
+        disputedClaims:
+          verification.disputedClaims || [],
+
+        unknowns:
+          verification.unknowns || [],
+
+        historicalContext:
+          verification.historicalContext || "",
+
+        safeNarrativeAngle:
+          verification.safeNarrativeAngle || "",
       },
 
       styleDnaMissing:
-        isProfileMode && styleDnaMissing,
+        isProfileMode &&
+        styleDnaMissing,
 
       channelName:
-        isProfileMode ? channelName : null,
+        isProfileMode
+          ? channelName
+          : null,
 
-      research: {
-        tavilyUsed: Boolean(tavilyRes),
-      },
+      researchUsed:
+        Boolean(tavilyRes),
 
-      quality: {
-        wordCount: actualWordCount,
-        targetMin: minWords,
-        targetMax: maxWords,
-        withinTarget:
-          wordCountWithinTarget,
-      },
+      factVerificationUsed: true,
     });
   } catch (err: any) {
     console.error(
@@ -1025,7 +1100,7 @@ Output hanya JSON valid sesuai schema yang diberikan.
     return NextResponse.json(
       {
         error:
-          err.message ||
+          err?.message ||
           "Gagal membuat naskah",
       },
       { status: 500 }
