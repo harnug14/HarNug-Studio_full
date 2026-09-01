@@ -3,16 +3,21 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 import { fetchTavilySearchResults } from "@/lib/tavily";
+import { analyzeStyleDna } from "@/lib/gemini/analyzeStyleDna";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const MAIN_MODEL = "gemini-3.6-flash";
+const REFERENCE_TEMPERATURE = 0.7; // mode referensi: konsisten meniru
+const GENERIC_TEMPERATURE = 0.85; // mode tanpa referensi: bebas
+const MAX_SAMPLE_CHARS = 20000; // batas aman total karakter naskah contoh yang dikirim
 
 async function requestGoogleGemini(
   apiKey: string,
   userPrompt: string,
-  systemPrompt: string
+  systemPrompt: string,
+  temperature: number
 ): Promise<string> {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
@@ -24,7 +29,7 @@ async function requestGoogleGemini(
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.85,
+          temperature,
         },
       }),
     }
@@ -48,10 +53,11 @@ async function requestGoogleGemini(
 async function callGeminiApi(
   supabase: any,
   userPrompt: string,
-  systemPrompt: string
+  systemPrompt: string,
+  temperature: number
 ): Promise<string> {
   return await callGeminiWithRotation(supabase, async (apiKey) => {
-    return await requestGoogleGemini(apiKey, userPrompt, systemPrompt);
+    return await requestGoogleGemini(apiKey, userPrompt, systemPrompt, temperature);
   });
 }
 
@@ -78,6 +84,28 @@ function normalizeText(str: string): string {
     .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// Ambil judul + naskah dari entri referensi (kompatibel dengan beberapa nama kolom)
+function getEntryField(e: any): { title: string; fullScript: string } {
+  return {
+    title: e?.title || e?.video_title || e?.judul || "",
+    fullScript: e?.full_script || e?.script || e?.naskah || e?.transcript || e?.content || "",
+  };
+}
+
+// Susun blok naskah contoh: SEMUA entri dikirim selama masih muat batas karakter
+function buildSamplesText(entries: any[]): string {
+  const parts: string[] = [];
+  let used = 0;
+  entries.forEach((e: any, idx: number) => {
+    const { title, fullScript } = getEntryField(e);
+    const block = `--- CONTOH NASKAH ASLI ${idx + 1} ---\nJudul: "${title || `Contoh ${idx + 1}`}"\nNaskah:\n${fullScript}\n`;
+    if (parts.length > 0 && used + block.length > MAX_SAMPLE_CHARS) return;
+    parts.push(block);
+    used += block.length;
+  });
+  return parts.join("\n");
 }
 
 export async function POST(req: NextRequest) {
@@ -128,48 +156,67 @@ export async function POST(req: NextRequest) {
     let referenceContextText = "";
     let sampleTitlesList: string[] = [];
     let styleDnaMissing = false;
+    let dnaAutoAnalyzed = false;
 
-    // 2. Rangkai konteks referensi dari Menu Referensi: DNA Gaya (pola eksplisit) sebagai acuan
-    //    utama, ditambah judul-judul asli untuk formula judul dan sebagai bahan anti-duplikasi.
+    // 2. Rangkai konteks referensi: DNA Gaya + CONTOH NASKAH ASLI dikirim bersamaan.
+    //    Jika DNA belum ada / basi → OTOMATIS dianalisis dulu di sini (tanpa tombol apa pun).
     if (profileRes.data && profileRes.data.channel_analysis_entries?.length > 0) {
       isProfileMode = true;
       channelName = profileRes.data.profile_name || "Referensi";
 
       const entries = profileRes.data.channel_analysis_entries;
-      const styleDna = profileRes.data.style_dna;
+      let styleDna = profileRes.data.style_dna;
       const dnaEntryCount = profileRes.data.style_dna_entry_count || 0;
 
-      sampleTitlesList = entries
-        .map((e: any) => e.title || e.video_title || e.judul || "")
-        .filter(Boolean);
+      sampleTitlesList = entries.map((e: any) => getEntryField(e).title).filter(Boolean);
 
-      if (styleDna && dnaEntryCount === entries.length) {
+      const dnaHasContent = styleDna && (styleDna.ringkasanKarakter || styleDna.hookPattern);
+      const dnaIsFresh = dnaHasContent && dnaEntryCount === entries.length;
+
+      if (!dnaIsFresh) {
+        // AUTO-ANALISIS: tulis "catatan rasa" sekarang juga, simpan, lalu pakai.
+        try {
+          const entriesForAnalysis = entries.map((e: any) => getEntryField(e));
+          const freshDna = await callGeminiWithRotation(supabase, (apiKey) =>
+            analyzeStyleDna(entriesForAnalysis, apiKey, MAIN_MODEL)
+          );
+          await supabase
+            .from("channel_analysis")
+            .update({
+              style_dna: freshDna,
+              style_dna_updated_at: new Date().toISOString(),
+              style_dna_entry_count: entries.length,
+            })
+            .eq("id", profileRes.data.id);
+          styleDna = freshDna;
+          dnaAutoAnalyzed = true;
+        } catch (e) {
+          console.warn("[Topik] Auto-analisis DNA gagal, pakai mode naskah mentah:", e);
+          styleDnaMissing = true;
+        }
+      }
+
+      const samplesText = buildSamplesText(entries);
+
+      if (!styleDnaMissing && styleDna) {
         const dnaBlock = `
 === DNA GAYA CHANNEL "${channelName}" (HASIL ANALISIS POLA - ACUAN UTAMA) ===
 1. POLA HOOK PEMBUKA: ${styleDna.hookPattern || "-"}
 2. STRUKTUR BEAT NASKAH: ${(styleDna.strukturBeat || []).map((s: string, i: number) => `${i + 1}) ${s}`).join(" -> ") || "-"}
 3. GAYA BAHASA: ${styleDna.gayaBahasa || "-"}
 4. DIKSI/FRASA KHAS: ${(styleDna.diksiKhas || []).join(", ") || "-"}
-5. RINGKASAN KARAKTER: ${styleDna.ringkasanKarakter || "-"}
-6. HAL YANG DIHINDARI: ${(styleDna.halYangDihindari || []).join("; ") || "-"}
+5. TEKNIK TRANSISI: ${styleDna.teknikTransisi || "-"}
+6. POLA PENUTUP: ${styleDna.closingPattern || "-"}
+7. RITME & PANJANG KALIMAT: ${styleDna.panjangKalimatRataRata || "-"}
+8. HAL YANG DIHINDARI: ${(styleDna.halYangDihindari || []).join("; ") || "-"}
+9. RINGKASAN KARAKTER: ${styleDna.ringkasanKarakter || "-"}
 
-=== CONTOH JUDUL ASLI CHANNEL "${channelName}" (untuk mempelajari formula judul) ===
-${sampleTitlesList.map((t, i) => `${i + 1}. ${t}`).join("\n")}`;
+WAJIB: setiap ide topik harus terasa seperti episode baru dari channel "${channelName}".
+Terapkan pola hook, sudut pandang, tema, dan karakter di atas secara konsisten.`;
 
-        referenceContextText = `\n\n${dnaBlock}`;
+        referenceContextText = `\n\n${dnaBlock}\n\n=== CONTOH NASKAH ASLI CHANNEL "${channelName}" (pelajari juga formula judulnya) ===\n${samplesText}`;
       } else {
-        styleDnaMissing = true;
-
-        const samples = entries
-          .map((e: any, idx: number) => {
-            const entryTitle = e.title || e.video_title || e.judul || `Contoh ${idx + 1}`;
-            const fullScript =
-              e.full_script || e.script || e.naskah || e.transcript || e.content || "";
-            return `[CONTOH KONTEN ASLI ${idx + 1} - "${channelName}"]:\nJudul: "${entryTitle}"\nNaskah Utuh:\n${fullScript}`;
-          })
-          .join("\n\n---\n\n");
-
-        referenceContextText = `\n\n=== DATA ACUAN UTAMA DARI MENU REFERENSI CHANNEL "${channelName}" ===\n${samples}`;
+        referenceContextText = `\n\n=== DATA ACUAN UTAMA DARI MENU REFERENSI CHANNEL "${channelName}" ===\nBedah pola gaya langsung dari naskah asli di bawah (formula hook, tema, sudut pandang, formula judul), lalu terapkan pada ide baru.\n\n${samplesText}`;
       }
     }
 
@@ -200,13 +247,11 @@ ${sampleTitlesList.map((t, i) => `${i + 1}. ${t}`).join("\n")}`;
     const requestedAmount = Math.max(Number(jumlah) || 5, 3);
     const askCount = requestedAmount + 3;
 
-    const systemPrompt = isProfileMode
-      ? `Kamu adalah Content Strategist & DNA Cloner untuk YouTube Shorts.
+    const systemPromptWithDna = `Kamu adalah Content Strategist & DNA Cloner untuk YouTube Shorts.
 TUGAS UTAMA:
-Di bawah ada "DNA GAYA" channel "${channelName}" (hasil bedah pola konten secara eksplisit) beserta contoh judul aslinya.
-JADIKAN DNA GAYA SEBAGAI ACUAN UTAMA - setiap butir di dalamnya adalah instruksi konkret tentang tema, sudut pandang, dan karakter channel ini, bukan sekadar deskripsi umum.
-Pelajari juga formula judul dari contoh judul asli yang disertakan.
-Hasilkan ide topik video baru yang 100% KONSISTEN dengan karakter konten dari channel "${channelName}".
+Di bawah ada "DNA GAYA" channel "${channelName}" beserta contoh naskah aslinya.
+PRIORITAS #1: setiap ide topik harus 100% KONSISTEN dengan karakter konten channel "${channelName}" — tema, sudut pandang, formula judul, dan jenis rasa penasaran yang dibangkitkan harus sama dengan channel tersebut.
+DNA dan contoh naskah adalah ACUAN UTAMA, bukan sekadar inspirasi.
 
 ATURAN WAJIB:
 - DILARANG KERAS membuat ulang judul atau topik yang ada di daftar larangan.
@@ -226,8 +271,33 @@ FORMAT JSON OUTPUT PERSIS:
       "alasanKelulusan": "Alasan kelulusan skor >= 40/50 sesuai acuan Menu Referensi."
     }
   ]
-}`
-      : `Kamu adalah Content Strategist untuk YouTube Shorts spesialis kategori "${kategori}".
+}`;
+
+    const systemPromptNoDna = `Kamu adalah Content Strategist & DNA Cloner untuk YouTube Shorts.
+TUGAS UTAMA:
+Di bawah ada NASKAH ASLI dari channel "${channelName}". Bedah sendiri polanya: formula hook, tema yang disukai, sudut pandang, dan formula judul.
+PRIORITAS #1: hasilkan ide topik yang 100% KONSISTEN dengan karakter konten channel "${channelName}", terasa seperti episode baru dari channel tersebut.
+
+ATURAN WAJIB:
+- DILARANG KERAS membuat ulang judul atau topik yang ada di daftar larangan.
+- DILARANG menyalin judul contoh referensi. Topik harus BARU, segar, dan belum pernah dibahas.
+- Gunakan bahasa yang lugas, santai, cerdas, dan memikat (anti-lebay/clickbait murahan).
+
+FORMAT JSON OUTPUT PERSIS:
+{
+  "candidates": [
+    {
+      "judul": "Judul Khas Sesuai Karakter Menu Referensi",
+      "kategori": "Kategori Sesuai Topik",
+      "channelRef": "${channelName}",
+      "penjelasan": "Uraian singkat 2 kalimat mengenai fakta otentik dan daya tarik ceritanya.",
+      "skor": { "total": 48 },
+      "alasanKelulusan": "Alasan kelulusan skor >= 40/50 sesuai acuan Menu Referensi."
+    }
+  ]
+}`;
+
+    const systemPromptGeneric = `Kamu adalah Content Strategist untuk YouTube Shorts spesialis kategori "${kategori}".
 
 ATURAN MUTLAK ANTI-DUPLIKASI:
 - DILARANG KERAS membuat ulang topik yang ada di daftar larangan.
@@ -245,6 +315,12 @@ FORMAT JSON OUTPUT PERSIS:
     }
   ]
 }`;
+
+    const systemPrompt = isProfileMode
+      ? styleDnaMissing
+        ? systemPromptNoDna
+        : systemPromptWithDna
+      : systemPromptGeneric;
 
     const userPrompt = isProfileMode
       ? `${referenceContextText}
@@ -265,11 +341,9 @@ ${tavilyContext}
 
 Hasilkan ${askCount} ide topik baru dalam format JSON valid.`;
 
-    const rawResponse = await callGeminiApi(
-      supabase,
-      userPrompt,
-      systemPrompt
-    );
+    const temperature = isProfileMode ? REFERENCE_TEMPERATURE : GENERIC_TEMPERATURE;
+
+    const rawResponse = await callGeminiApi(supabase, userPrompt, systemPrompt, temperature);
 
     const parsedData: any = parseJsonResponse(rawResponse, { candidates: [] });
     const rawCandidates: any[] = Array.isArray(parsedData.candidates) ? parsedData.candidates : [];
@@ -302,6 +376,7 @@ Hasilkan ${askCount} ide topik baru dalam format JSON valid.`;
     return NextResponse.json({
       data: finalCandidates,
       styleDnaMissing: isProfileMode && styleDnaMissing,
+      dnaAutoAnalyzed,
     });
   } catch (err: any) {
     console.error("[Topik API Error]:", err);
