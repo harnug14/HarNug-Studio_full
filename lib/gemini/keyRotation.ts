@@ -18,11 +18,38 @@ function isTrueDailyQuotaError(err: any): boolean {
     msg.includes("perday") ||
     msg.includes("per day") ||
     msg.includes("daily limit") ||
+    msg.includes("requests per day") ||
     msg.includes("quota exceeded for quota metric 'queries' and limit 'queries_per_day'")
   );
 }
 
-// Ambil semua API Key Gemini, dan otomatis reset status ke 'active' (HIJAU) agar tidak pernah terkunci mati
+// Kuota harian akun gratis Google pulih tiap ±15:00 WIB (tengah malam Pacific)
+function quotaResetTimeToday(): number {
+  const d = new Date();
+  return new Date(
+    d.getFullYear(),
+    d.getMonth(),
+    d.getDate(),
+    15,
+    0,
+    0
+  ).getTime();
+}
+
+// Key berstatus 'limited' boleh dicoba lagi HANYA jika tandanya
+// dibuat SEBELUM jam reset hari ini (artinya kuota lama, sudah pulih).
+// Vercel gratis tidak menjalankan cron, jadi pemulihan dihitung dari waktu.
+function limitedButProbablyReset(lastCheckedAt: string | null): boolean {
+  if (!lastCheckedAt) return true;
+  const marked = new Date(lastCheckedAt).getTime();
+  if (isNaN(marked)) return true;
+  return marked < quotaResetTimeToday();
+}
+
+// Ambil key Gemini yang PATUT dicoba:
+// - semua yang bukan 'limited'
+// - plus 'limited' lama (sebelum jam reset hari ini)
+// Key 'limited' hari ini DILEWATI agar tidak buang waktu (anti-504).
 export async function getActiveGeminiKeys(
   supabase: any
 ): Promise<{ id: string; api_key: string }[]> {
@@ -33,20 +60,17 @@ export async function getActiveGeminiKeys(
 
   if (error || !data || data.length === 0) return [];
 
-  // Reset otomatis seluruh key Gemini ke status 'active' (HIJAU) di database Supabase
-  const limitedIds = data.filter((k: any) => k.status === "limited").map((k: any) => k.id);
-  if (limitedIds.length > 0) {
-    console.log(`[GeminiRotation] Memulihkan ${limitedIds.length} API key kembali ke status ACTIVE (HIJAU)...`);
-    await supabase
-      .from("api_keys")
-      .update({ status: "active", last_checked_at: new Date().toISOString() })
-      .in("id", limitedIds);
-  }
+  const usable = data.filter(
+    (k: any) =>
+      k.status !== "limited" ||
+      limitedButProbablyReset(k.last_checked_at)
+  );
 
-  return data.map((k: any) => ({ id: k.id, api_key: k.api_key }));
+  return usable.map((k: any) => ({ id: k.id, api_key: k.api_key }));
 }
 
-// Tandai status 'limited' di Supabase HANYA jika MURNI kuota harian habis 100% dari Google
+// Tandai status 'limited' di Supabase HANYA jika MURNI kuota harian habis 100% dari Google.
+// Status ini menempel sampai lewat jam reset besok (tidak direset otomatis tiap request).
 export async function markGeminiKeyLimited(supabase: any, keyId: string) {
   await supabase
     .from("api_keys")
@@ -62,7 +86,7 @@ export async function callGeminiWithRotation<T>(
 
   if (keys.length === 0) {
     throw new Error(
-      "Tidak ada API Key Gemini aktif. Cek halaman Settings > API Keys"
+      "Kuota harian semua API Key Gemini sudah habis. Kuota pulih otomatis besok (±15:00 WIB). Silakan coba lagi nanti atau tambah key baru di Settings > API Keys."
     );
   }
 
@@ -72,8 +96,8 @@ export async function callGeminiWithRotation<T>(
     const key = keys[i];
     try {
       const result = await fn(key.api_key);
-      
-      // Jika berhasil, pastikan status di Supabase tetap 'active' (HIJAU)
+
+      // Jika berhasil, pastikan status di Supabase 'active' (HIJAU)
       await supabase
         .from("api_keys")
         .update({ status: "active", last_checked_at: new Date().toISOString() })
@@ -82,23 +106,31 @@ export async function callGeminiWithRotation<T>(
       return result;
     } catch (err: any) {
       lastError = err;
-      console.warn(`[GeminiRotation] Key ke-${i + 1} (${key.id.slice(0, 8)}) mengalami kendala: ${err?.message || err}`);
+      console.warn(
+        `[GeminiRotation] Key ke-${i + 1} (${key.id.slice(0, 8)}) mengalami kendala: ${err?.message || err}`
+      );
 
-      // HANYA tandai 'limited' di database jika Google secara eksplisit menyatakan kuota HARIAN habis
       if (isTrueDailyQuotaError(err)) {
-        console.log(`[GeminiRotation] Key ${key.id.slice(0, 8)} KUOTA HARIAN RESMI HABIS. Tandai limited di DB...`);
+        // Kuota harian resmi habis: tandai limited, LANGSUNG lompat ke key berikutnya (tanpa jeda)
+        console.log(
+          `[GeminiRotation] Key ${key.id.slice(0, 8)} KUOTA HARIAN HABIS. Tandai limited, lewati.`
+        );
         await markGeminiKeyLimited(supabase, key.id);
-      } else {
-        // Jika hanya limit per menit (RPM) atau traffic sibuk: JANGAN matikan status di DB! Tetap biarkan active.
-        console.log(`[GeminiRotation] Key ${key.id.slice(0, 8)} hanya limit sesaat/sibuk. Status TETAP HIJAU.`);
+        continue;
       }
 
-      // Beri jeda sejenak 1 detik sebelum memanggil key cadangan berikutnya agar tidak bentrok
+      // Hanya limit per menit (RPM) / sibuk sesaat: jeda singkat lalu coba key berikutnya
+      console.log(
+        `[GeminiRotation] Key ${key.id.slice(0, 8)} hanya limit sesaat/sibuk. Status TETAP HIJAU.`
+      );
       if (i < keys.length - 1) {
-        await sleep(1000);
+        await sleep(500);
       }
     }
   }
 
-  throw lastError || new Error("Semua API Key Gemini sedang sibuk. Silakan coba lagi dalam beberapa detik.");
+  throw (
+    lastError ||
+    new Error("Semua API Key Gemini sedang sibuk. Silakan coba lagi dalam beberapa detik.")
+  );
 }
