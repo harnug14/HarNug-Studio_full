@@ -3,7 +3,6 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 import { fetchTavilySearchResults } from "@/lib/tavily";
-import { analyzeStyleDna } from "@/lib/gemini/analyzeStyleDna";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -11,8 +10,7 @@ export const dynamic = "force-dynamic";
 const MAIN_MODEL = "gemini-3.6-flash";
 const REFERENCE_TEMPERATURE = 0.7; // mode referensi: konsisten meniru
 const GENERIC_TEMPERATURE = 0.75; // mode tanpa referensi
-const MAX_SAMPLE_CHARS = 12000; // batas aman total karakter naskah contoh
-const ANALYSIS_TIMEOUT_MS = 15000; // batas waktu penulis ringkasan, anti-504
+const MAX_SAMPLE_CHARS = 8000; // batas aman total karakter naskah contoh
 
 /**
  * ============================================================
@@ -95,24 +93,14 @@ async function callGeminiApi(
   );
 }
 
-// Batas waktu: kalau pekerjaan tidak selesai dalam X detik, anggap gagal (anti-504)
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error("Waktu analisis habis")), ms)
-    ),
-  ]);
-}
-
 /**
  * ============================================================
- * TAVILY REAL-TIME RESEARCH
+ * TAVILY REAL-TIME RESEARCH (batas 3 detik, anti-504)
  * ============================================================
  */
 async function fetchTavilyFast(
   query: string,
-  timeoutMs = 5000
+  timeoutMs = 3000
 ): Promise<string> {
   if (!query || !query.trim()) {
     return "";
@@ -153,7 +141,7 @@ function getEntryField(e: any): { title: string; fullScript: string } {
   };
 }
 
-// Susun blok naskah contoh: SEMUA entri dikirim selama masih muat batas karakter
+// Susun blok naskah contoh: entri dikirim selama masih muat batas karakter
 function buildSamplesText(entries: any[]): string {
   const parts: string[] = [];
   let used = 0;
@@ -285,57 +273,7 @@ export async function POST(req: NextRequest) {
 
     /**
      * ========================================================
-     * FETCH PROFILE REFERENSI (cepat, sendiri dulu)
-     * ========================================================
-     */
-    const profileRes = targetProfileId
-      ? await supabase
-          .from("channel_analysis")
-          .select("*, channel_analysis_entries(*)")
-          .eq("id", targetProfileId)
-          .single()
-      : { data: null, error: null };
-
-    /**
-     * ========================================================
-     * REFERENCE / STYLE DNA — persiapan
-     * ========================================================
-     */
-    let isProfileMode = false;
-    let channelName = "Framework Murni";
-    let styleDnaMissing = false;
-    let dnaAutoAnalyzed = false;
-    let entries: any[] = [];
-    let styleDna: any = null;
-    let needAnalysis = false;
-
-    if (
-      profileRes.data &&
-      profileRes.data.channel_analysis_entries?.length > 0
-    ) {
-      isProfileMode = true;
-      channelName =
-        profileRes.data.profile_name || "Referensi";
-
-      entries = profileRes.data.channel_analysis_entries;
-      styleDna = profileRes.data.style_dna;
-      const dnaEntryCount =
-        profileRes.data.style_dna_entry_count || 0;
-
-      const dnaHasContent =
-        styleDna &&
-        (styleDna.ringkasanKarakter || styleDna.hookPattern);
-
-      const dnaIsFresh =
-        dnaHasContent && dnaEntryCount === entries.length;
-
-      needAnalysis = !dnaIsFresh;
-    }
-
-    /**
-     * ========================================================
-     * PARALLEL: riset Tavily + tulis ringkasan (jika perlu)
-     * dijalankan BERSAMAAN biar hemat waktu (anti-504)
+     * PARALLEL: profile referensi + riset Tavily
      * ========================================================
      */
     const tavilyQuery =
@@ -343,63 +281,80 @@ export async function POST(req: NextRequest) {
       `tokoh tahun peristiwa detail nyata ` +
       `${cleanJudul}`;
 
-    const [tavilyRes, freshDna] = await Promise.all([
-      fetchTavilyFast(tavilyQuery, 5000),
+    const [
+      profileRes,
+      tavilyRes,
+    ] = await Promise.all([
+      targetProfileId
+        ? supabase
+            .from("channel_analysis")
+            .select(
+              "*, channel_analysis_entries(*)"
+            )
+            .eq(
+              "id",
+              targetProfileId
+            )
+            .single()
+        : Promise.resolve({
+            data: null,
+            error: null,
+          }),
 
-      isProfileMode && needAnalysis
-        ? withTimeout(
-            callGeminiWithRotation(supabase, (apiKey) =>
-              analyzeStyleDna(
-                entries.map((e: any) => {
-                  const f = getEntryField(e);
-                  return {
-                    title: f.title,
-                    fullScript: f.fullScript.slice(0, 1500),
-                  };
-                }),
-                apiKey,
-                MAIN_MODEL
-              )
-            ),
-            ANALYSIS_TIMEOUT_MS
-          ).catch((e) => {
-            console.warn(
-              "[Naskah] Ringkasan gaya tidak selesai tepat waktu, pakai mode naskah asli:",
-              e
-            );
-            return null;
-          })
-        : Promise.resolve(null),
+      fetchTavilyFast(tavilyQuery, 3000),
     ]);
-
-    // Simpan ringkasan baru (jika berhasil ditulis)
-    if (freshDna && profileRes.data) {
-      styleDna = freshDna;
-      dnaAutoAnalyzed = true;
-      await supabase
-        .from("channel_analysis")
-        .update({
-          style_dna: freshDna,
-          style_dna_updated_at: new Date().toISOString(),
-          style_dna_entry_count: entries.length,
-        })
-        .eq("id", profileRes.data.id);
-    }
-
-    if (isProfileMode && needAnalysis && !freshDna) {
-      styleDnaMissing = true;
-    }
 
     /**
      * ========================================================
-     * SUSUN KONTEKS REFERENSI:
-     * ringkasan gaya + SEMUA naskah contoh dikirim bersamaan
+     * REFERENCE / STYLE DNA
      * ========================================================
+     *
+     * Ringkasan gaya (jika sudah ada) + SEMUA naskah contoh
+     * dikirim bersamaan ke AI. Tidak ada proses menulis
+     * ringkasan di sini (biar cepat, anti-504) — proses itu
+     * sudah diurus otomatis oleh halaman Topic.
      */
-    let referenceContextText = "";
+    let isProfileMode = false;
 
-    if (isProfileMode) {
-      const samplesText = buildSamplesText(entries);
+    let channelName =
+      "Framework Murni";
+
+    let referenceContextText =
+      "";
+
+    let styleDnaMissing =
+      false;
+
+    if (
+      profileRes.data &&
+      profileRes.data
+        .channel_analysis_entries
+        ?.length > 0
+    ) {
+      isProfileMode = true;
+
+      channelName =
+        profileRes.data.profile_name ||
+        "Referensi";
+
+      const entries =
+        profileRes.data
+          .channel_analysis_entries;
+
+      const styleDna =
+        profileRes.data.style_dna;
+
+      const dnaHasContent =
+        styleDna &&
+        (styleDna.ringkasanKarakter ||
+          styleDna.hookPattern);
+
+      if (!dnaHasContent) {
+        styleDnaMissing = true;
+      }
+
+      const samplesText =
+        buildSamplesText(entries);
 
       if (!styleDnaMissing && styleDna) {
         const dnaBlock = `
@@ -417,7 +372,10 @@ ${styleDna.hookPattern || "-"}
 
 2. STRUKTUR BEAT:
 ${(styleDna.strukturBeat || [])
-  .map((item: string, index: number) => `${index + 1}) ${item}`)
+  .map(
+    (item: string, index: number) =>
+      `${index + 1}) ${item}`
+  )
   .join(" -> ") || "-"}
 
 3. GAYA BAHASA:
@@ -1037,7 +995,7 @@ system prompt.
      */
     if (isProfileMode && styleDnaMissing) {
       console.warn(
-        `[Naskah] Profil "${channelName}" belum memiliki ringkasan gaya yang up-to-date.`
+        `[Naskah] Profil "${channelName}" belum memiliki ringkasan gaya — memakai mode naskah asli.`
       );
     }
 
@@ -1130,7 +1088,6 @@ system prompt.
         },
       parsed: parsedData,
       styleDnaMissing: isProfileMode && styleDnaMissing,
-      dnaAutoAnalyzed,
       channelName: isProfileMode ? channelName : null,
       research: {
         provider: "Tavily",
