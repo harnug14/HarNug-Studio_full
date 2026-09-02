@@ -3,11 +3,16 @@ import { createSupabaseServerClient } from "@/lib/supabaseServer";
 import { callGeminiWithRotation } from "@/lib/gemini/keyRotation";
 import { parseJsonResponse } from "@/lib/gemini/parseJsonResponse";
 import { fetchTavilySearchResults } from "@/lib/tavily";
+import { analyzeStyleDna } from "@/lib/gemini/analyzeStyleDna";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const MAIN_MODEL = "gemini-3.6-flash";
+const REFERENCE_TEMPERATURE = 0.7; // mode referensi: konsisten meniru
+const GENERIC_TEMPERATURE = 0.75; // mode tanpa referensi
+const MAX_SAMPLE_CHARS = 20000; // batas aman total karakter naskah contoh
+const ANALYSIS_TIMEOUT_MS = 25000; // batas waktu penulis ringkasan, anti-504
 
 /**
  * ============================================================
@@ -17,7 +22,8 @@ const MAIN_MODEL = "gemini-3.6-flash";
 async function requestGoogleGemini(
   apiKey: string,
   userPrompt: string,
-  systemPrompt: string
+  systemPrompt: string,
+  temperature: number
 ): Promise<string> {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${MAIN_MODEL}:generateContent?key=${apiKey}`,
@@ -38,7 +44,7 @@ async function requestGoogleGemini(
         },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.75,
+          temperature,
         },
       }),
     }
@@ -73,7 +79,8 @@ async function requestGoogleGemini(
 async function callGeminiApi(
   supabase: any,
   userPrompt: string,
-  systemPrompt: string
+  systemPrompt: string,
+  temperature: number
 ): Promise<string> {
   return await callGeminiWithRotation(
     supabase,
@@ -81,20 +88,27 @@ async function callGeminiApi(
       return await requestGoogleGemini(
         apiKey,
         userPrompt,
-        systemPrompt
+        systemPrompt,
+        temperature
       );
     }
   );
+}
+
+// Batas waktu: kalau pekerjaan tidak selesai dalam X detik, anggap gagal (anti-504)
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Waktu analisis habis")), ms)
+    ),
+  ]);
 }
 
 /**
  * ============================================================
  * TAVILY REAL-TIME RESEARCH
  * ============================================================
- *
- * Tavily digunakan sebagai sumber riset fakta aktual.
- * Timeout dibuat pendek agar route tetap aman terhadap batas
- * waktu serverless.
  */
 async function fetchTavilyFast(
   query: string,
@@ -128,6 +142,29 @@ async function fetchTavilyFast(
 
     return "";
   }
+}
+
+// Ambil judul + naskah dari entri referensi (kompatibel beberapa nama kolom)
+function getEntryField(e: any): { title: string; fullScript: string } {
+  return {
+    title: e?.title || e?.video_title || e?.judul || "",
+    fullScript:
+      e?.full_script || e?.script || e?.naskah || e?.transcript || e?.content || "",
+  };
+}
+
+// Susun blok naskah contoh: SEMUA entri dikirim selama masih muat batas karakter
+function buildSamplesText(entries: any[]): string {
+  const parts: string[] = [];
+  let used = 0;
+  entries.forEach((e: any, idx: number) => {
+    const { title, fullScript } = getEntryField(e);
+    const block = `--- NASKAH REFERENSI ${idx + 1} ---\nJudul: "${title || `Contoh ${idx + 1}`}"\nNaskah:\n${fullScript}\n`;
+    if (parts.length > 0 && used + block.length > MAX_SAMPLE_CHARS) return;
+    parts.push(block);
+    used += block.length;
+  });
+  return parts.join("\n\n====================\n\n");
 }
 
 /**
@@ -210,7 +247,7 @@ export async function POST(req: NextRequest) {
       if (topikRow?.catatan) {
         const matches = Array.from(
           topikRow.catatan.matchAll(
-            /\[(.*?)\]/g
+            /$$(.*?)$$/g
           )
         )
           .map((match: any) =>
@@ -250,9 +287,6 @@ export async function POST(req: NextRequest) {
      * ========================================================
      * PARALLEL DATA FETCH
      * ========================================================
-     *
-     * 1. Reference profile / Style DNA
-     * 2. Tavily real-time research
      */
     const tavilyQuery =
       `fakta sejarah kronologi asal usul ` +
@@ -289,6 +323,10 @@ export async function POST(req: NextRequest) {
      * ========================================================
      * REFERENCE / STYLE DNA
      * ========================================================
+     *
+     * BARU: jika ringkasan gaya belum ada / ketinggalan zaman,
+     * ditulis OTOMATIS di sini (dibatasi 25 detik, anti-504).
+     * Ringkasan + SEMUA naskah contoh dikirim bersamaan ke AI.
      */
     let isProfileMode = false;
 
@@ -299,6 +337,9 @@ export async function POST(req: NextRequest) {
       "";
 
     let styleDnaMissing =
+      false;
+
+    let dnaAutoAnalyzed =
       false;
 
     if (
@@ -317,25 +358,68 @@ export async function POST(req: NextRequest) {
         profileRes.data
           .channel_analysis_entries;
 
-      const styleDna =
+      let styleDna =
         profileRes.data.style_dna;
 
       const dnaEntryCount =
         profileRes.data
           .style_dna_entry_count || 0;
 
-      /**
-       * ------------------------------------------------------
-       * STYLE DNA AVAILABLE
-       * ------------------------------------------------------
-       */
-      if (
+      const dnaHasContent =
         styleDna &&
-        dnaEntryCount ===
-          entries.length
-      ) {
+        (styleDna.ringkasanKarakter ||
+          styleDna.hookPattern);
+
+      const dnaIsFresh =
+        dnaHasContent &&
+        dnaEntryCount === entries.length;
+
+      if (!dnaIsFresh) {
+        // OTOMATIS tulis ringkasan sekarang, dengan batas waktu aman.
+        try {
+          const entriesForAnalysis = entries.map((e: any) => {
+            const f = getEntryField(e);
+            return {
+              title: f.title,
+              fullScript: f.fullScript.slice(0, 2000),
+            };
+          });
+
+          const freshDna = await withTimeout(
+            callGeminiWithRotation(supabase, (apiKey) =>
+              analyzeStyleDna(entriesForAnalysis, apiKey, MAIN_MODEL)
+            ),
+            ANALYSIS_TIMEOUT_MS
+          );
+
+          await supabase
+            .from("channel_analysis")
+            .update({
+              style_dna: freshDna,
+              style_dna_updated_at: new Date().toISOString(),
+              style_dna_entry_count: entries.length,
+            })
+            .eq("id", profileRes.data.id);
+
+          styleDna = freshDna;
+          dnaAutoAnalyzed = true;
+        } catch (e) {
+          console.warn(
+            "[Naskah] Ringkasan gaya tidak selesai tepat waktu, pakai mode naskah asli:",
+            e
+          );
+          styleDnaMissing = true;
+        }
+      }
+
+      const samplesText = buildSamplesText(entries);
+
+      if (!styleDnaMissing && styleDna) {
         const dnaBlock = `
 === DNA STORYTELLING CHANNEL "${channelName}" ===
+
+PRIORITAS #1: hasil akhir harus terasa seperti episode baru
+dari channel "${channelName}", bukan artikel generik.
 
 DNA ini bukan kumpulan kata yang harus disalin.
 DNA ini adalah pola perilaku penulisan yang harus diterapkan
@@ -392,56 +476,13 @@ ATURAN PENTING:
 `;
 
         referenceContextText =
-          `\n\n${dnaBlock}`;
+          `\n\n${dnaBlock}\n\n=== CONTOH NASKAH ASLI CHANNEL "${channelName}" (bahan peniru gaya terkuat — pelajari ritme, hook, transisi, dan penutupnya) ===\n\n${samplesText}`;
       } else {
-        /**
-         * ----------------------------------------------------
-         * STYLE DNA BELUM TERSEDIA / OUTDATED
-         * ----------------------------------------------------
-         */
-        styleDnaMissing = true;
-
-        const samples =
-          entries
-            .map(
-              (
-                entry: any,
-                index: number
-              ) => {
-                const entryTitle =
-                  entry.title ||
-                  entry.video_title ||
-                  entry.judul ||
-                  `Video Referensi ${
-                    index + 1
-                  }`;
-
-                const fullScript =
-                  entry.full_script ||
-                  entry.script ||
-                  entry.naskah ||
-                  entry.transcript ||
-                  entry.content ||
-                  "";
-
-                return `
---- NASKAH REFERENSI ${index + 1} ---
-Judul:
-"${entryTitle}"
-
-Naskah:
-${fullScript}
-`;
-              }
-            )
-            .join(
-              "\n\n====================\n\n"
-            );
-
         referenceContextText = `
 === REFERENSI NASKAH CHANNEL "${channelName}" ===
 
-Gunakan contoh di bawah untuk memahami:
+Bedah sendiri pola gaya dari naskah asli di bawah:
+
 - ritme
 - cara membuka cerita
 - cara memperkenalkan fakta
@@ -453,7 +494,7 @@ Gunakan contoh di bawah untuk memahami:
 
 Jangan menyalin isi, fakta, kalimat, atau struktur cerita secara literal.
 
-${samples}
+${samplesText}
 `;
       }
     }
@@ -497,19 +538,6 @@ dipastikan dan hindari klaim presisi yang meragukan.
      * ========================================================
      * SYSTEM PROMPT
      * ========================================================
-     *
-     * Ini merupakan bagian utama perubahan.
-     *
-     * AI tidak langsung "menulis".
-     *
-     * AI diwajibkan berpikir secara bertahap:
-     *
-     * RESEARCH
-     * → FACT SELECTION
-     * → STORY ARCHITECTURE
-     * → STYLE APPLICATION
-     * → SCRIPT
-     * → QC
      */
     const systemPrompt = isProfileMode
       ? `
@@ -626,7 +654,8 @@ bukan daftar fakta.
 TAHAP 4 — STORYTELLING
 ============================================================
 
-Gunakan DNA gaya channel sebagai POLA PERILAKU.
+Gunakan DNA gaya channel (jika ada) dan contoh naskah asli
+sebagai POLA PERILAKU utama.
 
 Jangan menyalin kalimat referensi.
 
@@ -812,6 +841,7 @@ Pastikan:
 - tetap terasa seperti voiceover manusia
 - ritmenya enak dibaca keras
 - setiap beat punya fungsi
+- TERASA SEPERTI EPISODE BARU DARI CHANNEL "${channelName}"
 
 ============================================================
 OUTPUT
@@ -979,7 +1009,6 @@ OUTPUT JSON
 isiNaskah hanya voiceover.
 `;
 
-
     /**
      * ========================================================
      * USER PROMPT
@@ -1046,11 +1075,16 @@ system prompt.
      * CALL GEMINI
      * ========================================================
      */
+    const temperature = isProfileMode
+      ? REFERENCE_TEMPERATURE
+      : GENERIC_TEMPERATURE;
+
     const rawResponse =
       await callGeminiApi(
         supabase,
         userPrompt,
-        systemPrompt
+        systemPrompt,
+        temperature
       );
 
     /**
@@ -1156,8 +1190,9 @@ system prompt.
         parsedData,
 
       styleDnaMissing:
-        isProfileMode &&
-        styleDnaMissing,
+        isProfileMode && styleDnaMissing,
+
+      dnaAutoAnalyzed,
 
       channelName:
         isProfileMode
